@@ -2,6 +2,8 @@
 
 Web app theo dõi tình trạng trình duyệt hồ sơ cho team, chạy trên **Google Apps Script**, dữ liệu lưu trong **Google Sheet**.
 
+**Link web app:** https://script.google.com/macros/s/AKfycbzvKv467-ZX34kCYKkMZPRqIgeP1jVzEJB7qK2FWqB7eIznVwrSxnVLKwn3djB_JBSW8Q/exec
+
 - Đăng nhập bằng **tài khoản riêng của ứng dụng** (không cần Gmail). Admin tạo tài khoản trước, người dùng đổi mật khẩu tạm ở lần đăng nhập đầu.
 - 6 tình trạng hồ sơ: *Hồ sơ trong ổ Chuyên viên*, *Đang trình TP.MH*, *Đang trình GĐTM*, *Đang trình TP.C&C*, *Trả lại hồ sơ*, *Đã duyệt*.
 - Mỗi lần tạo hoặc cập nhật, hệ thống **tự ghi ngày** (dd/MM/yyyy, giờ Việt Nam) và lưu lịch sử.
