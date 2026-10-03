@@ -47,7 +47,7 @@
     token: null, me: null, cfg: null, today: '',
     users: [], subs: [], hist: [],
     view: 'home', collapsed: window.innerWidth <= 1000, open: null,
-    filters: {}, sorts: {}, pages: {}, groupBy: {}, cardState: {}, lastRows: {},
+    filters: {}, sorts: {}, groupBy: {}, cardState: {}, lastRows: {},
     adminUsers: null, charts: []
   };
   var root = document.getElementById('root');
@@ -322,6 +322,8 @@
     var selStart = null, selEnd = null;
     try { selStart = active.selectionStart; selEnd = active.selectionEnd; } catch (e) {}
     var scrollY = window.scrollY;
+    var inner = {};
+    Array.prototype.forEach.call(root.querySelectorAll('.table-scroll[id]'), function (el) { inner[el.id] = el.scrollTop; });
 
     S.charts.forEach(function (c) { c.destroy(); });
     S.charts = [];
@@ -329,6 +331,12 @@
     mountCharts();
 
     window.scrollTo(0, scrollY);
+    var reset = S.scrollReset || {};
+    Object.keys(inner).forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el && !reset[id]) el.scrollTop = inner[id];
+    });
+    S.scrollReset = {};
     if (focusId) {
       var el = document.getElementById(focusId);
       if (el) {
@@ -533,11 +541,6 @@
     opts = opts || {};
     var sorted = sortRows(view, rows);
     S.lastRows[view] = { rows: sorted, showOwner: !!opts.showOwner };
-    var pg = S.pages[view] || (S.pages[view] = { page: 1, size: 10 });
-    var pages = Math.max(1, Math.ceil(sorted.length / pg.size));
-    if (pg.page > pages) pg.page = pages;
-    var start = (pg.page - 1) * pg.size;
-    var pageRows = sorted.slice(start, start + pg.size);
     var st = S.sorts[view];
     var cols = COLS.filter(function (c) { return opts.showOwner || !c.ownerOnly; });
 
@@ -547,7 +550,7 @@
         ' aria-sort="' + (st.key === c.key ? (st.dir === 'asc' ? 'ascending' : 'descending') : 'none') + '">' + c.label + arrow + '</th>';
     }).join('') + '<th></th>';
 
-    var body = pageRows.map(function (s) {
+    var body = sorted.map(function (s) {
       return '<tr><td class="code">' + esc(s.id) + '</td><td class="title-cell">' + esc(s.title) + '</td><td>' + typeBadge(s._type) + '</td>' +
         (opts.showOwner ? '<td class="nowrap">' + esc(userName(s.owner)) + '</td>' : '') +
         '<td>' + statusBadge(s.status) + '</td>' +
@@ -555,20 +558,19 @@
         '<td class="nowrap">' + fmtDate(s.updatedAt) + '</td><td class="num">' + waitCell(s) + '</td>' +
         '<td>' + rowActions(s) + '</td></tr>';
     }).join('');
-    if (!pageRows.length) body = '<tr><td colspan="' + (cols.length + 1) + '" class="empty">Không có hồ sơ nào phù hợp.</td></tr>';
+    if (!sorted.length) body = '<tr><td colspan="' + (cols.length + 1) + '" class="empty">Không có hồ sơ nào phù hợp.</td></tr>';
 
     var tools = '<div class="table-tools"><span class="muted"><b>' + fmtNum(sorted.length) + '</b> hồ sơ</span><div class="grow"></div>' +
       (opts.create ? '<button class="primary-btn" style="min-height:40px;font-size:16px;padding:0 18px" data-act="open-create">' + ic('plus') + 'Tạo hồ sơ</button>' : '') +
       '<button class="secondary-btn" data-act="export-csv" data-view="' + view + '">' + ic('download') + 'Xuất CSV</button></div>';
 
-    var pager = '<div class="pager"><span>Hiển thị</span><select data-change="page-size" data-view="' + view + '" aria-label="Số dòng mỗi trang">' +
-      [10, 20, 50, 100].map(function (n) { return '<option' + (n === pg.size ? ' selected' : '') + '>' + n + '</option>'; }).join('') + '</select>' +
-      '<span>' + (sorted.length ? (start + 1) + ' - ' + (start + pageRows.length) : '0') + ' / ' + fmtNum(sorted.length) + '</span>' +
-      '<button data-act="page" data-view="' + view + '" data-dir="-1"' + (pg.page <= 1 ? ' disabled' : '') + ' aria-label="Trang trước">' + ic('chevLeft') + '</button>' +
-      '<button data-act="page" data-view="' + view + '" data-dir="1"' + (pg.page >= pages ? ' disabled' : '') + ' aria-label="Trang sau">' + ic('chevRight') + '</button></div>';
+    // Không phân trang: toàn bộ hồ sơ trong khung cuộn, tiêu đề cột cố định (vị trí cuộn được giữ khi render lại).
+    var pager = '<div class="pager"><span>Tổng: <b>' + fmtNum(sorted.length) + '</b> hồ sơ' +
+      (sorted.length > 10 ? ' · cuộn trong bảng để xem thêm' : '') + '</span></div>';
 
     return card(view + '-detail', opts.title || 'Thông tin chi tiết hồ sơ',
-      tools + '<div class="table-wrap" style="border-radius:8px 8px 0 0"><table class="grid"><thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table></div>' + pager);
+      tools + '<div class="table-wrap table-scroll" id="scroll-' + view + '" style="border-radius:8px 8px 0 0"><table class="grid"><thead><tr>' + head +
+      '</tr></thead><tbody>' + body + '</tbody></table></div>' + pager);
   }
 
   /* ---------- Biểu đồ ---------- */
@@ -1454,7 +1456,7 @@
   }
 
   function clearSession() {
-    S.token = null; S.me = null; S.adminUsers = null; S.filters = {}; S.pages = {};
+    S.token = null; S.me = null; S.adminUsers = null; S.filters = {};
     store.del('hs_token');
   }
 
@@ -1573,7 +1575,7 @@
     },
     'reset-filter': function (el) {
       S.filters[el.dataset.view] = defaultFilter(el.dataset.view);
-      S.pages[el.dataset.view] = { page: 1, size: (S.pages[el.dataset.view] || {}).size || 10 };
+      resetPage(el.dataset.view);
       S.open = null; render();
     },
     'ms-all': function (el) {
@@ -1613,7 +1615,6 @@
       S.sorts[v] = { key: k, dir: st.key === k && st.dir === 'desc' ? 'asc' : (st.key === k ? 'desc' : (k === 'title' || k === 'owner' || k === 'status' ? 'asc' : 'desc')) };
       render();
     },
-    'page': function (el) { var pg = S.pages[el.dataset.view]; pg.page += Number(el.dataset.dir); render(); },
     'group-by': function (el) { S.groupBy[el.dataset.view] = el.dataset.mode; render(); },
     'sub-gran': function (el) { S.subGran = el.dataset.gran; S.subSel = null; render(); },
     'sub-cell': function (el) {
@@ -1718,7 +1719,8 @@
     }
   };
 
-  function resetPage(view) { if (S.pages[view]) S.pages[view].page = 1; }
+  /** Bộ lọc đổi → đưa bảng chi tiết của view về đầu ở lần render kế tiếp. */
+  function resetPage(view) { (S.scrollReset = S.scrollReset || {})['scroll-' + view] = true; }
 
   document.addEventListener('click', function (e) {
     var el = e.target.closest('[data-act]');
@@ -1754,9 +1756,6 @@
       resetPage(view); render();
     } else if (kind === 'sync-all') {
       Array.prototype.forEach.call(modalRoot.querySelectorAll('[data-sync-change]'), function (c) { c.checked = el.checked; });
-    } else if (kind === 'page-size') {
-      S.pages[view] = { page: 1, size: Number(el.value) };
-      render();
     }
   });
 
