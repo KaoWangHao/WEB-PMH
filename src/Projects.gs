@@ -8,11 +8,11 @@ var PROJECT_SEED_ = [
   '76_LAPURA',
   '192_ThiCongVuonUomDoanhNghiep_TTC', '193_TruongQuocTeSingapore_SIS', '194_ThePearl-BTC01-05_PEARL01',
   '195_ThePearl-BTC06-011_PEARL02', '196_Sun Symphony_Phan ham', '197_TecombankMienBac_TCB-MB',
-  '198_TecombankMienNam_TCB-MN', '199_VanPhongKinhDoanhQuocLo13_VPK', '200_KhuNhaOPhucHopCaoTangThuanA',
-  '201_KhuNhaOCaoTang-KDTDaiAn_CCCT', '202_KhuDoThiNamThai_NAMTHAI', '203_KhuDoThiSaiGonBinhAn_CongVien',
-  '204_ToHopKSvaCC-ChampaViha_CHAM', '205_Vaquarius_BP01 - XD', '206_XDTramDungNghi-XePhuongTrang',
+  '198_TecombankMienNam_TCB-MN',
+  '201_KhuNhaOCaoTang-KDTDaiAn_CCCT', '202_KhuDoThiNamThai_NAMTHAI',
+  '205_Vaquarius_BP01 - XD', '206_FUTA',
   '207_Essensia Sky_Phan ham', '208_Taiwan_Thap doi', '209_KhuNhaOTanThanh_VICLAND',
-  '210_KhuDoThiBacMoiSongCam_THUYN', '211_Sun Symphony_Phan than', '212_CanHoCaoCap_BinhDuong-CHM&V',
+  '211_Sun Symphony_Phan than',
   '213_DH Cong nghe', '214_Vaquarius_BP03 - XD',
   '215_TheNamKhangResortResidences_NAMKHANG', '216_Tokyu_H5&H7', '217_CentralEmbassyTwoDevelopment_EMBASSY',
   '218_LegendCityDaNang_LEGEND', '219_WinWinOfficeApartment_WINWIN', '220_KhuDoThiAnThoi-BV_ANTHOI',
@@ -37,6 +37,37 @@ var PROJECT_SEED_ = [
   '291_ChungCu_AnHuy', '292_ThuanAn_TK_QS', '293_Hope_Gardenia', '294_Lotte_TranPhu', '295_ChungCu_DaiNhat_PhanThan'
 ];
 
+/**
+ * Sửa 1 lần cho sheet Projects đã tạo từ danh sách ban đầu (bản thử): 7 tên bị cắt "…" trong ảnh gốc.
+ * Theo người dùng: 206 → FUTA, 6 dự án còn lại bỏ khỏi danh mục. Chỉ đụng tới dòng còn đúng tên cắt cũ.
+ */
+var PROJECT_FIX_V1_ = {
+  rename: { '206': ['XDTramDungNghi-XePhuongTrang', 'FUTA'] },
+  remove: {
+    '199': 'VanPhongKinhDoanhQuocLo13_VPK', '200': 'KhuNhaOPhucHopCaoTangThuanA',
+    '203': 'KhuDoThiSaiGonBinhAn_CongVien', '204': 'ToHopKSvaCC-ChampaViha_CHAM',
+    '210': 'KhuDoThiBacMoiSongCam_THUYN', '212': 'CanHoCaoCap_BinhDuong-CHM&V'
+  }
+};
+var PROJECT_FIX_PROP_ = 'PROJECTS_FIX_V1';
+
+function applyProjectFixes_() {
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty(PROJECT_FIX_PROP_)) return;
+  withLock_(function () {
+    if (props.getProperty(PROJECT_FIX_PROP_)) return;
+    var drop = [];
+    readTable_('Projects').forEach(function (p) {
+      var code = normalizeProjectCode_(p.code), name = String(p.name);
+      var rn = PROJECT_FIX_V1_.rename[code];
+      if (rn && name === rn[0]) { p.name = rn[1]; writeObj_('Projects', p._row, p); }
+      if (PROJECT_FIX_V1_.remove[code] === name) drop.push(p._row);
+    });
+    deleteRows_('Projects', drop);
+    props.setProperty(PROJECT_FIX_PROP_, new Date().toISOString());
+  });
+}
+
 /** "231_Truong Dinh" / "231 Truong Dinh" / "273. Vin…" → { code: '231', name: 'Truong Dinh' } hoặc null. */
 function parseProjectLine_(line) {
   var m = String(line || '').trim().match(/^0*(\d{1,6})\s*[_.\-\s]\s*(.+)$/);
@@ -54,7 +85,7 @@ function normalizeProjectCode_(code) {
 /** Tạo sheet Projects + nạp danh sách ban đầu nếu chưa có (dữ liệu thật đã chạy trước khi có tính năng này). */
 function ensureProjectsSheet_() {
   var ss = db_();
-  if (ss.getSheetByName('Projects')) return;
+  if (ss.getSheetByName('Projects')) { applyProjectFixes_(); return; }
   withLock_(function () {
     if (ss.getSheetByName('Projects')) return;
     var sh = ss.insertSheet('Projects');
@@ -63,6 +94,7 @@ function ensureProjectsSheet_() {
     sh.getRange(1, 1, sh.getMaxRows(), headers.length).setNumberFormat('@');
     sh.setFrozenRows(1);
     seedProjects_();
+    PropertiesService.getScriptProperties().setProperty(PROJECT_FIX_PROP_, new Date().toISOString());
   });
 }
 
