@@ -1,11 +1,12 @@
 /**
- * Danh mục dự án (sheet "Projects"): mã = số thứ tự (STT) ở đầu tên thư mục dự án "STT_TÊN DỰ ÁN".
+ * Danh mục dự án (sheet "Projects"): mã = số thứ tự (STT) ở đầu tên thư mục dự án "STT_TÊN DỰ ÁN",
+ * hoặc mã chữ (vd "D&B" = Phòng D&B) cho hồ sơ không thuộc dự án đánh số.
  * Hồ sơ được gắn dự án tự động ở client theo số đầu tên hồ sơ (vd "231_TDTower_..." → dự án 231).
  * Sheet tự tạo và nạp danh sách ban đầu ở lần dùng đầu tiên; admin thêm/sửa trên web.
  */
 
 var PROJECT_SEED_ = [
-  '76_LAPURA',
+  '76_LAPURA', 'D&B_Phòng D&B',
   '192_ThiCongVuonUomDoanhNghiep_TTC', '193_TruongQuocTeSingapore_SIS', '194_ThePearl-BTC01-05_PEARL01',
   '195_ThePearl-BTC06-011_PEARL02', '196_Sun Symphony_Phan ham', '197_TecombankMienBac_TCB-MB',
   '198_TecombankMienNam_TCB-MN',
@@ -50,6 +51,9 @@ var PROJECT_FIX_V1_ = {
   }
 };
 var PROJECT_FIX_PROP_ = 'PROJECTS_FIX_V1';
+/** V2: bổ sung mã chữ D&B (Phòng D&B) cho sheet đã tạo trước khi có mã chữ. */
+var PROJECT_ADD_V2_ = ['D&B_Phòng D&B'];
+var PROJECT_FIX2_PROP_ = 'PROJECTS_FIX_V2';
 
 function applyProjectFixes_() {
   var props = PropertiesService.getScriptProperties();
@@ -68,24 +72,50 @@ function applyProjectFixes_() {
   });
 }
 
-/** "231_Truong Dinh" / "231 Truong Dinh" / "273. Vin…" → { code: '231', name: 'Truong Dinh' } hoặc null. */
-function parseProjectLine_(line) {
-  var m = String(line || '').trim().match(/^0*(\d{1,6})\s*[_.\-\s]\s*(.+)$/);
-  if (!m) return null;
-  var name = m[2].replace(/\s+/g, ' ').replace(/[\s…]+$/, '').trim();
-  if (!name) return null;
-  return { code: m[1], name: name.slice(0, 150) };
+function applyProjectAdditions_() {
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty(PROJECT_FIX2_PROP_)) return;
+  withLock_(function () {
+    if (props.getProperty(PROJECT_FIX2_PROP_)) return;
+    var have = {};
+    readTable_('Projects').forEach(function (p) { have[normalizeProjectCode_(p.code)] = true; });
+    var date = today_();
+    appendRows_('Projects', PROJECT_ADD_V2_.map(parseProjectLine_).filter(function (p) { return p && !have[p.code]; })
+      .map(function (p) { return { code: p.code, name: p.name, active: true, createdAt: date }; }));
+    props.setProperty(PROJECT_FIX2_PROP_, new Date().toISOString());
+  });
 }
 
+/** "231_Truong Dinh" / "231 Truong Dinh" / "273. Vin…" / "D&B_Phòng D&B" → { code, name } hoặc null. */
+function parseProjectLine_(line) {
+  var m = String(line || '').trim().match(/^(\d{1,6}|[A-Za-z][A-Za-z0-9&]{0,11})\s*[_.\-\s]\s*(.+)$/);
+  if (!m) return null;
+  var code = normalizeProjectCode_(m[1]);
+  var name = m[2].replace(/\s+/g, ' ').replace(/[\s…]+$/, '').trim();
+  if (!code || !name) return null;
+  return { code: code, name: name.slice(0, 150) };
+}
+
+/** Mã số bỏ số 0 đầu ("076" → "76"); mã chữ viết hoa ("d&b" → "D&B"); sai dạng → ''. */
 function normalizeProjectCode_(code) {
-  var m = String(code == null ? '' : code).trim().match(/^0*(\d{1,6})$/);
-  return m ? (m[1] === '' ? '0' : m[1]) : '';
+  var s = String(code == null ? '' : code).trim();
+  var m = s.match(/^0*(\d{1,6})$/);
+  if (m) return m[1] === '' ? '0' : m[1];
+  return /^[A-Za-z][A-Za-z0-9&]{0,11}$/.test(s) ? s.toUpperCase() : '';
+}
+
+/** Mã số trước (theo số), mã chữ sau (theo ABC). */
+function compareProjectCode_(a, b) {
+  var na = /^\d+$/.test(a), nb = /^\d+$/.test(b);
+  if (na && nb) return Number(a) - Number(b);
+  if (na !== nb) return na ? -1 : 1;
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 /** Tạo sheet Projects + nạp danh sách ban đầu nếu chưa có (dữ liệu thật đã chạy trước khi có tính năng này). */
 function ensureProjectsSheet_() {
   var ss = db_();
-  if (ss.getSheetByName('Projects')) { applyProjectFixes_(); return; }
+  if (ss.getSheetByName('Projects')) { applyProjectFixes_(); applyProjectAdditions_(); return; }
   withLock_(function () {
     if (ss.getSheetByName('Projects')) return;
     var sh = ss.insertSheet('Projects');
@@ -94,7 +124,9 @@ function ensureProjectsSheet_() {
     sh.getRange(1, 1, sh.getMaxRows(), headers.length).setNumberFormat('@');
     sh.setFrozenRows(1);
     seedProjects_();
-    PropertiesService.getScriptProperties().setProperty(PROJECT_FIX_PROP_, new Date().toISOString());
+    var now = new Date().toISOString();
+    PropertiesService.getScriptProperties().setProperty(PROJECT_FIX_PROP_, now);
+    PropertiesService.getScriptProperties().setProperty(PROJECT_FIX2_PROP_, now);
   });
 }
 
@@ -113,14 +145,14 @@ function serializeProject_(rec) {
 function listProjects_() {
   ensureProjectsSheet_();
   return readTable_('Projects').map(serializeProject_).filter(function (p) { return p.code; })
-    .sort(function (a, b) { return Number(a.code) - Number(b.code); });
+    .sort(function (a, b) { return compareProjectCode_(a.code, b.code); });
 }
 
 /** Thêm hoặc sửa 1 dự án (admin). */
 function saveProject_(user, payload) {
   requireAdmin_(user);
   var code = normalizeProjectCode_(payload && payload.code);
-  if (!code) throw appError_('STT dự án phải là số (vd 231).');
+  if (!code) throw appError_('Mã dự án là số (vd 231) hoặc chữ không dấu, có thể có & (vd D&B).');
   var name = String((payload && payload.name) || '').replace(/\s+/g, ' ').trim();
   if (!name) throw appError_('Vui lòng nhập tên dự án.');
   if (name.length > 150) throw appError_('Tên dự án quá dài (tối đa 150 ký tự).');
