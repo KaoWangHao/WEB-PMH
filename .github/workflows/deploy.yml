@@ -2,6 +2,8 @@ name: Deploy Apps Script
 
 # Mỗi lần push lên main (có thay đổi trong src/), tự đẩy code lên Apps Script
 # và cập nhật đúng deployment đang dùng nên link web app không đổi.
+# Chạy tay (tab Actions → Run workflow) với "Chỉ đẩy bản thử" = true: chỉ đẩy code của nhánh đã chọn lên
+# bản nháp (HEAD) để thử ở link Test deployment (/dev, chỉ chủ sở hữu mở được); link chính giữ nguyên.
 on:
   push:
     branches: [main]
@@ -10,6 +12,11 @@ on:
       - '.clasp.json'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
+    inputs:
+      test_only:
+        description: 'Chỉ đẩy bản thử (link /dev), không cập nhật link chính'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -49,6 +56,7 @@ jobs:
         run: clasp push --force
 
       - name: Cập nhật deployment web app
+        if: ${{ !inputs.test_only }}
         run: clasp update-deployment "$DEPLOYMENT_ID" --description "GitHub ${GITHUB_SHA::7}"
 
       - name: Xóa thông tin đăng nhập

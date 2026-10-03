@@ -43,6 +43,27 @@ var POSITIONS = [
   { code: 'GDTM',  label: 'GĐTM',        manager: true }
 ];
 
+/**
+ * Đồng bộ tình trạng từ thư mục chia sẻ (Trưởng phòng chọn thư mục gốc trên trình duyệt).
+ * Mỗi FILE là một hồ sơ, tên file (bỏ đuôi) phải trùng tên hồ sơ trên web.
+ * path: đường dẫn tương đối từ thư mục gốc, ngăn cách bằng "/". Quy tắc dài nhất (cụ thể nhất) được ưu tiên;
+ * file trong thư mục con của path cũng tính theo quy tắc đó. File không khớp quy tắc nào sẽ bị bỏ qua.
+ */
+var FOLDER_SYNC = {
+  ROOT_NAME: '12_HoSo_TrinhKy',
+  ROOT_HINT: '\\\\HCM-FS01\\fs01\\03_CCM\\01-Private\\C_BAO_CAO\\1_BaoCao_ThuongMai\\12_HoSo_TrinhKy',
+  RULES: [
+    { path: '01_HS_CV_Trinh/01_P.Mua Hàng/01. Cv MuaHang', status: 'CV' },
+    { path: '01_HS_CV_Trinh/01_P.Mua Hàng',                status: 'TP_MH' },
+    { path: '01_HS_CV_Trinh/02_P.QLCP',                    status: 'TP_CC' },
+    { path: '02_HS_TP_Trinh',                              status: 'GDTM' },
+    { path: '03_HS_DaDuyet',                               status: 'DA_DUYET' },
+    { path: '04_HS_TraLai',                                status: 'TRA_LAI' }
+  ],
+  NOTE: 'Đồng bộ từ thư mục chia sẻ',
+  MAX_ITEMS: 3000
+};
+
 var SHEET_HEADERS = {
   Users: ['username', 'displayName', 'position', 'isAdmin', 'passwordHash', 'salt',
           'mustChangePassword', 'active', 'failedAttempts', 'lockedUntil', 'createdAt'],
@@ -74,6 +95,7 @@ function publicConfig_() {
     defaultStatus: DEFAULT_STATUS,
     positions: POSITIONS,
     minPasswordLength: APP_CONFIG.MIN_PASSWORD_LENGTH,
-    maxTitleLength: APP_CONFIG.MAX_TITLE_LENGTH
+    maxTitleLength: APP_CONFIG.MAX_TITLE_LENGTH,
+    folderSync: { rootName: FOLDER_SYNC.ROOT_NAME, rootHint: FOLDER_SYNC.ROOT_HINT, rules: FOLDER_SYNC.RULES }
   };
 }

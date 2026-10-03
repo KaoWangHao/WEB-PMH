@@ -57,6 +57,18 @@ function appendObj_(name, obj) {
   return row;
 }
 
+/** Ghi nhiều dòng liền nhau ở cuối bảng trong 1 lần gọi; trả về số dòng đầu tiên. */
+function appendRows_(name, objs) {
+  if (!objs.length) return 0;
+  var sh = sheet_(name);
+  var values = objs.map(function (o) { return toRowValues_(name, o); });
+  var row = sh.getLastRow() + 1;
+  var range = sh.getRange(row, 1, values.length, values[0].length);
+  range.setNumberFormat('@');
+  range.setValues(values);
+  return row;
+}
+
 function writeObj_(name, rowNum, obj) {
   var values = toRowValues_(name, obj);
   var range = sheet_(name).getRange(rowNum, 1, 1, values.length);

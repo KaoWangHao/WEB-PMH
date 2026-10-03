@@ -19,6 +19,7 @@ Web app nội bộ theo dõi tình trạng trình duyệt hồ sơ của một t
   - Chuyên viên (`CV`): xem **tất cả** hồ sơ, chỉ sửa hồ sơ của mình; có dashboard cá nhân.
   - `TP_MH`, `TP_CC`, `GDTM`: xem và sửa mọi hồ sơ; có **Dashboard Trưởng phòng** (khối "Đang trình <chức danh của tôi>", lọc/sort theo chuyên viên & tình trạng, ma trận Chuyên viên × Tình trạng, biểu đồ, xuất CSV).
   - `isAdmin` (cờ riêng): quản lý tài khoản, xóa hồ sơ.
+- **Đồng bộ từ thư mục chia sẻ** (chỉ Trưởng phòng/admin, nút trên Dashboard Trưởng phòng): trình duyệt đọc tên file trong thư mục `12_HoSo_TrinhKy` trên ổ `\\HCM-FS01\fs01\...` (người dùng vào qua FortiClient VPN, `<input webkitdirectory>`), **mỗi file là một hồ sơ**, tên hồ sơ trên web = tên file **bỏ đuôi** (.xlsx, .pdf…; nhập kèm đuôi vẫn khớp), **không phân biệt hoa/thường**, bỏ qua khoảng trắng thừa và khác biệt NFC/NFD. Thư mục → tình trạng cấu hình ở `FOLDER_SYNC.RULES` (`Config.gs`), quy tắc dài nhất thắng, thư mục khác bị bỏ qua. Luôn có bước xem trước; **file/thư mục có trên server mà web không có thì bỏ qua** (không tạo mới); file ở nhiều thư mục / trùng tên trên web thì không tự xử lý. Ngày ghi nhận = ngày bấm đồng bộ. Không có đồng bộ tự động (máy chủ Google không vào được mạng nội bộ).
 - Thương hiệu: tên app **CENTRAL PROCUREMENT DEPARTMENT**, logo CENTRAL, màu navy `#1E2B59` + cam `#F16314` (biến `--navy-900`, `--accent` trong `Styles.html`).
 - Giao diện theo **style ERP của công ty người dùng**: trang đăng nhập nền navy "Hello!", topbar trắng có nút pill "Dashboard", sidebar xanh navy, thẻ "THAM SỐ" (ô lọc có nhãn nhỏ), "TỔNG QUAN" (ô tròn màu + nhãn), bảng chi tiết có thanh phân trang xám.
 
@@ -31,6 +32,7 @@ Web app nội bộ theo dõi tình trạng trình duyệt hồ sơ của một t
 | `src/Auth.gs` | Hash SHA-256 nhiều vòng + salt, phiên trong CacheService (6h), `canEditSubmission_` |
 | `src/Submissions.gs` | `bootstrap_` (gửi toàn bộ dữ liệu cho client), tạo/cập nhật/xóa hồ sơ |
 | `src/Admin.gs` | CRUD tài khoản, đặt lại mật khẩu |
+| `src/FolderSync.gs` | `applyFolderSync_` (action `folderSync`): kiểm tra lại & ghi thay đổi từ đồng bộ thư mục; lần đồng bộ gần nhất lưu ở Script Properties `LAST_FOLDER_SYNC` |
 | `src/Setup.gs` | `setup()`, `resetAdminPassword()` — chỉ chủ sở hữu chạy từ editor (`requireOwner_`) |
 | `src/Index.html` / `Styles.html` / `App.html` | SPA vanilla JS; dashboard & thống kê **tính ở client**; Chart.js 4 từ cdnjs |
 | `src/Brand.html` | Logo CENTRAL nhúng base64 (`.brand-logo`, `.brand-mark`) — **file sinh tự động** từ `assets/` bằng `node dev/build-brand.js`, không sửa tay |

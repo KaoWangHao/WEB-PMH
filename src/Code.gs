@@ -22,6 +22,7 @@ var API_ACTIONS_ = {
   createSub:      function (user, p) { return createSubmission_(user, p); },
   updateSub:      function (user, p) { return updateSubmission_(user, p); },
   deleteSub:      function (user, p) { return deleteSubmission_(user, p); },
+  folderSync:     function (user, p) { return applyFolderSync_(user, p); },
   changePassword: function (user, p) { return changePassword_(user, p); },
   listUsers:      function (user) { return listUsers_(user); },
   createUser:     function (user, p) { return createUser_(user, p); },
