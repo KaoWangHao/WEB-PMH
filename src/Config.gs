@@ -9,6 +9,8 @@ var APP_CONFIG = {
   LOGO_URL: '',
   // Icon tab trình duyệt (Apps Script chỉ nhận link ảnh công khai, không nhận data URI).
   FAVICON_URL: 'https://raw.githubusercontent.com/KaoWangHao/WEB-PMH/main/assets/favicon.png',
+  // Trang cài icon lên màn hình điện thoại (GitHub Pages từ thư mục docs/ của repo).
+  INSTALL_URL: 'https://kaowanghao.github.io/WEB-PMH/',
   // Nội dung hiện khi bấm "Helpdesk" ở trang đăng nhập.
   HELPDESK: 'Vui lòng liên hệ quản trị viên hệ thống để được hỗ trợ.',
   TIMEZONE: 'Asia/Ho_Chi_Minh',
@@ -89,6 +91,7 @@ function publicConfig_() {
     shortName: APP_CONFIG.SHORT_NAME,
     logoUrl: APP_CONFIG.LOGO_URL,
     helpdesk: APP_CONFIG.HELPDESK,
+    installUrl: APP_CONFIG.INSTALL_URL,
     statuses: STATUSES,
     submittingStatuses: SUBMITTING_STATUSES,
     approvedStatus: APPROVED_STATUS,
