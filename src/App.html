@@ -289,20 +289,84 @@
   /* =====================================================================
    * Khung ứng dụng
    * ===================================================================== */
-  function notifications() {
-    var items = [];
-    if (isManagerPos()) {
-      S.subs.filter(function (s) { return s.status === S.me.position; })
-        .sort(function (a, b) { return b._days - a._days; })
-        .forEach(function (s) {
-          items.push({ id: s.id, title: 'Đang trình bạn: ' + s.title, sub: userName(s.owner) + ' · chờ ' + s._days + ' ngày' });
-        });
+  /**
+   * Thông báo (chuông) tính từ History; mỗi dòng History có seq = số dòng trong sheet (tăng dần).
+   *  - 'incoming' (TP.MH / TP.C&C / GĐTM): hồ sơ mới chuyển sang "Đang trình <chức danh của tôi>".
+   *  - 'mine': hồ sơ của tôi bị người khác đổi tình trạng (đồng bộ thư mục, Trưởng phòng cập nhật…) hoặc được tạo từ đồng bộ.
+   * Thay đổi do chính mình làm thì không báo. Gộp theo hồ sơ; "mới" = seq > mốc đã xem (lưu ở server, chỉ tăng khi mở chuông).
+   */
+  function notifData(since) {
+    var me = S.me, pos = isManagerPos() ? me.position : null;
+    var byId = {};
+    S.subs.forEach(function (s) { byId[s.id] = s; });
+    var groups = {};
+    S.hist.forEach(function (h) {
+      if (h.actor === me.username || h.fromStatus === h.toStatus) return;
+      var sub = byId[h.submissionId];
+      if (!sub) return;
+      var kind = pos && h.toStatus === pos ? 'incoming' : sub.owner === me.username ? 'mine' : null;
+      if (!kind) return;
+      var key = kind + '|' + sub.id;
+      var g = groups[key] || (groups[key] = { key: key, kind: kind, sub: sub, last: h, firstNew: null, n: 0 });
+      g.last = h;
+      if (h.seq > since) { if (!g.firstNew) g.firstNew = h; g.n++; }
+    });
+    var list = Object.keys(groups).map(function (k) { return groups[k]; }).sort(function (a, b) { return b.last.seq - a.last.seq; });
+    var fresh = list.filter(function (g) { return g.firstNew; });
+    var ids = {};
+    fresh.forEach(function (g) { ids[g.sub.id] = 1; });
+    var monthAgo = numToIso(dayNum(S.today) - 30);
+    return {
+      fresh: fresh, count: Object.keys(ids).length,
+      recent: list.filter(function (g) { return !g.firstNew && g.last.date >= monthAgo; }).slice(0, 6),
+      maxSeq: S.hist.reduce(function (m, h) { return Math.max(m, h.seq); }, 0)
+    };
+  }
+  function notifUnread() { return S.me && S.hist ? notifData(S.notifSeen || 0).count : 0; }
+  function isSyncNote(note) {
+    var fs = S.cfg.folderSync || {};
+    return !!note && ((fs.note && note.indexOf(fs.note) >= 0) || (fs.createNote && note.indexOf(fs.createNote) >= 0));
+  }
+  function notifItem(g) {
+    var s = g.sub, h = g.firstNew || g.last, isNew = !!g.firstNew;
+    var how = isSyncNote(g.last.note) ? 'đồng bộ thư mục' : 'cập nhật';
+    var line;
+    if (g.kind === 'incoming') {
+      line = typeBadge(s._type) + '<span>' + esc(userName(s.owner)) + '</span>' +
+        (s.status !== g.last.toStatus ? '<span class="nd-arrow">hiện:</span>' + statusBadge(s.status) : '');
+    } else {
+      line = (h.fromStatus ? statusBadge(h.fromStatus) + '<span class="nd-arrow">→</span>' : '<span class="nd-tag">Tạo mới</span>') + statusBadge(s.status);
     }
-    S.subs.filter(function (s) { return s.owner === S.me.username && s.status === 'TRA_LAI'; })
-      .forEach(function (s) {
-        items.push({ id: s.id, title: 'Hồ sơ bị trả lại: ' + s.title, sub: 'Từ ngày ' + fmtDate(s._since) });
-      });
-    return items;
+    return '<button class="nd-item' + (isNew ? ' new' : '') + '" data-act="open-history" data-id="' + esc(s.id) + '" title="Xem lịch sử hồ sơ">' +
+      '<span class="nd-dot" aria-hidden="true"></span><span class="nd-main">' +
+      '<span class="nd-title">' + esc(s.title) + '</span><span class="nd-line">' + line + '</span>' +
+      '<small>' + esc(fmtDate(g.last.date)) + ' · ' + how + ' bởi ' + esc(userName(g.last.actor)) + (g.n > 1 ? ' · ' + g.n + ' lần thay đổi' : '') + '</small>' +
+      '</span></button>';
+  }
+  function notifPanel() {
+    var since = S.notifView != null ? S.notifView : (S.notifSeen || 0);
+    var N = notifData(since);
+    var sec = function (title, items, count) {
+      return items.length ? '<div class="nd-sec">' + esc(title) + (count ? '<span class="nd-count">' + count + ' mới</span>' : '') + '</div>' + items.map(notifItem).join('') : '';
+    };
+    var inc = N.fresh.filter(function (g) { return g.kind === 'incoming'; });
+    var mine = N.fresh.filter(function (g) { return g.kind === 'mine'; });
+    var body = sec('Hồ sơ mới đệ trình đến bạn (' + posLabel(S.me.position) + ')', inc, inc.length) +
+      sec('Hồ sơ của bạn thay đổi tình trạng', mine, mine.length);
+    if (!body) body = '<div class="dd-empty">' + ic('check') + 'Không có thông báo mới.</div>';
+    if (N.recent.length) body += sec('Đã xem gần đây (30 ngày)', N.recent);
+    return '<div class="dropdown notif-dd">' +
+      '<div class="dd-head"><b>Thông báo</b><small>' + (N.count ? N.count + ' hồ sơ có thay đổi mới' : 'Bạn đã xem hết thông báo') +
+      ' · bấm vào hồ sơ để xem lịch sử</small></div><div class="nd-body">' + body + '</div></div>';
+  }
+  /** Mở chuông: giữ mốc cũ để tô "mới" trong lúc đang mở, đồng thời lưu mốc đã xem lên server. */
+  function openNotif() {
+    var maxSeq = S.hist.reduce(function (m, h) { return Math.max(m, h.seq); }, 0);
+    S.notifView = S.notifSeen || 0;
+    if (maxSeq > (S.notifSeen || 0)) {
+      S.notifSeen = maxSeq;
+      call('markNotifSeen', { seq: maxSeq }).catch(function (err) { if (err && err.code === 'AUTH') handleErr(err); });
+    }
   }
 
   function navItems() {
@@ -323,7 +387,7 @@
   }
 
   function renderShell() {
-    var notif = notifications();
+    var unread = notifUnread();
     var me = S.me;
     var nav = navItems().map(function (n) {
       return '<button class="nav-item' + (S.view === n.view ? ' active' : '') + '" data-act="nav" data-view="' + n.view + '">' +
@@ -331,12 +395,7 @@
         (n.count ? '<span class="nav-count">' + n.count + '</span>' : '') + ic('chevRight', 'chev') + '</button>';
     }).join('');
 
-    var notifDd = S.open === 'notif' ? '<div class="dropdown notif-dd">' +
-      '<div class="dd-head"><b>Thông báo</b><small>Hồ sơ cần bạn chú ý</small></div>' +
-      (notif.length ? notif.map(function (n) {
-        return '<button class="dd-item notif-item" data-act="open-history" data-id="' + esc(n.id) + '"><span>' +
-          esc(n.title) + '<small>' + esc(n.sub) + '</small></span></button>';
-      }).join('') : '<div class="dd-empty">Không có thông báo mới.</div>') + '</div>' : '';
+    var notifDd = S.open === 'notif' ? notifPanel() : '';
 
     var userDd = S.open === 'user' ? '<div class="dropdown">' +
       '<div class="dd-head"><b>' + esc(me.displayName) + '</b><small>' + esc(me.username) + ' · ' + esc(posLabel(me.position)) +
@@ -353,8 +412,9 @@
         '<button class="pill-btn" data-act="go-dashboard">Dashboard</button>' +
         '<button class="icon-btn" data-act="reload" title="Tải lại dữ liệu" aria-label="Tải lại dữ liệu">' + ic('refresh') + '</button>' +
         '<button class="icon-btn" data-act="help" title="Hướng dẫn" aria-label="Hướng dẫn">' + ic('help') + '</button>' +
-        '<div class="anchor"><button class="icon-btn" data-act="toggle-dd" data-dd="notif" aria-label="Thông báo">' + ic('bell') +
-          '<span class="badge">' + notif.length + '</span></button>' + notifDd + '</div>' +
+        '<div class="anchor"><button class="icon-btn' + (unread ? ' ringing' : '') + '" data-act="toggle-dd" data-dd="notif" aria-label="Thông báo' + (unread ? ': ' + unread + ' mới' : '') + '"' +
+          ' title="' + (unread ? unread + ' hồ sơ có thay đổi mới' : 'Thông báo') + '">' + ic('bell') +
+          (unread ? '<span class="badge">' + (unread > 99 ? '99+' : unread) + '</span>' : '') + '</button>' + notifDd + '</div>' +
         '<div class="anchor"><button class="user-btn" data-act="toggle-dd" data-dd="user"><span class="avatar">' + esc(initials(me.displayName)) +
           '</span><span class="uname">' + esc(me.username) + '</span>' + ic('chevDown') + '</button>' + userDd + '</div>' +
       '</header>' +
@@ -2530,7 +2590,8 @@
       '<li><b>Báo cáo tổng hợp</b> (Dashboard Trưởng phòng; chuyên viên: mục "Báo cáo tổng hợp"): chọn kỳ <b>Tuần / Tháng / Quý / Năm</b> ở THAM SỐ, bấm ‹ › để lùi/tiến kỳ, "Hiện tại" để về kỳ này. ' +
       'Mỗi ô báo cáo có nút <b>Biểu đồ / Bảng</b>; bấm vào số, cột hoặc miếng biểu đồ để xem danh sách hồ sơ. "Xuất báo cáo (Excel)" tải file .xlsx gồm trang Dashboard (ô số liệu, biểu đồ, bảng dữ liệu) và các trang danh sách hồ sơ (lọc/sắp xếp được).</li>' +
       '<li>Chuyên viên xem được mọi hồ sơ nhưng chỉ sửa hồ sơ của mình. TP.MH, TP.C&amp;C, GĐTM sửa được mọi hồ sơ.</li>' +
-      '<li>Chuông thông báo hiện hồ sơ đang trình bạn và hồ sơ của bạn bị trả lại.</li>' +
+      '<li><b>Chuông thông báo</b>: chuyên viên được báo khi hồ sơ của mình bị người khác đổi tình trạng (đồng bộ thư mục, Trưởng phòng cập nhật…); ' +
+      'TP.MH / TP.C&amp;C / GĐTM được báo khi có hồ sơ mới đệ trình đến mình. Số trên chuông giữ nguyên cho tới khi bạn bấm vào xem (kể cả khi đăng nhập máy khác); web tự cập nhật mỗi 3 phút.</li>' +
       '<li>Ô "Số ngày ở TT hiện tại" chuyển màu cam khi ≥ 7 ngày, đỏ khi ≥ 14 ngày.</li>' +
       '<li>Hồ sơ có cụm <b>"xin ý kiến"</b> trong tên (ví dụ "(Trình xin ý kiến)") được tính là <b>Báo cáo</b>, còn lại là <b>Trình duyệt</b>; lọc theo ô "Loại hồ sơ".</li>' +
       '<li>Bấm <b>Đồng bộ thư mục</b> (ở thẻ THAM SỐ) để cập nhật tình trạng theo thư mục hồ sơ trên ổ chia sẻ — chuyên viên chỉ cập nhật hồ sơ của mình: ' +
@@ -2586,20 +2647,28 @@
   }
 
   function clearSession() {
-    S.token = null; S.me = null; S.adminUsers = null; S.filters = {}; S.viewInit = false;
+    S.token = null; S.me = null; S.adminUsers = null; S.filters = {}; S.viewInit = false; S.notifSeen = null; S.notifView = null;
     store.del('hs_token');
   }
 
   function loadAll(silent) {
     return call('bootstrap').then(function (d) {
+      var sameUser = S.me && S.me.username === d.me.username && S.notifSeen != null;
+      var before = sameUser ? notifUnread() : null;
       S.me = d.me; S.cfg = d.config; S.today = d.today;
       S.users = d.users; S.subs = d.submissions; S.hist = d.history; S.projects = d.projects || [];
       S.folderSync = d.folderSync || null;
+      S.notifSeen = sameUser ? Math.max(S.notifSeen, d.notifSeen || 0) : (d.notifSeen || 0);
       // Mở lại trang (F5): Trưởng phòng vào thẳng Dashboard Trưởng phòng như lúc đăng nhập.
       if (!S.viewInit) { S.viewInit = true; if (d.me.isManager && d.me.position !== 'CV' && S.view === 'home') S.view = 'manager'; }
       derive();
       render();
       if (!silent) document.title = S.cfg.appName;
+      // Thông báo mới (lúc mở web, hoặc khi tự làm mới mỗi 3 phút) → nhắc bằng toast; chuông giữ số cho tới khi mở xem.
+      var after = notifUnread();
+      if (before == null ? after > 0 : after > before) {
+        toast((before == null ? 'Bạn có ' + after : 'Có thêm ' + (after - before)) + ' hồ sơ có thay đổi mới — bấm chuông để xem.');
+      }
     });
   }
 
@@ -2686,7 +2755,11 @@
     },
     'go-dashboard': function () { ACTIONS.nav({ dataset: { view: S.me.isManager ? 'manager' : 'home' } }); },
     'toggle-side': function () { S.collapsed = !S.collapsed; render(); setTimeout(function () { S.charts.forEach(function (c) { c.resize(); }); }, 250); },
-    'toggle-dd': function (el) { S.open = S.open === el.dataset.dd ? null : el.dataset.dd; render(); },
+    'toggle-dd': function (el) {
+      S.open = S.open === el.dataset.dd ? null : el.dataset.dd;
+      if (S.open === 'notif') openNotif();
+      render();
+    },
     'reload': function () { loadAll(true).then(function () { toast('Đã cập nhật dữ liệu mới nhất.'); }).catch(handleErr); },
     'run-report': function () { S.open = null; loadAll(true).then(function () { toast('Đã chạy báo cáo với dữ liệu mới nhất.'); }).catch(handleErr); },
     'help': function () { openHelp(); },
