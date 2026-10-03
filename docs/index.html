@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>CENTRAL PMH</title>
-  <meta name="description" content="Cài icon ứng dụng CENTRAL PROCUREMENT DEPARTMENT lên điện thoại.">
+  <meta name="description" content="Cài ứng dụng CENTRAL PROCUREMENT DEPARTMENT lên điện thoại và máy tính.">
   <meta name="theme-color" content="#1E2B59">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
@@ -66,6 +66,10 @@
       border-radius: 12px; padding: 15px 20px; margin: 0 0 26px;
     }
     .open-btn:hover, .open-btn:focus-visible { background: var(--orange-dark); }
+    button.open-btn { width: 100%; border: 0; font: inherit; font-weight: 700; font-size: 19px; cursor: pointer; margin-bottom: 12px; }
+    .install-btn + .open-btn { background: transparent; border: 2px solid #fff; padding: 13px 20px; }
+    .install-btn + .open-btn:hover { background: rgba(255,255,255,.1); }
+    [hidden] { display: none !important; }
     .card { background: var(--card); border-radius: 14px; padding: 20px 20px 18px; margin-bottom: 16px; }
     .card h2 { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; font-size: 18px; color: var(--navy); }
     .card h2 .tag { font-size: 12px; font-weight: 700; color: var(--orange-dark); background: #FDECE1; border-radius: 10px; padding: 2px 9px; }
@@ -84,10 +88,11 @@
   <div class="wrap">
     <div class="logo-tab"><img src="icons/central-logo.webp" alt="CENTRAL" width="600" height="158"></div>
     <h1>CENTRAL PROCUREMENT DEPARTMENT</h1>
-    <p class="sub">Cài icon ứng dụng lên màn hình điện thoại</p>
+    <p class="sub">Cài ứng dụng lên điện thoại và máy tính</p>
 
     <div class="preview"><img src="icons/icon-192.png" alt=""><div><b>CENTRAL PMH</b>Icon sẽ hiện như thế này trên màn hình chính. Bấm vào là mở thẳng ứng dụng.</div></div>
 
+    <button class="open-btn install-btn" id="install" type="button" hidden>Cài ứng dụng CENTRAL PMH</button>
     <a class="open-btn" id="open" href="#">Mở ứng dụng ngay</a>
 
     <section class="card" id="ios">
@@ -110,6 +115,18 @@
       </ol>
     </section>
 
+    <section class="card" id="desktop">
+      <h2>Máy tính Windows / Mac <span class="tag">Chrome · Edge</span></h2>
+      <ol>
+        <li>Mở trang này bằng <b>Chrome</b> hoặc <b>Microsoft Edge</b>.</li>
+        <li>Bấm nút <span class="k">Cài ứng dụng CENTRAL PMH</span> ở trên. Nếu không thấy nút:
+          <br>– <b>Chrome</b>: bấm biểu tượng <span class="k">Cài đặt</span> (màn hình có mũi tên) ở cuối thanh địa chỉ, hoặc <span class="k">⋮</span> → <span class="k">Truyền, lưu và chia sẻ</span> → <span class="k">Cài đặt trang dưới dạng ứng dụng</span>.
+          <br>– <b>Edge</b>: bấm <span class="k">…</span> → <span class="k">Ứng dụng</span> → <span class="k">Cài đặt trang web này dưới dạng ứng dụng</span>.</li>
+        <li>Bấm <span class="k">Cài đặt</span>. Ứng dụng mở trong cửa sổ riêng và có icon ở Start menu.</li>
+        <li>Muốn ghim: chuột phải icon trên thanh taskbar → <span class="k">Ghim vào thanh tác vụ</span>.</li>
+      </ol>
+    </section>
+
     <p class="note">Đăng nhập bằng tài khoản ứng dụng như trên máy tính.<br>
       Gặp khó khăn? Liên hệ quản trị viên hệ thống.</p>
   </div>
@@ -118,10 +135,27 @@
     // Đưa hướng dẫn của đúng loại máy lên đầu.
     var ua = navigator.userAgent || '';
     var isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    if (!isIOS && /Android/.test(ua)) {
-      var a = document.getElementById('android');
-      a.parentNode.insertBefore(a, document.getElementById('ios'));
-    }
+    var isAndroid = !isIOS && /Android/.test(ua);
+    var first = document.getElementById(isIOS ? 'ios' : isAndroid ? 'android' : 'desktop');
+    first.parentNode.insertBefore(first, document.querySelector('.card'));
+
+    // Chrome/Edge (máy tính, Android): nút cài 1 chạm.
+    var deferred = null;
+    var installBtn = document.getElementById('install');
+    window.addEventListener('beforeinstallprompt', function (e) {
+      e.preventDefault();
+      deferred = e;
+      installBtn.hidden = false;
+    });
+    installBtn.addEventListener('click', function () {
+      if (!deferred) return;
+      deferred.prompt();
+      deferred.userChoice.then(function () { deferred = null; installBtn.hidden = true; });
+    });
+    window.addEventListener('appinstalled', function () {
+      installBtn.hidden = true;
+      installBtn.insertAdjacentHTML('afterend', '<p class="sub">Đã cài xong! Mở <b>CENTRAL PMH</b> từ Start menu hoặc màn hình chính.</p>');
+    });
   </script>
 </body>
 </html>
