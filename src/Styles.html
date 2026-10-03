@@ -307,6 +307,9 @@ button.tile:hover { box-shadow: 0 6px 18px rgba(20, 28, 60, .12); transform: tra
 .table-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 .table-tools .grow { flex: 1; }
 .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+.table-scroll { max-height: min(68vh, 640px); overflow: auto; }
+.table-scroll table.grid thead th { position: sticky; top: 0; z-index: 2; box-shadow: 0 1px 0 var(--line); }
+.card.fullscreen .table-scroll { max-height: calc(100vh - 210px); }
 table.grid { width: 100%; border-collapse: collapse; font-size: 15px; }
 table.grid th {
   background: #F1F3F8; text-align: left; font-weight: 800; color: var(--ink-2); font-size: 13.5px;
