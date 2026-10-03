@@ -68,5 +68,6 @@ Chủ sở hữu mở Apps Script editor, chạy hàm **resetAdminPassword** và
 
 ## Tùy chỉnh
 
-- Tên ứng dụng, logo (`LOGO_URL`), nội dung Helpdesk: `src/Config.gs` → `APP_CONFIG`.
+- Tên ứng dụng, logo (`LOGO_URL`), favicon (`FAVICON_URL`), nội dung Helpdesk: `src/Config.gs` → `APP_CONFIG`.
+- Logo CENTRAL mặc định nhúng base64 trong `src/Brand.html`, sinh từ `assets/` bằng `node dev/build-brand.js` (chạy lại khi thay ảnh).
 - Màu và nhãn tình trạng: `STATUSES` trong `src/Config.gs`.

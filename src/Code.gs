@@ -5,10 +5,12 @@
  */
 
 function doGet() {
-  return HtmlService.createTemplateFromFile('Index')
+  var out = HtmlService.createTemplateFromFile('Index')
     .evaluate()
     .setTitle(APP_CONFIG.APP_NAME)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  if (APP_CONFIG.FAVICON_URL) out.setFaviconUrl(APP_CONFIG.FAVICON_URL);
+  return out;
 }
 
 function include(name) {

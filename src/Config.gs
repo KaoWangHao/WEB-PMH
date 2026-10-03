@@ -3,10 +3,12 @@
  * Có thể chỉnh APP_CONFIG (tên, logo, helpdesk) rồi `clasp push` lại.
  */
 var APP_CONFIG = {
-  APP_NAME: 'HỆ THỐNG THEO DÕI HỒ SƠ',
-  SHORT_NAME: 'HỒ SƠ',
-  // Link ảnh logo công khai (để trống sẽ dùng logo chữ mặc định).
+  APP_NAME: 'CENTRAL PROCUREMENT DEPARTMENT',
+  SHORT_NAME: 'CENTRAL',
+  // Link ảnh logo công khai (để trống sẽ dùng logo CENTRAL nhúng sẵn trong Brand.html).
   LOGO_URL: '',
+  // Icon tab trình duyệt (Apps Script chỉ nhận link ảnh công khai, không nhận data URI).
+  FAVICON_URL: 'https://raw.githubusercontent.com/KaoWangHao/WEB-PMH/main/assets/favicon.png',
   // Nội dung hiện khi bấm "Helpdesk" ở trang đăng nhập.
   HELPDESK: 'Vui lòng liên hệ quản trị viên hệ thống để được hỗ trợ.',
   TIMEZONE: 'Asia/Ho_Chi_Minh',
