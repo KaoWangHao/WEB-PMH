@@ -702,6 +702,7 @@
       paramsCard('manager', { owners: true }) +
       overviewCard('manager', scope) +
       matrixCard(scope) +
+      submitReportCard() +
       chartsCard('manager', rows, { byOwner: true }) +
       detailCard('manager', rows, { title: 'Bảng tổng hợp hồ sơ của chuyên viên', showOwner: true });
   }
@@ -931,6 +932,162 @@
       '<p class="muted" style="margin:10px 0 0">Bấm vào một ô để lọc bảng tổng hợp theo chuyên viên và tình trạng tương ứng.</p>'
       : '<div class="empty">Chưa có chuyên viên nào.</div>';
     return card('manager-matrix', 'Chuyên viên × Tình trạng', body, { collapsible: true });
+  }
+
+  /* ---------- Hồ sơ đệ trình theo chuyên viên × khoảng thời gian ---------- */
+  var GRANS = [['week', 'Tuần'], ['month', 'Tháng'], ['quarter', 'Quý'], ['year', 'Năm']];
+  function periodKey(iso, g) {
+    if (g === 'week') return bucketKey(iso, 'week');
+    if (g === 'month') return iso.slice(0, 7);
+    if (g === 'quarter') return iso.slice(0, 4) + '-Q' + (Math.floor((+iso.slice(5, 7) - 1) / 3) + 1);
+    return iso.slice(0, 4);
+  }
+  function nextPeriod(k, g) {
+    if (g === 'week') return numToIso(dayNum(k) + 7);
+    if (g === 'month') { var y = +k.slice(0, 4), m = +k.slice(5, 7) + 1; if (m > 12) { m = 1; y++; } return y + '-' + ('0' + m).slice(-2); }
+    if (g === 'quarter') { var yq = +k.slice(0, 4), q = +k.slice(6) + 1; if (q > 4) { q = 1; yq++; } return yq + '-Q' + q; }
+    return String(+k + 1);
+  }
+  function isoWeek(iso) {
+    var n = dayNum(iso);
+    var dow = (new Date(n * 86400000).getUTCDay() + 6) % 7;
+    var thu = n - dow + 3;
+    var y = new Date(thu * 86400000).getUTCFullYear();
+    return { week: Math.floor((thu - dayNum(y + '-01-01')) / 7) + 1, year: y };
+  }
+  function periodLabel(k, g, long) {
+    if (g === 'week') {
+      var w = isoWeek(k);
+      return (long ? 'Tuần ' : 'T') + w.week + (long ? '/' + w.year + ' (từ ' + fmtDate(k) + ')' : '<small>' + k.slice(8, 10) + '/' + k.slice(5, 7) + '</small>');
+    }
+    if (g === 'month') return (long ? 'Tháng ' : '') + k.slice(5, 7) + '/' + k.slice(0, 4);
+    if (g === 'quarter') return (long ? 'Quý ' : '') + k.slice(6) + '/' + k.slice(0, 4);
+    return (long ? 'Năm ' : '') + k;
+  }
+
+  function submitReportCard() {
+    var f = getFilter('manager');
+    var g = S.subGran || 'month';
+    var q = norm(f.q).trim();
+    var rows = S.subs.filter(function (s) {
+      if (!s.submittedAt) return false;
+      if (f.from && s.submittedAt < f.from) return false;
+      if (f.to && s.submittedAt > f.to) return false;
+      if (f.owners.length && f.owners.indexOf(s.owner) < 0) return false;
+      if (q && norm(s.id + ' ' + s.title + ' ' + userName(s.owner) + ' ' + s.owner).indexOf(q) < 0) return false;
+      return true;
+    });
+    var owners = ownerOptions().map(function (o) { return o.value; });
+    if (f.owners.length) owners = owners.filter(function (o) { return f.owners.indexOf(o) >= 0; });
+
+    var minSub = rows.reduce(function (m, s) { return !m || s.submittedAt < m ? s.submittedAt : m; }, '');
+    var from = f.from || minSub || S.today, to = f.to || S.today;
+    var periods = [];
+    if (from <= to) {
+      var k = periodKey(from, g), end = periodKey(to, g), guard = 0;
+      while (k <= end && guard++ < 400) { periods.push(k); k = nextPeriod(k, g); }
+    }
+    var tooMany = periods.length > 60;
+
+    var cell = {}, rowTot = {}, colTot = {};
+    rows.forEach(function (s) {
+      var p = periodKey(s.submittedAt, g);
+      var key = s.owner + '|' + p;
+      (cell[key] = cell[key] || []).push(s);
+      (rowTot[s.owner] = rowTot[s.owner] || []).push(s);
+      (colTot[p] = colTot[p] || []).push(s);
+    });
+    var sel = S.subSel;
+
+    function sbar(list) {
+      var c = {};
+      list.forEach(function (s) { c[s.status] = (c[s.status] || 0) + 1; });
+      return '<span class="sbar">' + S.cfg.statuses.filter(function (st) { return c[st.code]; }).map(function (st) {
+        return '<i style="width:' + (c[st.code] * 100 / list.length) + '%;background:' + st.color + '"></i>';
+      }).join('') + '</span>';
+    }
+    function tip(list) {
+      var c = {};
+      list.forEach(function (s) { c[s.status] = (c[s.status] || 0) + 1; });
+      return S.cfg.statuses.filter(function (st) { return c[st.code]; }).map(function (st) { return st.short + ': ' + c[st.code]; }).join('\n');
+    }
+    function numCell(list, owner, period, cls) {
+      var on = sel && sel.owner === owner && sel.period === period;
+      if (!list || !list.length) return '<td class="cell zero' + (cls ? ' ' + cls : '') + '">0</td>';
+      return '<td class="cell' + (on ? ' on' : '') + (cls ? ' ' + cls : '') + '" data-act="sub-cell" data-owner="' + esc(owner) + '" data-period="' + esc(period) + '" title="' + esc(tip(list)) + '">' +
+        '<b>' + list.length + '</b>' + sbar(list) + '</td>';
+    }
+
+    var seg = '<div class="seg" role="group" aria-label="Khoảng thời gian">' + GRANS.map(function (m) {
+      return '<button class="' + (g === m[0] ? 'on' : '') + '" data-act="sub-gran" data-gran="' + m[0] + '">' + m[1] + '</button>';
+    }).join('') + '</div>';
+
+    var table;
+    if (!owners.length) table = '<div class="empty">Chưa có chuyên viên nào.</div>';
+    else if (tooMany) table = '<div class="empty">Khoảng thời gian quá dài để xem theo ' + esc(GRANS.filter(function (m) { return m[0] === g; })[0][1].toLowerCase()) + ' (' + periods.length + ' cột). Hãy chọn Tháng/Quý/Năm hoặc thu hẹp "Từ ngày – Đến ngày" ở THAM SỐ.</div>';
+    else {
+      table = '<div class="table-wrap"><table class="grid matrix subrep"><thead><tr><th class="sticky-col">Chuyên viên</th>' +
+        periods.map(function (p) {
+          return '<th class="center' + (colTot[p] ? ' clickable' : '') + '"' + (colTot[p] ? ' data-act="sub-cell" data-owner="*" data-period="' + p + '"' : '') + '>' + periodLabel(p, g) + '</th>';
+        }).join('') + '<th class="num">Tổng</th></tr></thead><tbody>' +
+        owners.map(function (o) {
+          return '<tr><td class="nowrap sticky-col' + (rowTot[o] ? ' clickable' : '') + '"' + (rowTot[o] ? ' data-act="sub-cell" data-owner="' + esc(o) + '" data-period="*"' : '') + '><b>' + esc(userName(o)) + '</b></td>' +
+            periods.map(function (p) { return numCell(cell[o + '|' + p], o, p); }).join('') +
+            numCell(rowTot[o], o, '*', 'total') + '</tr>';
+        }).join('') + '</tbody><tfoot><tr><td class="sticky-col">Tổng cộng</td>' +
+        periods.map(function (p) { return numCell(colTot[p], '*', p); }).join('') +
+        numCell(rows, '*', '*', 'total') + '</tr></tfoot></table></div>';
+    }
+
+    var legend = '<div class="sub-legend">' + S.cfg.statuses.map(function (st) {
+      return '<span><span class="dot" style="background:' + st.color + '"></span>' + esc(st.short) + '</span>';
+    }).join('') + '</div>';
+    var rangeText = (f.from ? fmtDate(f.from) : 'Từ đầu') + ' – ' + (f.to ? fmtDate(f.to) : fmtDate(S.today));
+    var body = '<div class="table-tools"><span class="muted">Theo <b>ngày trình</b> (lần đầu chuyển sang "Đang trình …"): ' + rangeText +
+      ' · <b>' + fmtNum(rows.length) + '</b> hồ sơ</span><div class="grow"></div>' + seg + '</div>' + table + legend +
+      '<p class="muted" style="margin:8px 0 0">Mỗi ô: số hồ sơ đệ trình, thanh màu là tình trạng hiện tại. Bấm vào ô, tên chuyên viên hoặc tiêu đề cột để xem chi tiết.</p>' +
+      submitDetail(rows, g);
+    return card('manager-submit', 'Hồ sơ đệ trình theo chuyên viên', body, { collapsible: true });
+  }
+
+  function submitDetail(rows, g) {
+    var sel = S.subSel;
+    if (!sel) return '';
+    var list = rows.filter(function (s) {
+      return (sel.owner === '*' || s.owner === sel.owner) && (sel.period === '*' || periodKey(s.submittedAt, g) === sel.period);
+    }).sort(function (a, b) {
+      return statusOf(a.status).order - statusOf(b.status).order || (a.submittedAt < b.submittedAt ? -1 : a.submittedAt > b.submittedAt ? 1 : 0);
+    });
+    S.lastRows['manager-submit'] = { rows: list, showOwner: true };
+    var who = sel.owner === '*' ? 'Tất cả chuyên viên' : userName(sel.owner);
+    var when = sel.period === '*' ? 'Cả khoảng thời gian' : periodLabel(sel.period, g, true);
+    var counts = {};
+    list.forEach(function (s) { counts[s.status] = (counts[s.status] || 0) + 1; });
+    var chips = S.cfg.statuses.map(function (st) {
+      return '<span class="status-badge sub-chip' + (counts[st.code] ? '' : ' none') + '"><span class="dot" style="background:' + st.color + '"></span>' +
+        esc(st.short) + ' <b>' + (counts[st.code] || 0) + '</b></span>';
+    }).join('');
+    var bodyRows = '';
+    var cur = null;
+    list.forEach(function (s) {
+      if (s.status !== cur) {
+        cur = s.status;
+        bodyRows += '<tr class="group-row"><td colspan="8">' + statusBadge(cur) + ' <span class="muted">' + counts[cur] + ' hồ sơ</span></td></tr>';
+      }
+      bodyRows += '<tr><td class="code">' + esc(s.id) + '</td><td class="title-cell">' + esc(s.title) + '</td>' +
+        '<td class="nowrap">' + esc(userName(s.owner)) + '</td><td class="nowrap">' + fmtDate(s.submittedAt) + '</td>' +
+        '<td>' + statusBadge(s.status) + '</td><td class="nowrap">' + fmtDate(s.approvedAt) + '</td>' +
+        '<td class="num">' + waitCell(s) + '</td><td>' + rowActions(s) + '</td></tr>';
+    });
+    if (!list.length) bodyRows = '<tr><td colspan="8" class="empty">Không có hồ sơ nào.</td></tr>';
+    return '<div class="sub-detail" id="sub-detail"><div class="sub-detail-head"><h3 class="sub-title" style="margin:0">Chi tiết: ' + esc(who) + ' · ' + esc(when) +
+      ' <span class="muted">(' + list.length + ' hồ sơ)</span></h3><div class="grow"></div>' +
+      '<button class="secondary-btn" data-act="export-csv" data-view="manager-submit">' + ic('download') + 'Xuất CSV</button>' +
+      '<button class="ghost-btn" data-act="sub-close" aria-label="Đóng chi tiết">' + ic('x') + '</button></div>' +
+      '<div class="sub-chips">' + chips + '</div>' +
+      '<div class="table-wrap"><table class="grid"><thead><tr><th>Mã HS</th><th>Tên hồ sơ</th><th>Chuyên viên</th><th>Ngày trình</th>' +
+      '<th>Tình trạng hiện tại</th><th>Ngày duyệt</th><th class="num">Số ngày ở TT hiện tại</th><th></th></tr></thead><tbody>' +
+      bodyRows + '</tbody></table></div></div>';
   }
 
   function activityCard(mine) {
@@ -1296,6 +1453,15 @@
     },
     'page': function (el) { var pg = S.pages[el.dataset.view]; pg.page += Number(el.dataset.dir); render(); },
     'group-by': function (el) { S.groupBy[el.dataset.view] = el.dataset.mode; render(); },
+    'sub-gran': function (el) { S.subGran = el.dataset.gran; S.subSel = null; render(); },
+    'sub-cell': function (el) {
+      var o = el.dataset.owner, p = el.dataset.period;
+      S.subSel = S.subSel && S.subSel.owner === o && S.subSel.period === p ? null : { owner: o, period: p };
+      render();
+      var d = document.getElementById('sub-detail');
+      if (d) d.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    },
+    'sub-close': function () { S.subSel = null; render(); },
     'card-collapse': function (el) { var st = S.cardState[el.dataset.key] = S.cardState[el.dataset.key] || {}; st.collapsed = !st.collapsed; render(); },
     'card-full': function (el) { var st = S.cardState[el.dataset.key] = S.cardState[el.dataset.key] || {}; st.full = !st.full; render(); },
     'export-csv': function (el) { exportCsv(el.dataset.view); },
