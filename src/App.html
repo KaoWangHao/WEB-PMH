@@ -141,6 +141,38 @@
     for (var i = 0; i < kws.length; i++) if (t.indexOf(' ' + kws[i] + ' ') >= 0) return 'BC';
     return 'TD';
   }
+  /** Số dự án ở đầu tên hồ sơ: "231_TDTower…" → ['231'], "267&285_EBV…" → ['267','285'], "273. Vin…" → ['273']. */
+  function projectCodesOf(title) {
+    var m = String(title || '').match(/^\s*(\d{1,6}(?:\s*[&+,]\s*\d{1,6})*)(?=[\s_.\-]|$)/);
+    if (!m) return [];
+    var out = [];
+    m[1].split(/\s*[&+,]\s*/).forEach(function (c) { c = String(parseInt(c, 10)); if (out.indexOf(c) < 0) out.push(c); });
+    return out;
+  }
+  function matchProjects(s, list) {
+    if (!list || !list.length) return true;
+    if (!s._projects.length) return list.indexOf('-') >= 0;
+    return s._projects.some(function (c) { return list.indexOf(c) >= 0; });
+  }
+  function projectSort(a, b) { return a === '-' ? 1 : b === '-' ? -1 : Number(a) - Number(b); }
+  function projectLabel(code) {
+    if (code === '-') return 'Chưa gắn dự án';
+    var p = S.projMap[code];
+    return code + '_' + (p ? p.name : '(chưa có trong danh mục)');
+  }
+  function projectCell(code) {
+    if (code === '-') return '<span class="muted">Chưa gắn dự án</span>';
+    var p = S.projMap[code];
+    return '<span class="proj-code">' + esc(code) + '</span>' + (p ? esc(p.name) : '<span class="muted">chưa có trong danh mục</span>');
+  }
+  function projectsCell(s) {
+    return s._projects.length ? s._projects.map(projectCell).join('<br>') : '<span class="muted">—</span>';
+  }
+  function projectOptions() {
+    var seen = {};
+    S.subs.forEach(function (s) { (s._projects.length ? s._projects : ['-']).forEach(function (c) { seen[c] = 1; }); });
+    return Object.keys(seen).sort(projectSort).map(function (c) { return { value: c, label: projectLabel(c) }; });
+  }
   function typeOf(code) { return S.typeMap[code] || { code: code, label: code, color: '#9AA0AE' }; }
   function typeBadge(code) {
     var t = typeOf(code);
@@ -175,6 +207,8 @@
     S.cfg.statuses.forEach(function (s, i) { s.order = i; S.statusMap[s.code] = s; });
     S.userMap = {};
     S.users.forEach(function (u) { S.userMap[u.username] = u; });
+    S.projMap = {};
+    (S.projects || []).forEach(function (p) { S.projMap[p.code] = p; });
     S.typeMap = {};
     (S.cfg.docTypes || []).forEach(function (t, i) { t.order = i; S.typeMap[t.code] = t; });
     var bySub = {};
@@ -183,6 +217,7 @@
     S.histBySub = bySub;
     S.subs.forEach(function (s) {
       s._type = docTypeOf(s.title);
+      s._projects = projectCodesOf(s.title);
       var changes = (bySub[s.id] || []).filter(function (h) { return h.fromStatus !== h.toStatus; });
       var segs = [];
       for (var i = 0; i < changes.length; i++) {
@@ -199,7 +234,7 @@
 
   function defaultFilter(view) {
     var from = (view === 'home' || view === 'manager') ? S.today.slice(0, 4) + '-01-01' : '';
-    return { from: from, to: '', owners: [], statuses: [], types: [], q: '' };
+    return { from: from, to: '', owners: [], statuses: [], types: [], projects: [], q: '' };
   }
   function getFilter(view) {
     if (!S.filters[view]) S.filters[view] = defaultFilter(view);
@@ -210,9 +245,11 @@
     var q = norm(f.q).trim();
     var ignoreStatus = ignore === true || !!(ignore && ignore.status);
     var ignoreType = !!(ignore && ignore.type);
+    var ignoreProject = !!(ignore && ignore.project);
     var types = f.types || [];
     return rows.filter(function (s) {
       if (!ignoreType && types.length && types.indexOf(s._type) < 0) return false;
+      if (!ignoreProject && !matchProjects(s, f.projects)) return false;
       if (f.from && s.createdAt < f.from) return false;
       if (f.to && s.createdAt > f.to) return false;
       if (f.owners.length && f.owners.indexOf(s.owner) < 0) return false;
@@ -466,6 +503,7 @@
       (opts.owners ? multiField(view, 'owners', 'Chuyên viên', ownerOptions()) : '') +
       multiField(view, 'statuses', 'Tình trạng hồ sơ', statusOptions()) +
       multiField(view, 'types', 'Loại hồ sơ', typeOptions()) +
+      multiField(view, 'projects', 'Dự án', projectOptions()) +
       '<div class="field"><div class="fbody"><label for="' + qId + '">Tên / mã hồ sơ</label>' +
         '<input type="text" id="' + qId + '" data-input="filter-q" data-view="' + view + '" placeholder="Nhập để tìm…" value="' + esc(f.q) + '"></div></div>' +
       '<button class="primary-btn" data-act="run-report">' + ic('report') + 'Chạy báo cáo</button>' +
@@ -509,6 +547,7 @@
     { key: 'id', label: 'Mã HS', sort: function (s) { return s.id; } },
     { key: 'title', label: 'Tên hồ sơ', sort: function (s) { return norm(s.title); } },
     { key: '_type', label: 'Loại', sort: function (s) { return typeOf(s._type).order; } },
+    { key: '_projects', label: 'Dự án', sort: function (s) { return s._projects.length ? ('000000' + s._projects[0]).slice(-6) : 'zzzzzz'; } },
     { key: 'owner', label: 'Chuyên viên', sort: function (s) { return norm(userName(s.owner)); }, ownerOnly: true },
     { key: 'status', label: 'Tình trạng', sort: function (s) { return statusOf(s.status).order; } },
     { key: 'createdAt', label: 'Ngày tạo', sort: function (s) { return s.createdAt; } },
@@ -552,6 +591,7 @@
 
     var body = sorted.map(function (s) {
       return '<tr><td class="code">' + esc(s.id) + '</td><td class="title-cell">' + esc(s.title) + '</td><td>' + typeBadge(s._type) + '</td>' +
+        '<td class="proj-cell">' + projectsCell(s) + '</td>' +
         (opts.showOwner ? '<td class="nowrap">' + esc(userName(s.owner)) + '</td>' : '') +
         '<td>' + statusBadge(s.status) + '</td>' +
         '<td class="nowrap">' + fmtDate(s.createdAt) + '</td><td class="nowrap">' + fmtDate(s.submittedAt) + '</td>' +
@@ -782,6 +822,7 @@
       paramsCard('manager', { owners: true }) +
       overviewCard('manager', scope) +
       typeCard(applyFilter(S.subs, f, { status: true, type: true })) +
+      projectCard(applyFilter(S.subs, f, { status: true, type: true, project: true })) +
       matrixCard(scope) +
       submitReportCard() +
       chartsCard('manager', rows, { byOwner: true }) +
@@ -1109,6 +1150,7 @@
   function submitReportCard() {
     var f = getFilter('manager');
     var g = S.subGran || 'month';
+    var dim = S.subDim || 'owner';
     var q = norm(f.q).trim();
     var rows = S.subs.filter(function (s) {
       if (!s.submittedAt) return false;
@@ -1116,11 +1158,21 @@
       if (f.to && s.submittedAt > f.to) return false;
       if (f.owners.length && f.owners.indexOf(s.owner) < 0) return false;
       if (f.types && f.types.length && f.types.indexOf(s._type) < 0) return false;
+      if (!matchProjects(s, f.projects)) return false;
       if (q && norm(s.id + ' ' + s.title + ' ' + userName(s.owner) + ' ' + s.owner).indexOf(q) < 0) return false;
       return true;
     });
-    var owners = ownerOptions().map(function (o) { return o.value; });
-    if (f.owners.length) owners = owners.filter(function (o) { return f.owners.indexOf(o) >= 0; });
+    var keysOf = function (s) { return dim === 'owner' ? [s.owner] : (s._projects.length ? s._projects : ['-']); };
+    var rowList;
+    if (dim === 'owner') {
+      rowList = ownerOptions().map(function (o) { return o.value; });
+      if (f.owners.length) rowList = rowList.filter(function (o) { return f.owners.indexOf(o) >= 0; });
+    } else {
+      var seen = {};
+      rows.forEach(function (s) { keysOf(s).forEach(function (k) { seen[k] = 1; }); });
+      rowList = Object.keys(seen).sort(projectSort);
+    }
+    var rowLabel = function (k) { return dim === 'owner' ? esc(userName(k)) : projectCell(k); };
 
     var minSub = rows.reduce(function (m, s) { return !m || s.submittedAt < m ? s.submittedAt : m; }, '');
     var from = f.from || minSub || S.today, to = f.to || S.today;
@@ -1134,12 +1186,13 @@
     var cell = {}, rowTot = {}, colTot = {};
     rows.forEach(function (s) {
       var p = periodKey(s.submittedAt, g);
-      var key = s.owner + '|' + p;
-      (cell[key] = cell[key] || []).push(s);
-      (rowTot[s.owner] = rowTot[s.owner] || []).push(s);
+      keysOf(s).forEach(function (r) {
+        (cell[r + '|' + p] = cell[r + '|' + p] || []).push(s);
+        (rowTot[r] = rowTot[r] || []).push(s);
+      });
       (colTot[p] = colTot[p] || []).push(s);
     });
-    var sel = S.subSel;
+    var sel = S.subSel && S.subSel.dim === dim ? S.subSel : null;
 
     function sbar(list) {
       var c = {};
@@ -1153,29 +1206,33 @@
       list.forEach(function (s) { c[s.status] = (c[s.status] || 0) + 1; });
       return S.cfg.statuses.filter(function (st) { return c[st.code]; }).map(function (st) { return st.short + ': ' + c[st.code]; }).join('\n');
     }
-    function numCell(list, owner, period, cls) {
-      var on = sel && sel.owner === owner && sel.period === period;
+    function numCell(list, row, period, cls) {
+      var on = sel && sel.row === row && sel.period === period;
       if (!list || !list.length) return '<td class="cell zero' + (cls ? ' ' + cls : '') + '">0</td>';
-      return '<td class="cell' + (on ? ' on' : '') + (cls ? ' ' + cls : '') + '" data-act="sub-cell" data-owner="' + esc(owner) + '" data-period="' + esc(period) + '" title="' + esc(tip(list)) + '">' +
+      return '<td class="cell' + (on ? ' on' : '') + (cls ? ' ' + cls : '') + '" data-act="sub-cell" data-row="' + esc(row) + '" data-period="' + esc(period) + '" title="' + esc(tip(list)) + '">' +
         '<b>' + list.length + '</b>' + sbar(list) + '</td>';
     }
 
     var seg = '<div class="seg" role="group" aria-label="Khoảng thời gian">' + GRANS.map(function (m) {
       return '<button class="' + (g === m[0] ? 'on' : '') + '" data-act="sub-gran" data-gran="' + m[0] + '">' + m[1] + '</button>';
     }).join('') + '</div>';
+    var segDim = '<div class="seg" role="group" aria-label="Xem theo">' + [['owner', 'Chuyên viên'], ['project', 'Dự án']].map(function (m) {
+      return '<button class="' + (dim === m[0] ? 'on' : '') + '" data-act="sub-dim" data-dim="' + m[0] + '">' + m[1] + '</button>';
+    }).join('') + '</div>';
+    var dimName = dim === 'owner' ? 'Chuyên viên' : 'Dự án';
 
     var table;
-    if (!owners.length) table = '<div class="empty">Chưa có chuyên viên nào.</div>';
+    if (!rowList.length) table = '<div class="empty">' + (dim === 'owner' ? 'Chưa có chuyên viên nào.' : 'Không có hồ sơ đệ trình nào trong khoảng thời gian này.') + '</div>';
     else if (tooMany) table = '<div class="empty">Khoảng thời gian quá dài để xem theo ' + esc(GRANS.filter(function (m) { return m[0] === g; })[0][1].toLowerCase()) + ' (' + periods.length + ' cột). Hãy chọn Tháng/Quý/Năm hoặc thu hẹp "Từ ngày – Đến ngày" ở THAM SỐ.</div>';
     else {
-      table = '<div class="table-wrap"><table class="grid matrix subrep"><thead><tr><th class="sticky-col">Chuyên viên</th>' +
+      table = '<div class="table-wrap' + (dim === 'project' ? ' table-scroll' : '') + '"><table class="grid matrix subrep"><thead><tr><th class="sticky-col">' + dimName + '</th>' +
         periods.map(function (p) {
-          return '<th class="center' + (colTot[p] ? ' clickable' : '') + '"' + (colTot[p] ? ' data-act="sub-cell" data-owner="*" data-period="' + p + '"' : '') + '>' + periodLabel(p, g) + '</th>';
+          return '<th class="center' + (colTot[p] ? ' clickable' : '') + '"' + (colTot[p] ? ' data-act="sub-cell" data-row="*" data-period="' + p + '"' : '') + '>' + periodLabel(p, g) + '</th>';
         }).join('') + '<th class="num">Tổng</th></tr></thead><tbody>' +
-        owners.map(function (o) {
-          return '<tr><td class="nowrap sticky-col' + (rowTot[o] ? ' clickable' : '') + '"' + (rowTot[o] ? ' data-act="sub-cell" data-owner="' + esc(o) + '" data-period="*"' : '') + '><b>' + esc(userName(o)) + '</b></td>' +
-            periods.map(function (p) { return numCell(cell[o + '|' + p], o, p); }).join('') +
-            numCell(rowTot[o], o, '*', 'total') + '</tr>';
+        rowList.map(function (r) {
+          return '<tr><td class="nowrap sticky-col' + (rowTot[r] ? ' clickable' : '') + '"' + (rowTot[r] ? ' data-act="sub-cell" data-row="' + esc(r) + '" data-period="*"' : '') + '><b>' + rowLabel(r) + '</b></td>' +
+            periods.map(function (p) { return numCell(cell[r + '|' + p], r, p); }).join('') +
+            numCell(rowTot[r], r, '*', 'total') + '</tr>';
         }).join('') + '</tbody><tfoot><tr><td class="sticky-col">Tổng cộng</td>' +
         periods.map(function (p) { return numCell(colTot[p], '*', p); }).join('') +
         numCell(rows, '*', '*', 'total') + '</tr></tfoot></table></div>';
@@ -1186,22 +1243,23 @@
     }).join('') + '</div>';
     var rangeText = (f.from ? fmtDate(f.from) : 'Từ đầu') + ' – ' + (f.to ? fmtDate(f.to) : fmtDate(S.today));
     var body = '<div class="table-tools"><span class="muted">Theo <b>ngày trình</b> (lần đầu chuyển sang "Đang trình …"): ' + rangeText +
-      ' · <b>' + fmtNum(rows.length) + '</b> hồ sơ</span><div class="grow"></div>' + seg + '</div>' + table + legend +
-      '<p class="muted" style="margin:8px 0 0">Mỗi ô: số hồ sơ đệ trình, thanh màu là tình trạng hiện tại. Bấm vào ô, tên chuyên viên hoặc tiêu đề cột để xem chi tiết.</p>' +
-      submitDetail(rows, g);
-    return card('manager-submit', 'Hồ sơ đệ trình theo chuyên viên', body, { collapsible: true });
+      ' · <b>' + fmtNum(rows.length) + '</b> hồ sơ</span><div class="grow"></div>' + segDim + seg + '</div>' + table + legend +
+      '<p class="muted" style="margin:8px 0 0">Mỗi ô: số hồ sơ đệ trình, thanh màu là tình trạng hiện tại. Bấm vào ô, tên ' + dimName.toLowerCase() + ' hoặc tiêu đề cột để xem chi tiết.' +
+      (dim === 'project' ? ' Dự án lấy theo số đầu tên hồ sơ; hồ sơ ghi nhiều dự án (vd "267&amp;285_…") được tính cho từng dự án, dòng Tổng cộng chỉ đếm mỗi hồ sơ 1 lần.' : '') + '</p>' +
+      submitDetail(rows, g, dim, keysOf);
+    return card('manager-submit', 'Hồ sơ đệ trình theo ' + dimName.toLowerCase(), body, { collapsible: true });
   }
 
-  function submitDetail(rows, g) {
+  function submitDetail(rows, g, dim, keysOf) {
     var sel = S.subSel;
-    if (!sel) return '';
+    if (!sel || sel.dim !== dim) return '';
     var list = rows.filter(function (s) {
-      return (sel.owner === '*' || s.owner === sel.owner) && (sel.period === '*' || periodKey(s.submittedAt, g) === sel.period);
+      return (sel.row === '*' || keysOf(s).indexOf(sel.row) >= 0) && (sel.period === '*' || periodKey(s.submittedAt, g) === sel.period);
     }).sort(function (a, b) {
       return statusOf(a.status).order - statusOf(b.status).order || (a.submittedAt < b.submittedAt ? -1 : a.submittedAt > b.submittedAt ? 1 : 0);
     });
     S.lastRows['manager-submit'] = { rows: list, showOwner: true };
-    var who = sel.owner === '*' ? 'Tất cả chuyên viên' : userName(sel.owner);
+    var who = sel.row === '*' ? (dim === 'owner' ? 'Tất cả chuyên viên' : 'Tất cả dự án') : (dim === 'owner' ? userName(sel.row) : projectLabel(sel.row));
     var when = sel.period === '*' ? 'Cả khoảng thời gian' : periodLabel(sel.period, g, true);
     var counts = {};
     list.forEach(function (s) { counts[s.status] = (counts[s.status] || 0) + 1; });
@@ -1214,22 +1272,62 @@
     list.forEach(function (s) {
       if (s.status !== cur) {
         cur = s.status;
-        bodyRows += '<tr class="group-row"><td colspan="9">' + statusBadge(cur) + ' <span class="muted">' + counts[cur] + ' hồ sơ</span></td></tr>';
+        bodyRows += '<tr class="group-row"><td colspan="10">' + statusBadge(cur) + ' <span class="muted">' + counts[cur] + ' hồ sơ</span></td></tr>';
       }
       bodyRows += '<tr><td class="code">' + esc(s.id) + '</td><td class="title-cell">' + esc(s.title) + '</td><td>' + typeBadge(s._type) + '</td>' +
+        '<td class="proj-cell">' + projectsCell(s) + '</td>' +
         '<td class="nowrap">' + esc(userName(s.owner)) + '</td><td class="nowrap">' + fmtDate(s.submittedAt) + '</td>' +
         '<td>' + statusBadge(s.status) + '</td><td class="nowrap">' + fmtDate(s.approvedAt) + '</td>' +
         '<td class="num">' + waitCell(s) + '</td><td>' + rowActions(s) + '</td></tr>';
     });
-    if (!list.length) bodyRows = '<tr><td colspan="9" class="empty">Không có hồ sơ nào.</td></tr>';
+    if (!list.length) bodyRows = '<tr><td colspan="10" class="empty">Không có hồ sơ nào.</td></tr>';
     return '<div class="sub-detail" id="sub-detail"><div class="sub-detail-head"><h3 class="sub-title" style="margin:0">Chi tiết: ' + esc(who) + ' · ' + esc(when) +
       ' <span class="muted">(' + list.length + ' hồ sơ)</span></h3><div class="grow"></div>' +
       '<button class="secondary-btn" data-act="export-csv" data-view="manager-submit">' + ic('download') + 'Xuất CSV</button>' +
       '<button class="ghost-btn" data-act="sub-close" aria-label="Đóng chi tiết">' + ic('x') + '</button></div>' +
       '<div class="sub-chips">' + chips + '</div>' +
-      '<div class="table-wrap"><table class="grid"><thead><tr><th>Mã HS</th><th>Tên hồ sơ</th><th>Loại</th><th>Chuyên viên</th><th>Ngày trình</th>' +
+      '<div class="table-wrap"><table class="grid"><thead><tr><th>Mã HS</th><th>Tên hồ sơ</th><th>Loại</th><th>Dự án</th><th>Chuyên viên</th><th>Ngày trình</th>' +
       '<th>Tình trạng hiện tại</th><th>Ngày duyệt</th><th class="num">Số ngày ở TT hiện tại</th><th></th></tr></thead><tbody>' +
       bodyRows + '</tbody></table></div></div>';
+  }
+
+  /* ---------- Hồ sơ theo dự án ---------- */
+  function projectCard(scope) {
+    var f = getFilter('manager');
+    var types = S.cfg.docTypes || [];
+    var groups = {};
+    scope.forEach(function (s) {
+      (s._projects.length ? s._projects : ['-']).forEach(function (k) { (groups[k] = groups[k] || []).push(s); });
+    });
+    var keys = Object.keys(groups).sort(function (a, b) {
+      return (a === '-') - (b === '-') || groups[b].length - groups[a].length || projectSort(a, b);
+    });
+    var isSub = function (s) { return S.cfg.submittingStatuses.indexOf(s.status) >= 0; };
+    function link(list, code, extra, strong) {
+      var n = list.length;
+      return n ? '<td class="cell" data-act="proj-filter" data-project="' + esc(code) + '"' + (extra || '') + '>' + (strong ? '<b>' + n + '</b>' : n) + '</td>' : '<td class="cell zero">0</td>';
+    }
+    var body;
+    if (!keys.length) body = '<div class="empty">Không có hồ sơ nào phù hợp bộ lọc.</div>';
+    else {
+      body = '<div class="table-wrap table-scroll"><table class="grid matrix"><thead><tr><th>Dự án</th>' +
+        types.map(function (t) { return '<th class="center">' + typeBadge(t.code) + '</th>'; }).join('') +
+        '<th class="center">Đang trình</th><th class="center">Trả lại</th><th class="center">Đã duyệt</th><th class="num">Tổng</th></tr></thead><tbody>' +
+        keys.map(function (k) {
+          var list = groups[k];
+          return '<tr><td class="proj-name">' + projectCell(k) + '</td>' +
+            types.map(function (t) { return link(list.filter(function (s) { return s._type === t.code; }), k, ' data-type="' + t.code + '"'); }).join('') +
+            link(list.filter(isSub), k, ' data-statuses="' + S.cfg.submittingStatuses.join(',') + '"') +
+            link(list.filter(function (s) { return s.status === 'TRA_LAI'; }), k, ' data-statuses="TRA_LAI"') +
+            link(list.filter(function (s) { return s.status === S.cfg.approvedStatus; }), k, ' data-statuses="' + S.cfg.approvedStatus + '"') +
+            link(list, k, '', true) + '</tr>';
+        }).join('') + '</tbody></table></div>';
+    }
+    var unassigned = (groups['-'] || []).length;
+    body += '<p class="muted" style="margin:10px 0 0"><b>' + keys.filter(function (k) { return k !== '-'; }).length + '</b> dự án có hồ sơ' +
+      (unassigned ? ' · <b>' + unassigned + '</b> hồ sơ chưa gắn dự án (tên không bắt đầu bằng số dự án)' : '') +
+      '. Dự án lấy theo số đầu tên hồ sơ, vd "231_TDTower_…" → 231_Truong Dinh. Bấm vào số để lọc bảng tổng hợp bên dưới.</p>';
+    return card('manager-projects', 'Hồ sơ theo dự án', body, { collapsible: true });
   }
 
   function activityCard(mine) {
@@ -1278,7 +1376,31 @@
       rows + '</tbody></table></div>' +
       '<p class="muted" style="margin:12px 0 0">Chỉ quản trị viên tạo được tài khoản. Người dùng mới phải đổi mật khẩu tạm ở lần đăng nhập đầu tiên. ' +
       'Chuyên viên chỉ sửa được hồ sơ của mình; TP.MH, TP.C&amp;C, GĐTM và quản trị viên sửa được mọi hồ sơ.</p>';
-    return card('admin-users', 'Danh sách tài khoản', body, { tools: tools });
+    return card('admin-users', 'Danh sách tài khoản', body, { tools: tools }) + adminProjectsCard();
+  }
+
+  function adminProjectsCard() {
+    var counts = {};
+    S.subs.forEach(function (s) { s._projects.forEach(function (c) { counts[c] = (counts[c] || 0) + 1; }); });
+    var q = norm(S.projQ || '').trim();
+    var list = (S.projects || []).filter(function (p) { return !q || norm(p.code + ' ' + p.name).indexOf(q) >= 0; });
+    var rows = list.map(function (p) {
+      return '<tr' + (p.active ? '' : ' class="inactive"') + '><td class="code">' + esc(p.code) + '</td><td><b>' + esc(p.name) + '</b></td>' +
+        '<td class="num">' + (counts[p.code] || 0) + '</td>' +
+        '<td>' + (p.active ? '<span class="status-badge"><span class="dot" style="background:#7CB342"></span>Đang dùng</span>'
+                           : '<span class="status-badge"><span class="dot" style="background:#9AA0AE"></span>Ngừng dùng</span>') + '</td>' +
+        '<td><div class="row-actions"><button data-act="edit-project" data-code="' + esc(p.code) + '">' + ic('edit') + 'Sửa</button></div></td></tr>';
+    }).join('') || '<tr><td colspan="5" class="empty">Không có dự án nào phù hợp.</td></tr>';
+    var tools = '<button class="secondary-btn" data-act="import-projects">' + ic('clipboard') + 'Dán danh sách</button>' +
+      '<button class="primary-btn" style="min-height:40px;font-size:16px;padding:0 18px" data-act="new-project">' + ic('plus') + 'Thêm dự án</button>';
+    var body = '<div class="table-tools"><div class="field" style="flex:0 1 360px;min-height:52px"><div class="fbody"><label for="proj-q">Tìm dự án</label>' +
+      '<input type="text" id="proj-q" data-input="proj-q" placeholder="Số hoặc tên dự án…" value="' + esc(S.projQ || '') + '"></div></div>' +
+      '<div class="grow"></div><span class="muted"><b>' + (S.projects || []).length + '</b> dự án</span></div>' +
+      '<div class="table-wrap table-scroll"><table class="grid"><thead><tr><th>STT</th><th>Tên dự án</th><th class="num">Số hồ sơ</th><th>Trạng thái</th><th></th></tr></thead><tbody>' +
+      rows + '</tbody></table></div>' +
+      '<p class="muted" style="margin:12px 0 0">Hồ sơ được gắn dự án theo <b>số đầu tên hồ sơ</b> (vd "231_TDTower_…" → dự án 231). ' +
+      'Có dự án mới: bấm <b>Thêm dự án</b>, hoặc <b>Dán danh sách</b> tên các thư mục dự án dạng "STT_TÊN DỰ ÁN" (mỗi dòng 1 dự án; dự án đã có sẽ được cập nhật tên).</p>';
+    return card('admin-projects', 'Danh mục dự án', body, { tools: tools });
   }
 
   /* =====================================================================
@@ -1394,6 +1516,26 @@
       '<div class="modal-foot"><button class="secondary-btn" data-act="close-modal">Hủy</button>' +
       '<button class="primary-btn" style="min-height:42px;font-size:16px" data-act="submit-reset" data-u="' + esc(username) + '">' + ic('check') + 'Đặt lại</button></div>');
   }
+  function openProjectForm(code) {
+    var p = code ? (S.projects || []).filter(function (x) { return x.code === code; })[0] : null;
+    openModal(modalHead(p ? 'Sửa dự án' : 'Thêm dự án') + '<div class="modal-body"><div id="m-err"></div>' +
+      '<div class="form-row"><label for="m-pcode">STT dự án</label><input type="text" id="m-pcode" inputmode="numeric" value="' + esc(p ? p.code : '') + '"' + (p ? ' readonly' : '') + ' placeholder="vd 296">' +
+      '<div class="help">Là số ở đầu tên thư mục dự án và đầu tên hồ sơ.</div></div>' +
+      '<div class="form-row"><label for="m-pname">Tên dự án</label><input type="text" id="m-pname" maxlength="150" value="' + esc(p ? p.name : '') + '" placeholder="vd ChungCu_DaiNhat_PhanThan"></div>' +
+      '<div class="form-row"><label class="check"><input type="checkbox" id="m-pactive"' + (!p || p.active ? ' checked' : '') + '>Đang dùng</label></div></div>' +
+      '<div class="modal-foot"><button class="secondary-btn" data-act="close-modal">Hủy</button>' +
+      '<button class="primary-btn" style="min-height:42px;font-size:16px" data-act="submit-project" data-mode="' + (p ? 'edit' : 'new') + '">' + ic('check') + 'Lưu</button></div>');
+  }
+  function openProjectImport() {
+    openModal(modalHead('Dán danh sách dự án') + '<div class="modal-body"><div id="m-err"></div>' +
+      '<div class="form-row"><label for="m-plines">Mỗi dòng một dự án, dạng STT_TÊN DỰ ÁN</label>' +
+      '<textarea id="m-plines" style="min-height:220px;font-family:Consolas,monospace;font-size:14px" placeholder="296_TenDuAnMoi\n297_TenDuAnKhac"></textarea>' +
+      '<div class="help">Có thể copy tên các thư mục dự án rồi dán vào đây. Dự án chưa có sẽ được thêm, dự án đã có (cùng STT) sẽ được cập nhật tên.</div></div></div>' +
+      '<div class="modal-foot"><button class="secondary-btn" data-act="close-modal">Hủy</button>' +
+      '<button class="primary-btn" style="min-height:42px;font-size:16px" data-act="submit-import">' + ic('check') + 'Nhập</button></div>', true);
+  }
+  function applyProjects(list) { S.projects = list || []; derive(); render(); }
+
   function openHelp() {
     openModal(modalHead('Hướng dẫn sử dụng') + '<div class="modal-body">' +
       '<p class="sub-title">Tình trạng hồ sơ</p><div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px">' +
@@ -1463,7 +1605,7 @@
   function loadAll(silent) {
     return call('bootstrap').then(function (d) {
       S.me = d.me; S.cfg = d.config; S.today = d.today;
-      S.users = d.users; S.subs = d.submissions; S.hist = d.history;
+      S.users = d.users; S.subs = d.submissions; S.hist = d.history; S.projects = d.projects || [];
       S.folderSync = d.folderSync || null;
       derive();
       render();
@@ -1579,7 +1721,8 @@
       S.open = null; render();
     },
     'ms-all': function (el) {
-      var opts = el.dataset.field === 'owners' ? ownerOptions() : el.dataset.field === 'types' ? typeOptions() : statusOptions();
+      var opts = el.dataset.field === 'owners' ? ownerOptions() : el.dataset.field === 'types' ? typeOptions() :
+        el.dataset.field === 'projects' ? projectOptions() : statusOptions();
       getFilter(el.dataset.view)[el.dataset.field] = opts.map(function (o) { return o.value; });
       resetPage(el.dataset.view); render();
     },
@@ -1589,6 +1732,15 @@
       var code = el.dataset.status;
       f.statuses = !code || (f.statuses.length === 1 && f.statuses[0] === code) ? [] : [code];
       resetPage(el.dataset.view); render();
+    },
+    'proj-filter': function (el) {
+      var f = getFilter('manager');
+      f.projects = [el.dataset.project];
+      f.types = el.dataset.type ? [el.dataset.type] : [];
+      f.statuses = el.dataset.statuses ? el.dataset.statuses.split(',') : [];
+      resetPage('manager'); render();
+      var target = document.getElementById('card-manager-detail');
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     },
     'type-filter': function (el) {
       var f = getFilter('manager');
@@ -1617,9 +1769,10 @@
     },
     'group-by': function (el) { S.groupBy[el.dataset.view] = el.dataset.mode; render(); },
     'sub-gran': function (el) { S.subGran = el.dataset.gran; S.subSel = null; render(); },
+    'sub-dim': function (el) { S.subDim = el.dataset.dim; S.subSel = null; render(); },
     'sub-cell': function (el) {
-      var o = el.dataset.owner, p = el.dataset.period;
-      S.subSel = S.subSel && S.subSel.owner === o && S.subSel.period === p ? null : { owner: o, period: p };
+      var r = el.dataset.row, p = el.dataset.period, dim = S.subDim || 'owner';
+      S.subSel = S.subSel && S.subSel.dim === dim && S.subSel.row === r && S.subSel.period === p ? null : { dim: dim, row: r, period: p };
       render();
       var d = document.getElementById('sub-detail');
       if (d) d.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -1682,6 +1835,28 @@
         .catch(function (err) { busy(el, false); if (err.code === 'AUTH') handleErr(err); else modalError(err.message); });
     },
     'new-user': function () { openUserForm(null); },
+    'new-project': function () { openProjectForm(null); },
+    'edit-project': function (el) { openProjectForm(el.dataset.code); },
+    'import-projects': function () { openProjectImport(); },
+    'submit-project': function (el) {
+      var isNew = el.dataset.mode === 'new';
+      busy(el, true);
+      call('saveProject', { isNew: isNew, code: document.getElementById('m-pcode').value, name: document.getElementById('m-pname').value,
+                            active: document.getElementById('m-pactive').checked })
+        .then(function (r) { closeModal(); toast(isNew ? 'Đã thêm dự án.' : 'Đã lưu dự án.'); applyProjects(r.projects); })
+        .catch(function (err) { busy(el, false); if (err.code === 'AUTH') handleErr(err); else modalError(err.message); });
+    },
+    'submit-import': function (el) {
+      busy(el, true);
+      call('importProjects', { text: document.getElementById('m-plines').value })
+        .then(function (r) {
+          closeModal();
+          toast('Đã nhập: ' + r.added + ' dự án mới, ' + r.updated + ' cập nhật, ' + r.unchanged + ' không đổi' +
+            (r.invalid.length ? '; bỏ qua ' + r.invalid.length + ' dòng sai dạng (vd "' + r.invalid[0] + '")' : '') + '.', r.invalid.length ? 'err' : '');
+          applyProjects(r.projects);
+        })
+        .catch(function (err) { busy(el, false); if (err.code === 'AUTH') handleErr(err); else modalError(err.message); });
+    },
     'edit-user': function (el) { openUserForm(el.dataset.u); },
     'reset-user': function (el) { openResetPassword(el.dataset.u); },
     'gen-pw': function (el) { document.getElementById(el.dataset.target).value = randomPassword(); },
@@ -1774,6 +1949,9 @@
     } else if (el.dataset && el.dataset.input === 'filter-q') {
       clearTimeout(qTimer);
       qTimer = setTimeout(function () { getFilter(el.dataset.view).q = el.value; resetPage(el.dataset.view); render(); }, 250);
+    } else if (el.dataset && el.dataset.input === 'proj-q') {
+      clearTimeout(qTimer);
+      qTimer = setTimeout(function () { S.projQ = el.value; render(); }, 200);
     } else if (el.id === 'side-q') {
       S.sideQ = el.value;
     }
@@ -1806,12 +1984,12 @@
   function exportCsv(view) {
     var data = S.lastRows[view];
     if (!data || !data.rows.length) { toast('Không có dữ liệu để xuất.', 'err'); return; }
-    var head = ['Mã HS', 'Tên hồ sơ', 'Loại'];
+    var head = ['Mã HS', 'Tên hồ sơ', 'Loại', 'Dự án'];
     if (data.showOwner) head.push('Chuyên viên', 'Tài khoản');
     head.push('Tình trạng', 'Ngày tạo', 'Ngày trình', 'Ngày cập nhật', 'Ngày duyệt', 'Số ngày ở tình trạng hiện tại');
     var lines = [head];
     data.rows.forEach(function (s) {
-      var r = [s.id, s.title, typeOf(s._type).label];
+      var r = [s.id, s.title, typeOf(s._type).label, s._projects.map(projectLabel).join('; ')];
       if (data.showOwner) r.push(userName(s.owner), s.owner);
       r.push(statusOf(s.status).label, fmtDate(s.createdAt), fmtDate(s.submittedAt), fmtDate(s.updatedAt), fmtDate(s.approvedAt),
         s.status === S.cfg.approvedStatus ? '' : s._days);

@@ -41,6 +41,7 @@ function bootstrap_(user) {
     users: users,
     submissions: readTable_('Submissions').map(serializeSubmission_),
     history: readTable_('History').map(serializeHistory_),
+    projects: listProjects_(),
     folderSync: lastFolderSync_()
   };
 }

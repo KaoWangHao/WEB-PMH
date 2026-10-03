@@ -44,6 +44,7 @@ function setup() {
     sh.getRange(1, 1, sh.getMaxRows(), headers.length).setNumberFormat('@');
     sh.setFrozenRows(1);
   });
+  seedProjects_();
   var defaultSheet = ss.getSheetByName('Sheet1') || ss.getSheetByName('Trang tính1');
   if (defaultSheet && ss.getSheets().length > 1) ss.deleteSheet(defaultSheet);
 
