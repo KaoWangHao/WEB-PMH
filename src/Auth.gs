@@ -56,7 +56,8 @@ function publicUser_(rec) {
     isAdmin: toBool_(rec.isAdmin),
     isManager: isManagerPosition_(String(rec.position)) || toBool_(rec.isAdmin),
     active: toBool_(rec.active),
-    mustChangePassword: toBool_(rec.mustChangePassword)
+    mustChangePassword: toBool_(rec.mustChangePassword),
+    initials: String(rec.initials || '')
   };
 }
 

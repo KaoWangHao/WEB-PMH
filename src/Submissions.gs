@@ -30,9 +30,11 @@ function serializeHistory_(rec) {
 
 /** Dữ liệu cho mọi màn hình. Mọi người dùng đều được xem tất cả hồ sơ (chỉ sửa theo quyền). */
 function bootstrap_(user) {
+  ensureUserInitials_();
   var users = readTable_('Users').map(function (u) {
     var p = publicUser_(u);
-    return { username: p.username, displayName: p.displayName, position: p.position, isAdmin: p.isAdmin, active: p.active };
+    return { username: p.username, displayName: p.displayName, position: p.position, isAdmin: p.isAdmin, active: p.active,
+             initials: p.initials };
   });
   return {
     me: user,

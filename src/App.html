@@ -882,7 +882,8 @@
   }
   function syncTitle() {
     var last = S.folderSync;
-    return (last ? 'Lần đồng bộ gần nhất: ' + last.at + ' bởi ' + userName(last.by) + ' (' + last.changed + ' hồ sơ đổi tình trạng). '
+    return (last ? 'Lần đồng bộ gần nhất: ' + last.at + ' bởi ' + userName(last.by) + ' (' + last.changed + ' hồ sơ đổi tình trạng' +
+        (last.reassigned ? ', ' + last.reassigned + ' đổi chuyên viên' : '') + '). '
                  : 'Chưa đồng bộ lần nào. ') +
       'Kết nối VPN, bấm nút rồi chọn thư mục ' + S.cfg.folderSync.rootName + ' trên ổ chia sẻ; web chỉ đọc tên file và cho xem trước trước khi cập nhật.';
   }
@@ -1012,6 +1013,16 @@
       return webByKey[k] ? k : null;
     }
 
+    // Ký hiệu chuyên viên ở cuối tên (vd "..._TP_CQH", "... (CQH)") → tài khoản có ký hiệu đó.
+    var byInitials = {};
+    S.users.forEach(function (u) { if (u.initials && u.active) byInitials[String(u.initials).toUpperCase()] = u.username; });
+    var INI_RE = /(?:[\s_\-]+\(?|\()([A-Za-z]{2,6})\)?\s*$/;
+    function trailingInitials(base) {
+      var m = base.match(INI_RE);
+      var code = m && m[1].toUpperCase();
+      return code && byInitials[code] ? { code: code, owner: byInitials[code], rest: base.slice(0, m.index) } : null;
+    }
+
     var items = {};
     var total = 0, ignored = 0, notOnWeb = 0;
     for (var i = 0; i < files.length; i++) {
@@ -1025,13 +1036,18 @@
       var found = false;
       for (var d = rule.end; d <= parts.length; d++) {
         var isFile = d === parts.length;
-        var key = webKey(isFile ? name : parts[d], isFile);
+        var raw = isFile ? name : parts[d];
+        var ini = trailingInitials(isFile ? stripExt(raw) : raw);
+        var key = webKey(raw, isFile);
+        // Tên trên web có thể không kèm ký hiệu cuối: thử lại với phần tên trước ký hiệu.
+        if (!key && ini) key = webKey(ini.rest, false);
         if (!key) continue;
         found = true;
         var where = (isFile ? parts : parts.slice(0, d + 1)).join('/') + (isFile ? '/' + name : '/');
-        var it = items[key] || (items[key] = { key: key, title: key, statuses: [], paths: [] });
+        var it = items[key] || (items[key] = { key: key, title: key, statuses: [], paths: [], owners: [], codes: [] });
         if (it.statuses.indexOf(rule.status) < 0) it.statuses.push(rule.status);
         if (it.paths.indexOf(where) < 0) it.paths.push(where);
+        if (ini && it.owners.indexOf(ini.owner) < 0) { it.owners.push(ini.owner); it.codes.push(ini.code); }
       }
       if (!found) notOnWeb++;
     }
@@ -1039,19 +1055,21 @@
       throw new Error('Không thấy file nào trong các thư mục tình trạng. Hãy chọn đúng thư mục ' + S.cfg.folderSync.rootName + '.');
     }
 
-    var plan = { changes: [], conflicts: [], dupWeb: [], same: 0, total: total, ignored: ignored, notOnWeb: notOnWeb, notInFolder: 0 };
+    var plan = { changes: [], conflicts: [], dupWeb: [], owners: [], ownerAmbiguous: 0, same: 0, total: total, ignored: ignored, notOnWeb: notOnWeb, notInFolder: 0 };
     Object.keys(items).forEach(function (k) {
       var it = items[k];
       var web = webByKey[k];
       if (web.length > 1) { plan.dupWeb.push({ item: it, subs: web }); return; }
       var sub = web[0];
+      if (it.owners.length > 1) plan.ownerAmbiguous++;
+      else if (it.owners.length === 1 && it.owners[0] !== sub.owner) plan.owners.push({ item: it, sub: sub, owner: it.owners[0], code: it.codes[0] });
       if (it.statuses.length > 1) { plan.conflicts.push({ item: it, sub: sub }); return; }
       if (it.statuses[0] === sub.status) plan.same++;
       else plan.changes.push({ item: it, sub: sub, status: it.statuses[0] });
     });
     plan.notInFolder = S.subs.filter(function (s) { return !items[syncKey(s.title)]; }).length;
     var byTitle = function (a, b) { return a.item.title.localeCompare(b.item.title, 'vi'); };
-    plan.changes.sort(byTitle); plan.conflicts.sort(byTitle); plan.dupWeb.sort(byTitle);
+    plan.changes.sort(byTitle); plan.conflicts.sort(byTitle); plan.dupWeb.sort(byTitle); plan.owners.sort(byTitle);
     S.syncPlan = plan;
     return plan;
   }
@@ -1075,6 +1093,15 @@
           '<td>' + statusBadge(c.sub.status) + '</td><td>→</td><td>' + statusBadge(c.status) + '</td></tr>';
       }).join('') + '</tbody></table></div>' : '<div class="empty">Không có hồ sơ nào cần đổi tình trạng.</div>';
 
+    var ownersTbl = plan.owners.length ? '<div class="table-wrap"><table class="grid"><thead><tr><th class="center">Đổi</th>' +
+      '<th>Hồ sơ</th><th>Chuyên viên trên web</th><th></th><th>Theo ký hiệu cuối tên file</th></tr></thead><tbody>' +
+      plan.owners.map(function (c, i) {
+        return '<tr><td class="center"><input type="checkbox" data-sync-owner="' + i + '"></td>' +
+          '<td class="title-cell">' + esc(c.sub.title) + '<div class="code">' + esc(c.sub.id) + '</div></td>' +
+          '<td class="nowrap">' + esc(userName(c.sub.owner)) + '</td><td>→</td>' +
+          '<td class="nowrap"><b>' + esc(userName(c.owner)) + '</b> <span class="proj-code">' + esc(c.code) + '</span></td></tr>';
+      }).join('') + '</tbody></table></div>' : '';
+
     var conflicts = plan.conflicts.length ? '<div class="table-wrap"><table class="grid"><thead><tr><th>Hồ sơ</th><th>Trên web</th><th>Chọn tình trạng</th></tr></thead><tbody>' +
       plan.conflicts.map(function (c, i) {
         return '<tr><td class="title-cell">' + esc(c.sub.title) + '<div class="code">' + c.item.paths.map(esc).join('<br>') + '</div></td>' +
@@ -1089,11 +1116,15 @@
       '<div><small>File đã đọc</small>' + fmtNum(plan.total) + '</div>' +
       '<div><small>Đổi tình trạng</small>' + plan.changes.length + '</div>' +
       '<div><small>Không đổi</small>' + plan.same + '</div>' +
+      '<div><small>Lệch chuyên viên</small>' + plan.owners.length + '</div>' +
       '<div><small>Không có trên web (bỏ qua)</small>' + fmtNum(plan.notOnWeb) + '</div>' +
       '<div><small>Thư mục khác (bỏ qua)</small>' + fmtNum(plan.ignored) + '</div></div>';
 
     openModal(modalHead('Xem trước đồng bộ') + '<div class="modal-body"><div id="m-err"></div>' + summary +
       syncSection('Đổi tình trạng', plan.changes.length, changes, true) +
+      (plan.owners.length ? syncSection('Đổi chuyên viên phụ trách (theo ký hiệu cuối tên file)', plan.owners.length, ownersTbl, true,
+        'Ký hiệu ở cuối tên file khác chuyên viên đang phụ trách trên web. Mặc định giữ nguyên — tích ô "Đổi" để chuyển hồ sơ sang chuyên viên theo ký hiệu.' +
+        (plan.ownerAmbiguous ? ' (' + plan.ownerAmbiguous + ' hồ sơ có nhiều ký hiệu khác nhau ở các file cùng tên: bỏ qua.)' : '')) : '') +
       (plan.conflicts.length ? syncSection('Nằm ở nhiều thư mục', plan.conflicts.length, conflicts, true,
         'File cùng tên nằm ở nhiều thư mục tình trạng. Chọn tình trạng đúng hoặc bỏ qua.') : '') +
       (plan.dupWeb.length ? syncSection('Trùng tên trên web (bỏ qua)', plan.dupWeb.length, dup, false,
@@ -1115,7 +1146,11 @@
       var c = plan.conflicts[+el.dataset.syncConflict];
       if (el.value && el.value !== c.sub.status) changes.push({ id: c.sub.id, from: c.sub.status, status: el.value });
     });
-    return changes;
+    var owners = q('[data-sync-owner]:checked').map(function (el) {
+      var c = plan.owners[+el.dataset.syncOwner];
+      return { id: c.sub.id, from: c.sub.owner, owner: c.owner };
+    });
+    return { changes: changes, owners: owners };
   }
 
   function matrixCard(scope) {
@@ -1450,13 +1485,14 @@
         : u.locked ? '<span class="status-badge"><span class="dot" style="background:#DD5A4C"></span>Tạm khóa (sai mật khẩu)</span>'
         : u.mustChangePassword ? '<span class="status-badge"><span class="dot" style="background:#E9A23B"></span>Chờ đổi mật khẩu</span>'
         : '<span class="status-badge"><span class="dot" style="background:#7CB342"></span>Hoạt động</span>';
-      return '<tr><td class="code">' + esc(u.username) + '</td><td><b>' + esc(u.displayName) + '</b></td><td>' + esc(posLabel(u.position)) + '</td>' +
+      return '<tr><td class="code">' + esc(u.username) + '</td><td><b>' + esc(u.displayName) + '</b></td>' +
+        '<td>' + (u.initials ? '<span class="proj-code">' + esc(u.initials) + '</span>' : '<span class="muted">—</span>') + '</td><td>' + esc(posLabel(u.position)) + '</td>' +
         '<td>' + (u.isAdmin ? 'Có' : '—') + '</td><td>' + state + '</td><td class="nowrap">' + fmtDate(u.createdAt) + '</td>' +
         '<td><div class="row-actions"><button data-act="edit-user" data-u="' + esc(u.username) + '">' + ic('edit') + 'Sửa</button>' +
         '<button data-act="reset-user" data-u="' + esc(u.username) + '">' + ic('key') + 'Đặt lại MK</button></div></td></tr>';
     }).join('');
     var tools = '<button class="primary-btn" style="min-height:40px;font-size:16px;padding:0 18px" data-act="new-user">' + ic('plus') + 'Thêm tài khoản</button>';
-    var body = '<div class="table-wrap"><table class="grid"><thead><tr><th>Tài khoản</th><th>Họ tên</th><th>Chức danh</th><th>Admin</th><th>Trạng thái</th><th>Ngày tạo</th><th></th></tr></thead><tbody>' +
+    var body = '<div class="table-wrap"><table class="grid"><thead><tr><th>Tài khoản</th><th>Họ tên</th><th>Ký hiệu</th><th>Chức danh</th><th>Admin</th><th>Trạng thái</th><th>Ngày tạo</th><th></th></tr></thead><tbody>' +
       rows + '</tbody></table></div>' +
       '<p class="muted" style="margin:12px 0 0">Chỉ quản trị viên tạo được tài khoản. Người dùng mới phải đổi mật khẩu tạm ở lần đăng nhập đầu tiên. ' +
       'Chuyên viên chỉ sửa được hồ sơ của mình; TP.MH, TP.C&amp;C, GĐTM và quản trị viên sửa được mọi hồ sơ.</p>';
@@ -1581,6 +1617,8 @@
       '<div class="form-row"><label for="m-username">Tên đăng nhập</label><input type="text" id="m-username" autocomplete="off" value="' + esc(u ? u.username : '') + '"' + (u ? ' readonly' : '') + '>' +
       (u ? '' : '<div class="help">3–32 ký tự: chữ thường không dấu, số, dấu chấm, gạch dưới, gạch ngang.</div>') + '</div>' +
       '<div class="form-row"><label for="m-name">Họ tên</label><input type="text" id="m-name" value="' + esc(u ? u.displayName : '') + '"></div>' +
+      '<div class="form-row"><label for="m-initials">Ký hiệu trên tên file (không bắt buộc)</label><input type="text" id="m-initials" maxlength="6" style="text-transform:uppercase" placeholder="vd CQH" value="' + esc(u ? u.initials || '' : '') + '">' +
+      '<div class="help">2–6 chữ cái không dấu, đặt ở cuối tên file (vd "..._TP_CQH"). Khi đồng bộ thư mục, hồ sơ có ký hiệu này được đề xuất gán cho tài khoản này.</div></div>' +
       '<div class="form-row"><label for="m-pos">Chức danh</label>' + positionSelect(u ? u.position : 'CV') +
       '<div class="help">TP.MH, TP.C&amp;C, GĐTM xem được Dashboard Trưởng phòng và sửa mọi hồ sơ.</div></div>' +
       '<div class="form-row"><label class="check"><input type="checkbox" id="m-admin"' + (u && u.isAdmin ? ' checked' : '') + '>Quyền quản trị (quản lý tài khoản)</label></div>' +
@@ -1633,7 +1671,8 @@
       '<li>Ô "Số ngày ở TT hiện tại" chuyển màu cam khi ≥ 7 ngày, đỏ khi ≥ 14 ngày.</li>' +
       '<li>Hồ sơ có cụm <b>"xin ý kiến"</b> trong tên (ví dụ "(Trình xin ý kiến)") được tính là <b>Báo cáo</b>, còn lại là <b>Trình duyệt</b>; lọc theo ô "Loại hồ sơ".</li>' +
       '<li>Trưởng phòng dùng <b>Đồng bộ từ thư mục</b> (Dashboard Trưởng phòng) để cập nhật tình trạng theo thư mục hồ sơ trên ổ chia sẻ: ' +
-      'tên hồ sơ trên web phải trùng tên file (không cần đuôi file, không phân biệt chữ hoa/thường); file không có trên web được bỏ qua.</li>' +
+      'tên hồ sơ trên web phải trùng tên file (không cần đuôi file, không phân biệt chữ hoa/thường); file không có trên web được bỏ qua. ' +
+      'Nếu cuối tên file có ký hiệu chuyên viên (vd "..._CQH") khác người đang phụ trách, bảng xem trước cho chọn đổi chuyên viên.</li>' +
       (S.cfg.installUrl ? '<li>Cài icon <b>CENTRAL PMH</b> lên màn hình điện thoại: mở <a href="' + esc(S.cfg.installUrl) + '" target="_blank" rel="noopener">' +
         esc(S.cfg.installUrl) + '</a> trên điện thoại và làm theo hướng dẫn.</li>' : '') + '</ul></div>' +
       '<div class="modal-foot"><button class="secondary-btn" data-act="close-modal">Đóng</button></div>');
@@ -1757,7 +1796,7 @@
     render();
   }
   function upsertPublicUser(u) {
-    var pub = { username: u.username, displayName: u.displayName, position: u.position, isAdmin: u.isAdmin, active: u.active };
+    var pub = { username: u.username, displayName: u.displayName, position: u.position, isAdmin: u.isAdmin, active: u.active, initials: u.initials || '' };
     var i = S.users.findIndex(function (x) { return x.username === u.username; });
     if (i >= 0) S.users[i] = pub; else S.users.push(pub);
     var j = S.adminUsers.findIndex(function (x) { return x.username === u.username; });
@@ -1868,10 +1907,10 @@
     'close-modal': function () { closeModal(); },
     'folder-sync': function () { startFolderSync(); },
     'submit-sync': function (el) {
-      var changes = collectSync();
-      if (!changes.length) { modalError('Không có thay đổi nào được chọn.'); return; }
+      var picked = collectSync();
+      if (!picked.changes.length && !picked.owners.length) { modalError('Không có thay đổi nào được chọn.'); return; }
       busy(el, true);
-      call('folderSync', { changes: changes }).then(function (r) {
+      call('folderSync', picked).then(function (r) {
         closeModal();
         r.submissions.forEach(function (s) {
           var i = S.subs.findIndex(function (x) { return x.id === s.id; });
@@ -1880,7 +1919,8 @@
         r.history.forEach(function (h) { S.hist.push(h); });
         S.folderSync = r.folderSync;
         derive(); render();
-        var msg = 'Đồng bộ xong: ' + r.folderSync.changed + ' hồ sơ đổi tình trạng.';
+        var msg = 'Đồng bộ xong: ' + r.folderSync.changed + ' hồ sơ đổi tình trạng' +
+          (r.folderSync.reassigned ? ', ' + r.folderSync.reassigned + ' hồ sơ đổi chuyên viên' : '') + '.';
         if (r.skipped.length) msg += ' Bỏ qua ' + r.skipped.length + ': ' + r.skipped.slice(0, 3).map(function (s) { return s.title + ' (' + s.reason + ')'; }).join('; ');
         toast(msg, r.skipped.length ? 'err' : '');
       }).catch(function (err) { busy(el, false); if (err.code === 'AUTH') handleErr(err); else modalError(err.message); });
@@ -1946,6 +1986,7 @@
       var payload = {
         username: document.getElementById('m-username').value,
         displayName: document.getElementById('m-name').value,
+        initials: document.getElementById('m-initials').value,
         position: document.getElementById('m-pos').value,
         isAdmin: document.getElementById('m-admin').checked
       };

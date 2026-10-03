@@ -43,6 +43,15 @@ var DOC_TYPES = [
 ];
 var REPORT_KEYWORDS = ['xin y kien'];
 
+/**
+ * Ký hiệu chuyên viên ở CUỐI tên file (vd "..._TP_CQH", "... (CQH)") → tài khoản có ký hiệu đó.
+ * Danh sách ban đầu theo người dùng; tự điền 1 lần cho tài khoản có họ tên trùng (không phân biệt dấu/hoa thường).
+ * Admin sửa/thêm ký hiệu ở Quản trị tài khoản.
+ */
+var USER_INITIALS_HINTS = {
+  CQH: 'Cao Quang Hảo', LDS: 'Lê Đình Sự', DNQ: 'Đỗ Nhật Quang', HTT: 'Hoàng Thanh Thoại', NSK: 'Nguyễn Sơn Khang'
+};
+
 /** Các tình trạng "Đang trình …" — lần đầu chuyển sang sẽ ghi nhận ngày trình. */
 var SUBMITTING_STATUSES = ['TP_MH', 'GDTM', 'TP_CC'];
 var APPROVED_STATUS = 'DA_DUYET';
@@ -78,8 +87,9 @@ var FOLDER_SYNC = {
 };
 
 var SHEET_HEADERS = {
+  // initials: ký hiệu chuyên viên ở cuối tên file (vd CQH) — thêm sau, cột cuối; header tự ghi bởi ensureUserInitials_().
   Users: ['username', 'displayName', 'position', 'isAdmin', 'passwordHash', 'salt',
-          'mustChangePassword', 'active', 'failedAttempts', 'lockedUntil', 'createdAt'],
+          'mustChangePassword', 'active', 'failedAttempts', 'lockedUntil', 'createdAt', 'initials'],
   Submissions: ['id', 'title', 'owner', 'status', 'createdAt', 'submittedAt', 'updatedAt', 'approvedAt'],
   History: ['submissionId', 'fromStatus', 'toStatus', 'actor', 'note', 'date'],
   // Danh mục dự án (STT_TÊN). Sheet tự tạo + nạp danh sách ban đầu khi chưa có (xem Projects.gs).
