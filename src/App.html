@@ -1565,7 +1565,8 @@
       nav = '<span class="per-name muted">Tùy chọn: ' + (f.from ? fmtDate(f.from) : 'Từ đầu') + ' – ' + (f.to ? fmtDate(f.to) : fmtDate(S.today)) + '</span>';
     }
     return '<div class="period-bar">' + seg + nav + '<div class="grow"></div>' +
-      '<button class="secondary-btn" data-act="rep-export" data-view="' + view + '">' + ic('download') + 'Xuất báo cáo (Excel)</button></div>';
+      '<button class="secondary-btn" data-act="rep-export" data-view="' + view + '" title="File .xlsx: trang Dashboard (ô số liệu, biểu đồ, bảng dữ liệu) + danh sách hồ sơ">' +
+        ic('download') + 'Xuất báo cáo (Excel)</button></div>';
   }
 
   function repData(view) {
@@ -1667,6 +1668,101 @@
     return D.f.owners.length ? owners.filter(function (o) { return D.f.owners.indexOf(o) >= 0; }) : owners;
   }
 
+  /* ---------- Định nghĩa biểu đồ dùng chung cho Dashboard và file Excel ----------
+   * Mỗi hàm trả về { cfg, h, pick } (cấu hình Chart.js, chiều cao, chọn chi tiết khi bấm) hoặc { empty: 'lý do' }.
+   * exp = true: bản xuất Excel (đủ dự án, nhãn dài hơn). */
+  function repChartHtml(D, key, spec) {
+    if (spec.empty) return repEmpty(spec.empty);
+    return repChart(D, key, spec.h, chartClick(D, spec.cfg, spec.pick)) + (spec.after || '');
+  }
+  function approverNames(code) {
+    return S.users.filter(function (u) { return u.position === code && u.active; }).map(function (u) { return u.displayName; }).join(', ');
+  }
+  function repTrendData(D) {
+    var n = D.g === 'year' ? 5 : 8;
+    var periods = [D.k];
+    for (var i = 1; i < n; i++) periods.unshift(prevPeriod(periods[0], D.g));
+    var lists = periods.map(function (p) { var r = periodRange(p, D.g); return D.base.filter(function (s) { return inRange(s._subAt, r); }); });
+    return { n: n, periods: periods, lists: lists };
+  }
+  function repResultData(D) {
+    var sts = S.cfg.statuses.filter(function (st) { return st.code !== S.cfg.defaultStatus || D.sub.some(function (s) { return s.status === st.code; }); });
+    return { sts: sts, counts: sts.map(function (st) { return D.sub.filter(function (s) { return s.status === st.code; }).length; }) };
+  }
+  function repProjectData(D) {
+    var groups = {};
+    D.sub.forEach(function (s) { (s._projects.length ? s._projects : ['-']).forEach(function (k) { (groups[k] = groups[k] || []).push(s); }); });
+    var keys = Object.keys(groups).sort(function (a, b) { return (a === '-') - (b === '-') || groups[b].length - groups[a].length || projectSort(a, b); });
+    return { groups: groups, keys: keys };
+  }
+  function typeDatasets(lists) {
+    return (S.cfg.docTypes || []).map(function (t) {
+      return { label: t.label, backgroundColor: t.color, stack: 's', data: lists.map(function (l) { return l.filter(function (s) { return s._type === t.code; }).length; }) };
+    });
+  }
+  function ownerChartSpec(D) {
+    var by = {};
+    D.sub.forEach(function (s) { (by[s.owner] = by[s.owner] || []).push(s); });
+    var list = repOwners(D).filter(function (o) { return by[o]; });
+    if (!list.length) return { empty: 'Không có hồ sơ đệ trình trong kỳ này.' };
+    var ds = S.cfg.statuses.map(function (st) {
+      return { label: st.short, backgroundColor: st.color, stack: 's',
+               data: list.map(function (o) { return by[o].filter(function (s) { return s.status === st.code; }).length; }) };
+    }).filter(function (d) { return d.data.some(function (v) { return v > 0; }); });
+    return { h: Math.max(200, list.length * 32 + 80), cfg: barConfig(list.map(userName), ds, { horizontal: true, stacked: true, legend: true }),
+             pick: function (i) { return { card: 'owners', kind: 'owner', key: list[i], sub: '' }; } };
+  }
+  function trendChartSpec(D) {
+    var T = repTrendData(D);
+    return { h: 230, cfg: barConfig(T.periods.map(function (p) { return periodShort(p, D.g); }), typeDatasets(T.lists), { stacked: true, legend: true }),
+             pick: function (i) { return { card: 'trend', kind: 'period', key: T.periods[i], sub: '' }; } };
+  }
+  function resultChartSpec(D) {
+    var R = repResultData(D), sts = R.sts, counts = R.counts, total = D.sub.length;
+    if (!total) return { empty: 'Không có hồ sơ đệ trình trong kỳ này.' };
+    var cfg = {
+      type: 'doughnut',
+      data: { labels: sts.map(function (st) { return st.short; }), datasets: [{ data: counts, backgroundColor: sts.map(function (st) { return st.color; }), borderColor: '#fff', borderWidth: 3, borderRadius: 6, spacing: 1 }] },
+      options: {
+        animation: false, responsive: true, maintainAspectRatio: false, cutout: '68%',
+        plugins: {
+          legend: { position: 'right', labels: { usePointStyle: true, pointStyle: 'circle', boxWidth: 8, boxHeight: 8, color: '#44506A',
+            filter: function (item, data) { return data.datasets[0].data[item.index] > 0; } } },
+          tooltip: { backgroundColor: 'rgba(16, 26, 51, .92)', padding: 10, cornerRadius: 10,
+            callbacks: { label: function (ctx) { return ' ' + ctx.label + ': ' + ctx.raw + ' hồ sơ (' + Math.round(ctx.raw * 100 / total) + '%)'; } } }
+        }
+      },
+      plugins: [{ id: 'center', afterDraw: function (chart) {
+        var a = chart.chartArea, c = chart.ctx;
+        if (!a) return;
+        c.save(); c.textAlign = 'center'; c.textBaseline = 'middle';
+        var x = (a.left + a.right) / 2, y = (a.top + a.bottom) / 2;
+        c.fillStyle = '#1E2B59'; c.font = '700 24px "Space Grotesk", sans-serif'; c.fillText(String(total), x, y - 7);
+        c.fillStyle = '#76829B'; c.font = '600 12px "Be Vietnam Pro", sans-serif'; c.fillText('hồ sơ', x, y + 13);
+        c.restore();
+      } }]
+    };
+    return { h: 230, cfg: cfg, pick: function (i) { return counts[i] ? { card: 'result', kind: 'kpi', key: 'sub', sub: sts[i].code } : null; } };
+  }
+  function pendingChartSpec(D) {
+    if (!D.pending.length) return { empty: 'Không có hồ sơ nào đang chờ duyệt.' };
+    var codes = S.cfg.submittingStatuses;
+    var lists = codes.map(function (c) { return D.pending.filter(function (s) { return s.status === c; }); });
+    var labels = codes.map(function (c) { var n = approverNames(c); return n ? [statusOf(c).short, n] : statusOf(c).short; });
+    return { h: Math.max(200, codes.length * 48 + 70), cfg: barConfig(labels, typeDatasets(lists), { horizontal: true, stacked: true, legend: true }),
+             pick: function (i) { return { card: 'pending', kind: 'pending', key: codes[i], sub: '' }; } };
+  }
+  function projectChartSpec(D, exp) {
+    var P = repProjectData(D), keys = P.keys;
+    if (!keys.length) return { empty: 'Không có hồ sơ đệ trình trong kỳ này.' };
+    var max = exp ? 15 : 8, cut = exp ? 40 : 20;
+    var top = keys.slice(0, max);
+    var labels = top.map(function (k) { var l = projectLabel(k); return l.length > cut ? l.slice(0, cut - 1) + '…' : l; });
+    return { h: Math.max(200, top.length * 28 + 80), cfg: barConfig(labels, typeDatasets(top.map(function (k) { return P.groups[k]; })), { horizontal: true, stacked: true, legend: true }),
+             pick: function (i) { return { card: 'projects', kind: 'project', key: top[i], sub: '' }; },
+             after: keys.length > max ? '<p class="rep-note" style="margin:6px 0 0">' + max + ' dự án nhiều hồ sơ nhất / ' + keys.length + ' — chọn "Bảng" để xem tất cả.</p>' : '' };
+  }
+
   /* ---------- 1. Hồ sơ đệ trình theo chuyên viên (hiện đầu tiên) ---------- */
   function repOwnerCard(D) {
     var owners = repOwners(D);
@@ -1674,16 +1770,7 @@
     D.sub.forEach(function (s) { (by[s.owner] = by[s.owner] || []).push(s); });
     var types = S.cfg.docTypes || [];
     var sts = S.cfg.statuses;
-    var chart = function () {
-      var list = owners.filter(function (o) { return by[o]; });
-      if (!list.length) return repEmpty('Không có hồ sơ đệ trình trong kỳ này.');
-      var ds = sts.map(function (st) {
-        return { label: st.short, backgroundColor: st.color, stack: 's',
-                 data: list.map(function (o) { return by[o].filter(function (s) { return s.status === st.code; }).length; }) };
-      }).filter(function (d) { return d.data.some(function (v) { return v > 0; }); });
-      return repChart(D, 'owners', Math.max(200, list.length * 32 + 80), chartClick(D, barConfig(list.map(userName), ds, { horizontal: true, stacked: true, legend: true }),
-        function (i) { return { card: 'owners', kind: 'owner', key: list[i], sub: '' }; }));
-    };
+    var chart = function () { return repChartHtml(D, 'owners', ownerChartSpec(D)); };
     var table = function () {
       if (!owners.length) return '<div class="empty">Chưa có chuyên viên nào.</div>';
       // Gọn: Đệ trình (thanh màu = tình trạng chi tiết) · loại · 3 nhóm kết quả chính.
@@ -1707,18 +1794,9 @@
 
   /* ---------- 2. Đệ trình các kỳ gần nhất ---------- */
   function repTrendCard(D) {
-    var n = D.g === 'year' ? 5 : 8;
-    var periods = [D.k];
-    for (var i = 1; i < n; i++) periods.unshift(prevPeriod(periods[0], D.g));
+    var T = repTrendData(D), n = T.n, periods = T.periods, lists = T.lists;
     var types = S.cfg.docTypes || [];
-    var lists = periods.map(function (p) { var r = periodRange(p, D.g); return D.base.filter(function (s) { return inRange(s._subAt, r); }); });
-    var chart = function () {
-      var ds = types.map(function (t) {
-        return { label: t.label, backgroundColor: t.color, stack: 's', data: lists.map(function (l) { return l.filter(function (s) { return s._type === t.code; }).length; }) };
-      });
-      return repChart(D, 'trend', 230, chartClick(D, barConfig(periods.map(function (p) { return periodShort(p, D.g); }), ds, { stacked: true, legend: true }),
-        function (i) { return { card: 'trend', kind: 'period', key: periods[i], sub: '' }; }));
-    };
+    var chart = function () { return repChartHtml(D, 'trend', trendChartSpec(D)); };
     var table = function () {
       return '<div class="table-wrap"><table class="grid matrix"><thead><tr><th>Kỳ</th>' + typeHead() +
         '<th class="center">Đang trình</th><th class="center">Đã duyệt</th><th class="num">Tổng</th></tr></thead><tbody>' +
@@ -1738,35 +1816,8 @@
 
   /* ---------- 3. Kết quả hồ sơ đệ trình trong kỳ ---------- */
   function repResultCard(D) {
-    var sts = S.cfg.statuses.filter(function (st) { return st.code !== S.cfg.defaultStatus || D.sub.some(function (s) { return s.status === st.code; }); });
-    var counts = sts.map(function (st) { return D.sub.filter(function (s) { return s.status === st.code; }).length; });
-    var total = D.sub.length;
-    var chart = function () {
-      if (!total) return repEmpty('Không có hồ sơ đệ trình trong kỳ này.');
-      var cfg = {
-        type: 'doughnut',
-        data: { labels: sts.map(function (st) { return st.short; }), datasets: [{ data: counts, backgroundColor: sts.map(function (st) { return st.color; }), borderColor: '#fff', borderWidth: 3, borderRadius: 6, spacing: 1 }] },
-        options: {
-          animation: false, responsive: true, maintainAspectRatio: false, cutout: '68%',
-          plugins: {
-            legend: { position: 'right', labels: { usePointStyle: true, pointStyle: 'circle', boxWidth: 8, boxHeight: 8, color: '#44506A',
-              filter: function (item, data) { return data.datasets[0].data[item.index] > 0; } } },
-            tooltip: { backgroundColor: 'rgba(16, 26, 51, .92)', padding: 10, cornerRadius: 10,
-              callbacks: { label: function (ctx) { return ' ' + ctx.label + ': ' + ctx.raw + ' hồ sơ (' + Math.round(ctx.raw * 100 / total) + '%)'; } } }
-          }
-        },
-        plugins: [{ id: 'center', afterDraw: function (chart) {
-          var a = chart.chartArea, c = chart.ctx;
-          if (!a) return;
-          c.save(); c.textAlign = 'center'; c.textBaseline = 'middle';
-          var x = (a.left + a.right) / 2, y = (a.top + a.bottom) / 2;
-          c.fillStyle = '#1E2B59'; c.font = '700 24px "Space Grotesk", sans-serif'; c.fillText(String(total), x, y - 7);
-          c.fillStyle = '#76829B'; c.font = '600 12px "Be Vietnam Pro", sans-serif'; c.fillText('hồ sơ', x, y + 13);
-          c.restore();
-        } }]
-      };
-      return repChart(D, 'result', 230, chartClick(D, cfg, function (i) { return counts[i] ? { card: 'result', kind: 'kpi', key: 'sub', sub: sts[i].code } : null; }));
-    };
+    var R = repResultData(D), sts = R.sts, counts = R.counts, total = D.sub.length;
+    var chart = function () { return repChartHtml(D, 'result', resultChartSpec(D)); };
     var table = function () {
       var types = S.cfg.docTypes || [];
       return '<div class="table-wrap"><table class="grid matrix"><thead><tr><th>Tình trạng</th>' + typeHead() +
@@ -1788,19 +1839,9 @@
   function repPendingCard(D) {
     var codes = S.cfg.submittingStatuses;
     var types = S.cfg.docTypes || [];
-    var who = function (code) {
-      return S.users.filter(function (u) { return u.position === code && u.active; }).map(function (u) { return u.displayName; }).join(', ');
-    };
+    var who = approverNames;
     var lists = codes.map(function (c) { return D.pending.filter(function (s) { return s.status === c; }); });
-    var chart = function () {
-      if (!D.pending.length) return repEmpty('Không có hồ sơ nào đang chờ duyệt.');
-      var ds = types.map(function (t) {
-        return { label: t.label, backgroundColor: t.color, stack: 's', data: lists.map(function (l) { return l.filter(function (s) { return s._type === t.code; }).length; }) };
-      });
-      var labels = codes.map(function (c) { var n = who(c); return n ? [statusOf(c).short, n] : statusOf(c).short; });
-      return repChart(D, 'pending', Math.max(200, codes.length * 48 + 70),
-        chartClick(D, barConfig(labels, ds, { horizontal: true, stacked: true, legend: true }), function (i) { return { card: 'pending', kind: 'pending', key: codes[i], sub: '' }; }));
-    };
+    var chart = function () { return repChartHtml(D, 'pending', pendingChartSpec(D)); };
     var table = function () {
       var row = function (key, l, label) {
         var longest = l.reduce(function (m, s) { return Math.max(m, s._days); }, 0);
@@ -1821,21 +1862,9 @@
 
   /* ---------- 5. Hồ sơ đệ trình theo dự án ---------- */
   function repProjectCard(D) {
-    var groups = {};
-    D.sub.forEach(function (s) { (s._projects.length ? s._projects : ['-']).forEach(function (k) { (groups[k] = groups[k] || []).push(s); }); });
-    var keys = Object.keys(groups).sort(function (a, b) { return (a === '-') - (b === '-') || groups[b].length - groups[a].length || projectSort(a, b); });
+    var P = repProjectData(D), groups = P.groups, keys = P.keys;
     var types = S.cfg.docTypes || [];
-    var chart = function () {
-      if (!keys.length) return repEmpty('Không có hồ sơ đệ trình trong kỳ này.');
-      var top = keys.slice(0, 8);
-      var ds = types.map(function (t) {
-        return { label: t.label, backgroundColor: t.color, stack: 's', data: top.map(function (k) { return groups[k].filter(function (s) { return s._type === t.code; }).length; }) };
-      });
-      var labels = top.map(function (k) { var l = projectLabel(k); return l.length > 20 ? l.slice(0, 19) + '…' : l; });
-      return repChart(D, 'projects', Math.max(200, top.length * 28 + 80),
-        chartClick(D, barConfig(labels, ds, { horizontal: true, stacked: true, legend: true }), function (i) { return { card: 'projects', kind: 'project', key: top[i], sub: '' }; })) +
-        (keys.length > 8 ? '<p class="rep-note" style="margin:6px 0 0">8 dự án nhiều hồ sơ nhất / ' + keys.length + ' — chọn "Bảng" để xem tất cả.</p>' : '');
-    };
+    var chart = function () { return repChartHtml(D, 'projects', projectChartSpec(D)); };
     var table = function () {
       if (!keys.length) return '<div class="empty">Không có hồ sơ đệ trình trong kỳ này.</div>';
       return '<div class="table-wrap table-scroll" style="max-height:300px"><table class="grid matrix"><thead><tr><th>Dự án</th>' + typeHead() +
@@ -1903,22 +1932,24 @@
   }
 
   /** Hàng ô số liệu của kỳ (đặt trong TỔNG QUAN). */
-  function repKpis(D) {
-    var types = S.cfg.docTypes || [];
-    var sel = repSelOf(D.view);
-    var kpi = function (key, sub, color, label, n, note) {
-      return '<button class="rep-kpi' + (sameSel(sel, 'kpi', 'kpi', key, sub) ? ' on' : '') + '" style="--c:' + color + '"' + repSelAttrs(D, 'kpi', 'kpi', key, sub) + '>' +
-        '<span class="rk-l">' + esc(label) + '</span><b>' + fmtNum(n) + '</b><span class="rk-n">' + esc(note) + '</span></button>';
-    };
+  /** 6 ô số liệu chính của kỳ (dùng cho TỔNG QUAN và file Excel). */
+  function repKpiData(D) {
     var pct = function (n) { return D.sub.length ? Math.round(n * 100 / D.sub.length) + '% số đệ trình' : 'trong kỳ'; };
     var avg = D.approved.length ? D.approved.reduce(function (a, s) { return a + diffDays(s.createdAt, s.approvedAt); }, 0) / D.approved.length : null;
     var longest = D.pending.reduce(function (m, s) { return Math.max(m, s._days); }, 0);
-    return '<div class="rep-kpis">' +
-      kpi('sub', '', '#1E2B59', 'Hồ sơ đệ trình', D.sub.length, 'trong kỳ') +
-      types.map(function (t) { var n = D.sub.filter(function (s) { return s._type === t.code; }).length; return kpi('sub', t.code, t.color, t.label, n, pct(n)); }).join('') +
-      kpi('approved', '', statusOf(S.cfg.approvedStatus).color, 'Duyệt hoàn tất', D.approved.length, avg == null ? 'trong kỳ' : 'TB ' + fmt1(avg) + ' ngày để duyệt') +
-      kpi('returned', '', statusOf('TRA_LAI').color, 'Trả lại', D.returned.length, 'trong kỳ') +
-      kpi('pending', '', '#E9A23B', 'Đang chờ duyệt', D.pending.length, D.pending.length ? 'lâu nhất ' + longest + ' ngày' : 'hiện nay') + '</div>';
+    var k = function (key, sub, color, label, n, note) { return { key: key, sub: sub, color: color, label: label, n: n, note: note }; };
+    return [k('sub', '', '#1E2B59', 'Hồ sơ đệ trình', D.sub.length, 'trong kỳ')].concat(
+      (S.cfg.docTypes || []).map(function (t) { var n = D.sub.filter(function (s) { return s._type === t.code; }).length; return k('sub', t.code, t.color, t.label, n, pct(n)); }),
+      [k('approved', '', statusOf(S.cfg.approvedStatus).color, 'Duyệt hoàn tất', D.approved.length, avg == null ? 'trong kỳ' : 'TB ' + fmt1(avg) + ' ngày để duyệt'),
+       k('returned', '', statusOf('TRA_LAI').color, 'Trả lại', D.returned.length, 'trong kỳ'),
+       k('pending', '', '#E9A23B', 'Đang chờ duyệt', D.pending.length, D.pending.length ? 'lâu nhất ' + longest + ' ngày' : 'hiện nay')]);
+  }
+  function repKpis(D) {
+    var sel = repSelOf(D.view);
+    return '<div class="rep-kpis">' + repKpiData(D).map(function (x) {
+      return '<button class="rep-kpi' + (sameSel(sel, 'kpi', 'kpi', x.key, x.sub) ? ' on' : '') + '" style="--c:' + x.color + '"' + repSelAttrs(D, 'kpi', 'kpi', x.key, x.sub) + '>' +
+        '<span class="rk-l">' + esc(x.label) + '</span><b>' + fmtNum(x.n) + '</b><span class="rk-n">' + esc(x.note) + '</span></button>';
+    }).join('') + '</div>';
   }
 
   /** Các ô báo cáo (giữa TỔNG QUAN và thanh tab); ô "Hồ sơ đệ trình theo chuyên viên" luôn đầu tiên. */
@@ -1943,6 +1974,313 @@
     var D = repData('report');
     return paramsCard('report', { owners: true, period: true, tools: syncButton() }) + mgrOverview('report', D) + repSection(D) +
       detailCard('report', applyFilter(S.subs, f), { title: 'Danh sách hồ sơ', showOwner: true });
+  }
+
+  /* =====================================================================
+   * Xuất báo cáo Excel (.xlsx) dạng Dashboard: ô số liệu, biểu đồ (ảnh vẽ bằng Chart.js như trên web) + bảng dữ liệu
+   * đầy đủ dưới mỗi biểu đồ; các trang danh sách hồ sơ (lọc/sắp xếp được). Thư viện ExcelJS chỉ tải khi bấm xuất.
+   * Không tải được thư viện → xuất CSV như trước.
+   * ===================================================================== */
+  var EXCELJS_SRC = [
+    'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js',
+    'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js',
+    'https://unpkg.com/exceljs@4.4.0/dist/exceljs.min.js'
+  ];
+  function loadExcelJs() {
+    if (window.ExcelJS) return Promise.resolve(window.ExcelJS);
+    if (S.excelJsP) return S.excelJsP;
+    S.excelJsP = new Promise(function (resolve, reject) {
+      var i = 0;
+      (function next() {
+        if (i >= EXCELJS_SRC.length) { S.excelJsP = null; reject(new Error('Không tải được thư viện Excel.')); return; }
+        var sc = document.createElement('script');
+        sc.src = EXCELJS_SRC[i++]; sc.async = true;
+        sc.onload = function () { if (window.ExcelJS) resolve(window.ExcelJS); else next(); };
+        sc.onerror = function () { sc.remove(); next(); };
+        document.head.appendChild(sc);
+      })();
+    });
+    return S.excelJsP;
+  }
+
+  function exportReportXlsx(view, btn) {
+    var D = repData(view);
+    if (btn) btn.disabled = true;
+    setLoading(1);
+    toast('Đang tạo file Excel…');
+    loadExcelJs().then(function (ExcelJS) { return buildReportWorkbook(ExcelJS, D).xlsx.writeBuffer(); })
+      .then(function (buf) {
+        downloadBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+          'bao-cao-ho-so-' + (D.f.period ? D.k : S.today) + '.xlsx');
+        toast('Đã xuất file Excel báo cáo.');
+      })
+      .catch(function (err) {
+        toast((err && err.message ? err.message : 'Lỗi tạo file Excel.') + ' Đã xuất dạng CSV thay thế.', 'err');
+        exportReport(view);
+      })
+      .then(function () { setLoading(-1); if (btn) btn.disabled = false; });
+  }
+
+  /** Vẽ biểu đồ ra ảnh PNG (nền trắng, độ phân giải x2) để chèn vào Excel. */
+  function chartImage(spec, width, height) {
+    if (!spec || spec.empty || typeof Chart === 'undefined') return null;
+    var holder = document.createElement('div');
+    holder.style.cssText = 'position:fixed;left:-10000px;top:0;width:' + width + 'px;height:' + height + 'px';
+    var cv = document.createElement('canvas');
+    cv.width = width; cv.height = height;
+    holder.appendChild(cv); document.body.appendChild(holder);
+    var cfg = spec.cfg;
+    cfg.options = cfg.options || {};
+    cfg.options.responsive = false; cfg.options.animation = false; cfg.options.devicePixelRatio = 2;
+    cfg.plugins = (cfg.plugins || []).concat([{ id: 'white-bg', beforeDraw: function (c) {
+      var x = c.ctx; x.save(); x.fillStyle = '#FFFFFF'; x.fillRect(0, 0, c.width, c.height); x.restore();
+    } }]);
+    var chart = new Chart(cv, cfg);
+    var url = chart.toBase64Image('image/png', 1);
+    chart.destroy(); holder.remove();
+    return { base64: url, w: width, h: height };
+  }
+
+  function filterSummary(f) {
+    var parts = [];
+    if (f.owners.length) parts.push('Chuyên viên: ' + f.owners.map(userName).join(', '));
+    if (f.types && f.types.length) parts.push('Loại: ' + f.types.map(function (t) { return typeOf(t).label; }).join(', '));
+    if (f.projects && f.projects.length) parts.push('Dự án: ' + f.projects.map(projectLabel).join(', '));
+    if (f.q) parts.push('Tìm: "' + f.q + '"');
+    return parts.length ? parts.join(' · ') : 'Không (toàn bộ hồ sơ)';
+  }
+
+  function buildReportWorkbook(ExcelJS, D) {
+    var NAVY = '1E2B59', ACC = 'F16314', LINE = 'DAE1EC', SOFT = 'F5F8FC', MUTED = '76829B', INK = '101A33';
+    var argb = function (hex) { return 'FF' + String(hex).replace('#', '').toUpperCase(); };
+    var tint = function (hex, t) { // pha màu với trắng (t = tỉ lệ màu gốc)
+      var h = String(hex).replace('#', ''), out = '';
+      for (var i = 0; i < 3; i++) { var v = parseInt(h.substr(i * 2, 2), 16); out += ('0' + Math.round(v * t + 255 * (1 - t)).toString(16)).slice(-2); }
+      return out.toUpperCase();
+    };
+    var fill = function (hex) { return { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(hex) } }; };
+    var thin = { style: 'thin', color: { argb: argb(LINE) } };
+    var box = { top: thin, left: thin, bottom: thin, right: thin };
+    var types = S.cfg.docTypes || [];
+    var sts = S.cfg.statuses;
+    var rangeText = D.f.period ? fmtDate(D.range[0]) + ' – ' + fmtDate(D.range[1])
+      : (D.f.from ? fmtDate(D.f.from) : 'Từ đầu') + ' – ' + (D.f.to ? fmtDate(D.f.to) : fmtDate(S.today));
+    var toDate = function (iso) { if (!iso) return null; var p = iso.split('-'); return new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])); };
+
+    var wb = new ExcelJS.Workbook();
+    wb.creator = S.me.displayName; wb.created = new Date();
+    wb.title = 'Báo cáo tổng hợp hồ sơ – ' + D.label;
+
+    /* ---------- Trang Dashboard ---------- */
+    var ws = wb.addWorksheet('Dashboard', {
+      views: [{ showGridLines: false }],
+      pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0,
+                   margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } }
+    });
+    var NC = 12; // cột B..M
+    ws.columns = [{ width: 2 }, { width: 24 }].concat(Array.apply(null, Array(NC - 1)).map(function () { return { width: 11 }; }), [{ width: 2 }]);
+    var C0 = 2, CL = C0 + NC - 1;
+    var band = function (r, text, font, bg, h) {
+      ws.mergeCells(r, C0, r, CL);
+      var c = ws.getCell(r, C0);
+      c.value = text; c.font = font; if (bg) c.fill = fill(bg);
+      c.alignment = { vertical: 'middle', horizontal: 'left', indent: 1, wrapText: true };
+      if (h) ws.getRow(r).height = h;
+    };
+    band(1, 'BÁO CÁO TỔNG HỢP HỒ SƠ', { name: 'Calibri', size: 18, bold: true, color: { argb: 'FFFFFFFF' } }, NAVY, 36);
+    band(2, (S.cfg.appName || '') + '  ·  Kỳ: ' + D.label + (D.f.period ? ' (' + rangeText + ')' : ''),
+      { name: 'Calibri', size: 11, color: { argb: 'FFCFE0FF' } }, NAVY, 22);
+    band(3, '', {}, ACC, 4);
+    band(4, 'Bộ lọc: ' + filterSummary(D.f) + '   ·   Xuất ngày ' + fmtDate(S.today) + ' bởi ' + S.me.displayName,
+      { name: 'Calibri', size: 9.5, italic: true, color: { argb: argb(MUTED) } }, null, 18);
+
+    // Ô số liệu: 6 ô, mỗi ô rộng như cột B (24) — cột C..L gộp từng cặp.
+    var kpis = repKpiData(D);
+    var slots = [[2, 2], [3, 4], [5, 6], [7, 8], [9, 10], [11, 12]];
+    var R = 6;
+    kpis.slice(0, 6).forEach(function (k, i) {
+      var c1 = slots[i][0], c2 = slots[i][1];
+      [[R, k.label.toUpperCase(), { size: 9, bold: true, color: { argb: argb(MUTED) } }, 18],
+       [R + 1, k.n, { size: 22, bold: true, color: { argb: argb(NAVY) } }, 32],
+       [R + 2, k.note, { size: 9, color: { argb: 'FF44506A' } }, 18]].forEach(function (x, j) {
+        if (c2 > c1) ws.mergeCells(x[0], c1, x[0], c2);
+        var c = ws.getCell(x[0], c1);
+        c.value = x[1]; c.font = Object.assign({ name: 'Calibri' }, x[2]);
+        c.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+        for (var cc = c1; cc <= c2; cc++) {
+          var cell = ws.getCell(x[0], cc);
+          cell.fill = fill('F9FBFF');
+          cell.border = { left: cc === c1 ? thin : undefined, right: cc === c2 ? thin : undefined,
+                          top: j === 0 ? { style: 'thick', color: { argb: argb(k.color) } } : undefined, bottom: j === 2 ? thin : undefined };
+        }
+        ws.getRow(x[0]).height = x[3];
+      });
+    });
+    R += 4;
+
+    /** Bảng dữ liệu: cols = [{ h, span, color, num, pct, fmt }], rows = mảng giá trị; total = dòng tổng (tùy chọn). */
+    var table = function (r, cols, rows, total) {
+      var write = function (rr, vals, kind) {
+        var c = C0;
+        cols.forEach(function (col, i) {
+          var span = col.span || 1;
+          if (span > 1) ws.mergeCells(rr, c, rr, c + span - 1);
+          var cell = ws.getCell(rr, c), v = vals[i];
+          cell.value = v == null ? '' : v;
+          var isNum = typeof v === 'number';
+          cell.alignment = { vertical: 'middle', horizontal: kind === 'head' ? 'center' : (isNum ? 'center' : 'left'), wrapText: true, indent: isNum || kind === 'head' ? 0 : 1 };
+          if (col.pct && isNum) cell.numFmt = '0%';
+          else if (col.fmt && isNum) cell.numFmt = col.fmt;
+          if (kind === 'head') {
+            cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+          } else {
+            cell.font = { name: 'Calibri', size: 10.5, bold: kind === 'total' || (isNum && col.bold),
+                          color: { argb: isNum && v === 0 ? 'FFB8BCC6' : argb(INK) } };
+          }
+          for (var k = 0; k < span; k++) {
+            var x = ws.getCell(rr, c + k);
+            x.border = kind === 'total' ? { top: { style: 'medium', color: { argb: argb(NAVY) } }, left: thin, bottom: thin, right: thin } : box;
+            x.fill = kind === 'head' ? fill(col.color || NAVY) : kind === 'total' ? fill('EAF0FB') : (rr % 2 ? fill('FFFFFF') : fill(SOFT));
+          }
+          c += span;
+        });
+        ws.getRow(rr).height = kind === 'head' ? 30 : 20;
+      };
+      write(r, cols.map(function (c) { return c.h; }), 'head');
+      rows.forEach(function (vals, i) { write(r + 1 + i, vals, 'body'); });
+      if (total) write(r + 1 + rows.length, total, 'total');
+      return r + 1 + rows.length + (total ? 1 : 0);
+    };
+    var section = function (title, note, spec, imgW, imgH) {
+      ws.mergeCells(R, C0, R, CL);
+      var t = ws.getCell(R, C0);
+      t.value = title.toUpperCase();
+      t.font = { name: 'Calibri', size: 13, bold: true, color: { argb: argb(NAVY) } };
+      t.alignment = { vertical: 'middle', indent: 1 };
+      t.border = { left: { style: 'thick', color: { argb: argb(ACC) } }, bottom: { style: 'thin', color: { argb: argb(LINE) } } };
+      for (var c = C0 + 1; c <= CL; c++) ws.getCell(R, c).border = { bottom: { style: 'thin', color: { argb: argb(LINE) } } };
+      ws.getRow(R).height = 26;
+      ws.mergeCells(R + 1, C0, R + 1, CL);
+      var n = ws.getCell(R + 1, C0);
+      n.value = note; n.font = { name: 'Calibri', size: 9.5, italic: true, color: { argb: argb(MUTED) } }; n.alignment = { indent: 1 };
+      R += 2;
+      var img = chartImage(spec, imgW, imgH);
+      if (img) {
+        var id = wb.addImage({ base64: img.base64, extension: 'png' });
+        ws.addImage(id, { tl: { col: C0 - 1 + 0.1, row: R - 1 + 0.3 }, ext: { width: img.w, height: img.h } });
+        R += Math.ceil(img.h / 20) + 2;
+      } else if (spec && spec.empty) {
+        ws.mergeCells(R, C0, R, CL);
+        var e = ws.getCell(R, C0); e.value = spec.empty; e.font = { name: 'Calibri', size: 10, italic: true, color: { argb: argb(MUTED) } }; e.alignment = { indent: 1 };
+        R += 2;
+      }
+    };
+    var cnt = function (list, fn) { return list.filter(fn).length; };
+    var byType = function (list) { return types.map(function (t) { return cnt(list, function (s) { return s._type === t.code; }); }); };
+    var typeCols = types.map(function (t) { return { h: t.label, color: t.color }; });
+    var stCols = sts.map(function (st) { return { h: st.short, color: st.color }; });
+
+    // 1. Theo chuyên viên
+    var owners = repOwners(D);
+    var oRow = function (label, l) {
+      return [label, l.length].concat(byType(l), sts.map(function (st) { return cnt(l, function (s) { return s.status === st.code; }); }));
+    };
+    section('Hồ sơ đệ trình theo chuyên viên', 'Số hồ sơ đệ trình trong kỳ theo loại và tình trạng hiện tại', ownerChartSpec(D), 900, Math.max(240, owners.length * 40 + 90));
+    R = table(R, [{ h: 'Chuyên viên' }, { h: 'Đệ trình', bold: true }].concat(typeCols, stCols),
+      owners.map(function (o) { return oRow(userName(o), D.sub.filter(function (s) { return s.owner === o; })); }), oRow('Tổng cộng', D.sub)) + 2;
+
+    // 2. Các kỳ gần nhất
+    var T = repTrendData(D);
+    section('Hồ sơ đệ trình ' + T.n + ' kỳ gần nhất', 'Số hồ sơ đệ trình mỗi kỳ theo loại hồ sơ', trendChartSpec(D), 900, 300);
+    R = table(R, [{ h: 'Kỳ' }, { h: 'Từ ngày' }, { h: 'Đến ngày' }].concat(typeCols, [{ h: 'Đang trình' }, { h: 'Đã duyệt' }, { h: 'Tổng', bold: true }]),
+      T.periods.map(function (p, i) {
+        var l = T.lists[i], r = periodRange(p, D.g);
+        return [periodName(p, D.g), fmtDate(r[0]), fmtDate(r[1])].concat(byType(l),
+          [cnt(l, isSubmitting), cnt(l, function (s) { return s.status === S.cfg.approvedStatus; }), l.length]);
+      }).reverse()) + 2;
+
+    // 3. Kết quả trong kỳ
+    var RD = repResultData(D);
+    section('Kết quả hồ sơ đệ trình trong kỳ', 'Tình trạng hiện tại của các hồ sơ đệ trình trong kỳ', resultChartSpec(D), 640, 300);
+    R = table(R, [{ h: 'Tình trạng hiện tại', span: 2 }].concat(typeCols, [{ h: 'Số hồ sơ', bold: true }, { h: 'Tỉ lệ', pct: true }]),
+      RD.sts.map(function (st, i) {
+        var l = D.sub.filter(function (s) { return s.status === st.code; });
+        return [st.label].concat(byType(l), [RD.counts[i], D.sub.length ? RD.counts[i] / D.sub.length : 0]);
+      }), ['Tổng cộng'].concat(byType(D.sub), [D.sub.length, D.sub.length ? 1 : 0])) + 2;
+
+    // 4. Đang chờ duyệt
+    var codes = S.cfg.submittingStatuses;
+    var pRow = function (label, who, l) {
+      var avg = l.length ? Math.round(l.reduce(function (a, s) { return a + s._days; }, 0) / l.length * 10) / 10 : 0;
+      return [label, who].concat(byType(l), [l.length, avg, l.reduce(function (m, s) { return Math.max(m, s._days); }, 0)]);
+    };
+    section('Đang chờ ai duyệt', 'Toàn bộ hồ sơ đang trình hiện nay (không phụ thuộc kỳ); số ngày tính từ lúc chuyển đến', pendingChartSpec(D), 900, 260);
+    R = table(R, [{ h: 'Đang chờ' }, { h: 'Người duyệt', span: 3 }].concat(typeCols, [{ h: 'Tổng', bold: true }, { h: 'TB ngày chờ', fmt: '0.0' }, { h: 'Chờ lâu nhất (ngày)' }]),
+      codes.map(function (c) { return pRow(statusOf(c).label, approverNames(c) || '—', D.pending.filter(function (s) { return s.status === c; })); }),
+      pRow('Tổng cộng', '', D.pending)) + 2;
+
+    // 5. Theo dự án
+    var P = repProjectData(D);
+    section('Hồ sơ đệ trình theo dự án', 'Dự án lấy theo số/mã đầu tên hồ sơ; biểu đồ: 15 dự án nhiều hồ sơ nhất, bảng: tất cả', projectChartSpec(D, true), 900,
+      Math.max(240, Math.min(P.keys.length, 15) * 30 + 90));
+    R = table(R, [{ h: 'Dự án', span: 3 }].concat(typeCols, [{ h: 'Đang trình' }, { h: 'Đã duyệt' }, { h: 'Tổng', bold: true }]),
+      P.keys.map(function (k) {
+        var l = P.groups[k];
+        return [k === '-' ? 'Chưa gắn dự án' : projectLabel(k)].concat(byType(l), [cnt(l, isSubmitting), cnt(l, function (s) { return s.status === S.cfg.approvedStatus; }), l.length]);
+      })) + 1;
+    ws.pageSetup.printArea = 'A1:N' + R;
+
+    /* ---------- Trang danh sách hồ sơ ---------- */
+    var listSheet = function (name, title, rows) {
+      var sh = wb.addWorksheet(name, { views: [{ state: 'frozen', ySplit: 4, showGridLines: false }],
+        pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
+      var heads = [['Mã HS', 14], ['Tên hồ sơ', 58], ['Loại', 13], ['Dự án', 28], ['Chuyên viên', 20], ['Tình trạng hiện tại', 24],
+                   ['Ngày tạo', 12], ['Ngày trình', 12], ['Ngày duyệt', 12], ['Số ngày ở TT hiện tại', 13]];
+      sh.columns = heads.map(function (h) { return { width: h[1] }; });
+      sh.mergeCells(1, 1, 1, heads.length);
+      var t = sh.getCell(1, 1);
+      t.value = title.toUpperCase() + ' – ' + D.label + (D.f.period ? ' (' + rangeText + ')' : '');
+      t.font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFFFF' } }; t.fill = fill(NAVY);
+      t.alignment = { vertical: 'middle', indent: 1 }; sh.getRow(1).height = 30;
+      sh.mergeCells(2, 1, 2, heads.length);
+      var n = sh.getCell(2, 1);
+      n.value = rows.length + ' hồ sơ · Bộ lọc: ' + filterSummary(D.f) + ' · Xuất ngày ' + fmtDate(S.today);
+      n.font = { name: 'Calibri', size: 9.5, italic: true, color: { argb: argb(MUTED) } }; n.alignment = { indent: 1 };
+      var hr = sh.getRow(4);
+      heads.forEach(function (h, i) {
+        var c = hr.getCell(i + 1);
+        c.value = h[0]; c.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } }; c.fill = fill(NAVY);
+        c.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }; c.border = box;
+      });
+      hr.height = 30;
+      rows.forEach(function (s, i) {
+        var st = statusOf(s.status), ty = typeOf(s._type);
+        var row = sh.getRow(5 + i);
+        row.values = [s.id, s.title, ty.label, s._projects.map(projectLabel).join('; '), userName(s.owner), st.label,
+          toDate(s.createdAt), toDate(s._subAt), toDate(s.approvedAt), s.status === S.cfg.approvedStatus ? null : s._days];
+        heads.forEach(function (h, k) {
+          var col = k + 1, c = row.getCell(col);
+          c.border = box;
+          c.font = { name: 'Calibri', size: 10.5, color: { argb: argb(INK) } };
+          c.alignment = { vertical: 'middle', wrapText: col === 2 || col === 4, horizontal: col >= 7 ? 'center' : 'left' };
+          if (col >= 7 && col <= 9) c.numFmt = 'dd/mm/yyyy';
+          if (i % 2) c.fill = fill(SOFT);
+        });
+        row.getCell(1).font = { name: 'Calibri', size: 10.5, color: { argb: argb('3550A8') } };
+        row.getCell(3).font = { name: 'Calibri', size: 10.5, bold: true, color: { argb: argb(ty.color) } };
+        row.getCell(6).fill = fill(tint(st.color, 0.22));
+        row.getCell(6).font = { name: 'Calibri', size: 10.5, bold: true, color: { argb: argb(INK) } };
+        if (s.status !== S.cfg.approvedStatus && s._days >= 7) row.getCell(10).font = { name: 'Calibri', size: 10.5, bold: true, color: { argb: s._days >= 14 ? 'FFD9493B' : 'FFB26A00' } };
+      });
+      if (rows.length) sh.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4 + rows.length, column: heads.length } };
+      else { sh.mergeCells(5, 1, 5, heads.length); sh.getCell(5, 1).value = 'Không có hồ sơ nào.'; sh.getCell(5, 1).font = { italic: true, color: { argb: argb(MUTED) } }; }
+    };
+    var bySub = function (a, b) { return a._subAt < b._subAt ? -1 : a._subAt > b._subAt ? 1 : 0; };
+    listSheet('DS đệ trình trong kỳ', 'Hồ sơ đệ trình trong kỳ', D.sub.slice().sort(bySub));
+    listSheet('Đang chờ duyệt', 'Hồ sơ đang chờ duyệt', D.pending.slice().sort(function (a, b) { return b._days - a._days; }));
+    listSheet('Duyệt trong kỳ', 'Hồ sơ duyệt hoàn tất trong kỳ', D.approved.slice().sort(function (a, b) { return a.approvedAt < b.approvedAt ? -1 : 1; }));
+    listSheet('Trả lại trong kỳ', 'Hồ sơ bị trả lại trong kỳ', D.returned.slice().sort(bySub));
+    return wb;
   }
 
   /** Xuất CSV (mở bằng Excel): tổng quan kỳ + bảng theo chuyên viên + danh sách hồ sơ đệ trình trong kỳ. */
@@ -2190,7 +2528,7 @@
       '<li>Mỗi lần <b>Cập nhật</b> tình trạng, hệ thống tự ghi ngày (ngày/tháng/năm) và lưu vào lịch sử.</li>' +
       '<li>Ngày trình là ngày đầu tiên hồ sơ chuyển sang một tình trạng "Đang trình …" (hồ sơ chuyển thẳng sang Đã duyệt/Trả lại: ngày đầu tiên rời ổ Chuyên viên).</li>' +
       '<li><b>Báo cáo tổng hợp</b> (Dashboard Trưởng phòng; chuyên viên: mục "Báo cáo tổng hợp"): chọn kỳ <b>Tuần / Tháng / Quý / Năm</b> ở THAM SỐ, bấm ‹ › để lùi/tiến kỳ, "Hiện tại" để về kỳ này. ' +
-      'Mỗi ô báo cáo có nút <b>Biểu đồ / Bảng</b>; bấm vào số, cột hoặc miếng biểu đồ để xem danh sách hồ sơ. "Xuất báo cáo (Excel)" tải file CSV mở bằng Excel.</li>' +
+      'Mỗi ô báo cáo có nút <b>Biểu đồ / Bảng</b>; bấm vào số, cột hoặc miếng biểu đồ để xem danh sách hồ sơ. "Xuất báo cáo (Excel)" tải file .xlsx gồm trang Dashboard (ô số liệu, biểu đồ, bảng dữ liệu) và các trang danh sách hồ sơ (lọc/sắp xếp được).</li>' +
       '<li>Chuyên viên xem được mọi hồ sơ nhưng chỉ sửa hồ sơ của mình. TP.MH, TP.C&amp;C, GĐTM sửa được mọi hồ sơ.</li>' +
       '<li>Chuông thông báo hiện hồ sơ đang trình bạn và hồ sơ của bạn bị trả lại.</li>' +
       '<li>Ô "Số ngày ở TT hiện tại" chuyển màu cam khi ≥ 7 ngày, đỏ khi ≥ 14 ngày.</li>' +
@@ -2421,7 +2759,7 @@
     },
     'rep-mode': function (el) { repModes()[el.dataset.key] = el.dataset.mode; store.set('hs_rep_modes', JSON.stringify(S.repModes)); render(); },
     'rep-close': function (el) { S.repSel[el.dataset.view] = null; render(); },
-    'rep-export': function (el) { exportReport(el.dataset.view); },
+    'rep-export': function (el) { exportReportXlsx(el.dataset.view, el); },
     'mgr-tab': function (el) { jumpToTab(el.dataset.tab); },
     'matrix-cell': function (el) {
       var f = getFilter('manager');
@@ -2677,15 +3015,17 @@
       }).join(',');
     }).join('\r\n');
     try {
-      var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement('a');
-      a.href = url; a.download = name;
-      document.body.appendChild(a); a.click();
-      setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 1500);
+      downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), name);
     } catch (err) {
       window.open('data:text/csv;charset=utf-8,' + encodeURIComponent(csv), '_blank');
     }
+  }
+  function downloadBlob(blob, name) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 1500);
   }
 
   /* =====================================================================
