@@ -773,7 +773,7 @@
 
   function barConfig(labels, datasets, o) {
     datasets.forEach(function (d) {
-      d.borderRadius = o.stacked ? 0 : 4;
+      d.borderRadius = o.stacked ? 3 : 6;
       d.borderSkipped = o.stacked ? false : 'start';
       d.borderColor = '#FFFFFF';
       d.borderWidth = o.stacked ? 1 : 0;
@@ -781,10 +781,10 @@
     });
     var valueAxis = {
       beginAtZero: true, stacked: !!o.stacked,
-      grid: { color: '#EEF0F4' }, border: { display: false },
-      ticks: { precision: o.decimals ? undefined : 0, color: '#6B7180' }
+      grid: { color: '#E9EEF6' }, border: { display: false },
+      ticks: { precision: o.decimals ? undefined : 0, color: '#76829B' }
     };
-    var catAxis = { stacked: !!o.stacked, grid: { display: false }, ticks: { color: '#3A4050', autoSkip: true, maxRotation: 0 } };
+    var catAxis = { stacked: !!o.stacked, grid: { display: false }, border: { color: '#DAE1EC' }, ticks: { color: '#44506A', autoSkip: true, maxRotation: 0 } };
     return {
       type: 'bar',
       data: { labels: labels, datasets: datasets },
@@ -793,9 +793,9 @@
         indexAxis: o.horizontal ? 'y' : 'x',
         interaction: { mode: o.stacked ? 'index' : 'nearest', intersect: !o.stacked, axis: o.horizontal ? 'y' : 'x' },
         plugins: {
-          legend: { display: !!o.legend, position: 'bottom', labels: { usePointStyle: true, pointStyle: 'circle', boxWidth: 8, boxHeight: 8, color: '#3A4050' } },
+          legend: { display: !!o.legend, position: 'bottom', labels: { usePointStyle: true, pointStyle: 'circle', boxWidth: 8, boxHeight: 8, color: '#44506A' } },
           tooltip: {
-            backgroundColor: '#1E2554', padding: 10, cornerRadius: 8,
+            backgroundColor: 'rgba(16, 26, 51, .92)', padding: 10, cornerRadius: 10,
             filter: function (item) { return !o.stacked || item.raw > 0; },
             callbacks: {
               label: function (ctx) {
@@ -813,7 +813,7 @@
 
   function mountCharts() {
     if (typeof Chart === 'undefined') return;
-    Chart.defaults.font.family = "'Nunito Sans', 'Segoe UI', Arial, sans-serif";
+    Chart.defaults.font.family = "'Be Vietnam Pro', 'Segoe UI', Arial, sans-serif";
     Chart.defaults.font.size = 13;
     (S.pendingCharts || []).forEach(function (p) {
       var el = document.getElementById(p.id);
@@ -832,7 +832,7 @@
     var extra = '';
     if (isManagerPos()) {
       var cnt = S.subs.filter(function (s) { return s.status === S.me.position; }).length;
-      extra = '<button class="tile" data-act="nav" data-view="manager"><div class="circle" style="background:#1E2554">' + fmtNum(cnt) +
+      extra = '<button class="tile" data-act="nav" data-view="manager"><div class="circle" style="background:#1E2B59">' + fmtNum(cnt) +
         '</div><div class="tlabel">Đang trình tôi (' + esc(posLabel(S.me.position)) + ')</div></button>';
     }
     return paramsCard('home', { tools: syncButton() }) +
@@ -1745,13 +1745,13 @@
       if (!total) return repEmpty('Không có hồ sơ đệ trình trong kỳ này.');
       var cfg = {
         type: 'doughnut',
-        data: { labels: sts.map(function (st) { return st.short; }), datasets: [{ data: counts, backgroundColor: sts.map(function (st) { return st.color; }), borderColor: '#fff', borderWidth: 2 }] },
+        data: { labels: sts.map(function (st) { return st.short; }), datasets: [{ data: counts, backgroundColor: sts.map(function (st) { return st.color; }), borderColor: '#fff', borderWidth: 3, borderRadius: 6, spacing: 1 }] },
         options: {
-          animation: false, responsive: true, maintainAspectRatio: false, cutout: '62%',
+          animation: false, responsive: true, maintainAspectRatio: false, cutout: '68%',
           plugins: {
-            legend: { position: 'right', labels: { usePointStyle: true, pointStyle: 'circle', boxWidth: 8, boxHeight: 8, color: '#3A4050',
+            legend: { position: 'right', labels: { usePointStyle: true, pointStyle: 'circle', boxWidth: 8, boxHeight: 8, color: '#44506A',
               filter: function (item, data) { return data.datasets[0].data[item.index] > 0; } } },
-            tooltip: { backgroundColor: '#1E2554', padding: 10, cornerRadius: 8,
+            tooltip: { backgroundColor: 'rgba(16, 26, 51, .92)', padding: 10, cornerRadius: 10,
               callbacks: { label: function (ctx) { return ' ' + ctx.label + ': ' + ctx.raw + ' hồ sơ (' + Math.round(ctx.raw * 100 / total) + '%)'; } } }
           }
         },
@@ -1760,8 +1760,8 @@
           if (!a) return;
           c.save(); c.textAlign = 'center'; c.textBaseline = 'middle';
           var x = (a.left + a.right) / 2, y = (a.top + a.bottom) / 2;
-          c.fillStyle = '#1E2B59'; c.font = '800 24px "Nunito Sans", sans-serif'; c.fillText(String(total), x, y - 7);
-          c.fillStyle = '#6B7180'; c.font = '600 12px "Nunito Sans", sans-serif'; c.fillText('hồ sơ', x, y + 13);
+          c.fillStyle = '#1E2B59'; c.font = '700 24px "Space Grotesk", sans-serif'; c.fillText(String(total), x, y - 7);
+          c.fillStyle = '#76829B'; c.font = '600 12px "Be Vietnam Pro", sans-serif'; c.fillText('hồ sơ', x, y + 13);
           c.restore();
         } }]
       };
