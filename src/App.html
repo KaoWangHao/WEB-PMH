@@ -819,7 +819,7 @@
       extra = '<button class="tile" data-act="nav" data-view="manager"><div class="circle" style="background:#1E2554">' + fmtNum(cnt) +
         '</div><div class="tlabel">Đang trình tôi (' + esc(posLabel(S.me.position)) + ')</div></button>';
     }
-    return paramsCard('home', {}) +
+    return paramsCard('home', { tools: syncButton() }) +
       overviewCard('home', scope, { extraTile: extra }) +
       chartsCard('home', rows, {}) +
       detailCard('home', rows, { title: 'Thông tin chi tiết hồ sơ của tôi', create: true }) +
@@ -829,7 +829,7 @@
   function viewMine() {
     var f = getFilter('mine');
     var mine = S.subs.filter(function (s) { return s.owner === S.me.username; });
-    return paramsCard('mine', {}) + detailCard('mine', applyFilter(mine, f), { title: 'Hồ sơ của tôi', create: true });
+    return paramsCard('mine', { tools: syncButton() }) + detailCard('mine', applyFilter(mine, f), { title: 'Hồ sơ của tôi', create: true });
   }
 
   function viewAll() {
@@ -861,7 +861,7 @@
     if (!tabs.some(function (t) { return t.key === S.mgrTab; })) S.mgrTab = tabs[0].key;
     var tab = S.mgrTab;
 
-    var syncBtn = S.cfg.folderSync ? '<button class="secondary-btn" data-act="folder-sync" title="' + esc(syncTitle()) + '">' + ic('refresh') + 'Đồng bộ thư mục</button>' : '';
+    var syncBtn = syncButton();
     var bar = '<nav class="mgr-tabs" id="mgr-tabs" role="tablist">' + tabs.map(function (t) {
       var n = t.key === 'list' ? rows.length : t.count;
       return '<button role="tab" aria-selected="' + (t.key === tab) + '" class="' + (t.key === tab ? 'on' : '') + '" data-act="mgr-tab" data-tab="' + t.key + '">' +
@@ -880,12 +880,17 @@
     }
     return paramsCard('manager', { owners: true, tools: syncBtn }) + mgrOverview(scope) + bar + content;
   }
+  /** Nút "Đồng bộ thư mục" — mọi tài khoản (chuyên viên: chỉ hồ sơ của mình). */
+  function syncButton() {
+    return S.cfg.folderSync ? '<button class="secondary-btn" data-act="folder-sync" title="' + esc(syncTitle()) + '">' + ic('refresh') + 'Đồng bộ thư mục</button>' : '';
+  }
   function syncTitle() {
     var last = S.folderSync;
     return (last ? 'Lần đồng bộ gần nhất: ' + last.at + ' bởi ' + userName(last.by) + ' (' + last.changed + ' hồ sơ đổi tình trạng' +
         (last.reassigned ? ', ' + last.reassigned + ' đổi chuyên viên' : '') + '). '
                  : 'Chưa đồng bộ lần nào. ') +
-      'Kết nối VPN, bấm nút rồi chọn thư mục ' + S.cfg.folderSync.rootName + ' trên ổ chia sẻ; web chỉ đọc tên file và cho xem trước trước khi cập nhật.';
+      'Kết nối VPN, bấm nút rồi chọn thư mục ' + S.cfg.folderSync.rootName + ' trên ổ chia sẻ; web chỉ đọc tên file và cho xem trước trước khi cập nhật.' +
+      (S.me.isManager ? '' : ' Bạn chỉ cập nhật được hồ sơ của mình.');
   }
   /** TỔNG QUAN gọn: tình trạng + loại hồ sơ + chỉ số nhanh trên 1–2 hàng; bấm ô để lọc. */
   function mgrOverview(scope) {
@@ -1055,19 +1060,23 @@
       throw new Error('Không thấy file nào trong các thư mục tình trạng. Hãy chọn đúng thư mục ' + S.cfg.folderSync.rootName + '.');
     }
 
-    var plan = { changes: [], conflicts: [], dupWeb: [], owners: [], ownerAmbiguous: 0, same: 0, total: total, ignored: ignored, notOnWeb: notOnWeb, notInFolder: 0 };
+    var plan = { changes: [], conflicts: [], dupWeb: [], owners: [], ownerAmbiguous: 0, notMine: 0, same: 0, total: total, ignored: ignored, notOnWeb: notOnWeb, notInFolder: 0 };
     Object.keys(items).forEach(function (k) {
       var it = items[k];
       var web = webByKey[k];
       if (web.length > 1) { plan.dupWeb.push({ item: it, subs: web }); return; }
       var sub = web[0];
-      if (it.owners.length > 1) plan.ownerAmbiguous++;
-      else if (it.owners.length === 1 && it.owners[0] !== sub.owner) plan.owners.push({ item: it, sub: sub, owner: it.owners[0], code: it.codes[0] });
+      // Chuyên viên chỉ cập nhật được hồ sơ của mình; hồ sơ của người khác bỏ qua.
+      if (!canEdit(sub)) { plan.notMine++; return; }
+      if (S.me.isManager) {
+        if (it.owners.length > 1) plan.ownerAmbiguous++;
+        else if (it.owners.length === 1 && it.owners[0] !== sub.owner) plan.owners.push({ item: it, sub: sub, owner: it.owners[0], code: it.codes[0] });
+      }
       if (it.statuses.length > 1) { plan.conflicts.push({ item: it, sub: sub }); return; }
       if (it.statuses[0] === sub.status) plan.same++;
       else plan.changes.push({ item: it, sub: sub, status: it.statuses[0] });
     });
-    plan.notInFolder = S.subs.filter(function (s) { return !items[syncKey(s.title)]; }).length;
+    plan.notInFolder = S.subs.filter(function (s) { return canEdit(s) && !items[syncKey(s.title)]; }).length;
     var byTitle = function (a, b) { return a.item.title.localeCompare(b.item.title, 'vi'); };
     plan.changes.sort(byTitle); plan.conflicts.sort(byTitle); plan.dupWeb.sort(byTitle); plan.owners.sort(byTitle);
     S.syncPlan = plan;
@@ -1116,7 +1125,8 @@
       '<div><small>File đã đọc</small>' + fmtNum(plan.total) + '</div>' +
       '<div><small>Đổi tình trạng</small>' + plan.changes.length + '</div>' +
       '<div><small>Không đổi</small>' + plan.same + '</div>' +
-      '<div><small>Lệch chuyên viên</small>' + plan.owners.length + '</div>' +
+      (S.me.isManager ? '<div><small>Lệch chuyên viên</small>' + plan.owners.length + '</div>' : '') +
+      (plan.notMine ? '<div><small>Hồ sơ của người khác (bỏ qua)</small>' + plan.notMine + '</div>' : '') +
       '<div><small>Không có trên web (bỏ qua)</small>' + fmtNum(plan.notOnWeb) + '</div>' +
       '<div><small>Thư mục khác (bỏ qua)</small>' + fmtNum(plan.ignored) + '</div></div>';
 
@@ -1670,7 +1680,7 @@
       '<li>Chuông thông báo hiện hồ sơ đang trình bạn và hồ sơ của bạn bị trả lại.</li>' +
       '<li>Ô "Số ngày ở TT hiện tại" chuyển màu cam khi ≥ 7 ngày, đỏ khi ≥ 14 ngày.</li>' +
       '<li>Hồ sơ có cụm <b>"xin ý kiến"</b> trong tên (ví dụ "(Trình xin ý kiến)") được tính là <b>Báo cáo</b>, còn lại là <b>Trình duyệt</b>; lọc theo ô "Loại hồ sơ".</li>' +
-      '<li>Trưởng phòng dùng <b>Đồng bộ từ thư mục</b> (Dashboard Trưởng phòng) để cập nhật tình trạng theo thư mục hồ sơ trên ổ chia sẻ: ' +
+      '<li>Bấm <b>Đồng bộ thư mục</b> (ở thẻ THAM SỐ) để cập nhật tình trạng theo thư mục hồ sơ trên ổ chia sẻ — chuyên viên chỉ cập nhật hồ sơ của mình: ' +
       'tên hồ sơ trên web phải trùng tên file (không cần đuôi file, không phân biệt chữ hoa/thường); file không có trên web được bỏ qua. ' +
       'Nếu cuối tên file có ký hiệu chuyên viên (vd "..._CQH") khác người đang phụ trách, bảng xem trước cho chọn đổi chuyên viên.</li>' +
       (S.cfg.installUrl ? '<li>Cài icon <b>CENTRAL PMH</b> lên màn hình điện thoại: mở <a href="' + esc(S.cfg.installUrl) + '" target="_blank" rel="noopener">' +

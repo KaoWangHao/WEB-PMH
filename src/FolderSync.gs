@@ -17,12 +17,14 @@ function lastFolderSync_() {
  * payload.changes: [{ id, from, status }] — đổi tình trạng hồ sơ đã có (from = tình trạng lúc xem trước).
  * payload.owners:  [{ id, from, owner }]  — đổi chuyên viên phụ trách theo ký hiệu cuối tên file (from = người phụ trách lúc xem trước).
  * Mỗi hồ sơ ghi 1 dòng History (gộp cả đổi tình trạng và đổi chuyên viên nếu có).
+ * Mọi tài khoản đều đồng bộ được: chuyên viên chỉ đổi tình trạng hồ sơ của mình (canEditSubmission_);
+ * đổi chuyên viên phụ trách chỉ dành cho Trưởng phòng/admin.
  */
 function applyFolderSync_(user, payload) {
-  requireManager_(user);
   var changes = (payload && payload.changes) || [];
   var owners = (payload && payload.owners) || [];
   if (!(changes instanceof Array) || !(owners instanceof Array)) throw appError_('Dữ liệu đồng bộ không hợp lệ.');
+  if (owners.length && !user.isManager) throw appError_('Chỉ Trưởng phòng được đổi chuyên viên phụ trách.', 'FORBIDDEN');
   if (changes.length + owners.length > FOLDER_SYNC.MAX_ITEMS) {
     throw appError_('Quá nhiều hồ sơ trong một lần đồng bộ (tối đa ' + FOLDER_SYNC.MAX_ITEMS + ').');
   }
@@ -49,6 +51,7 @@ function applyFolderSync_(user, payload) {
       var status = String(c.status || '');
       var rec = byId[id];
       if (!rec) { skipped.push({ title: id, reason: 'Không tìm thấy hồ sơ trên web.' }); return; }
+      if (!canEditSubmission_(user, rec)) { skipped.push({ title: rec.title, reason: 'Bạn chỉ được cập nhật hồ sơ của chính mình.' }); return; }
       if (seen[id]) return;
       seen[id] = true;
       if (!isValidStatus_(status)) { skipped.push({ title: rec.title, reason: 'Tình trạng không hợp lệ.' }); return; }
