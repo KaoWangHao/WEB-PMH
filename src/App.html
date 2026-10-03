@@ -352,17 +352,47 @@
       '</div><div class="card-body">' + body + '</div></section>';
   }
 
-  /** Ô ngày: nhập tay dd/mm/yyyy (tự chèn "/") hoặc chọn trên lịch (input date gốc phủ lên nút lịch). Bộ lọc lưu ISO yyyy-mm-dd. */
+  /**
+   * Ô ngày: nhập tay dd/mm/yyyy (tự chèn "/") hoặc chọn trên lịch tự vẽ. Không dùng lịch gốc của trình duyệt vì trong
+   * iframe của Apps Script, showPicker() bị chặn (SecurityError) và <input type=date> hiển thị theo locale máy.
+   * Bộ lọc lưu ISO yyyy-mm-dd.
+   */
   function dateField(view, field, label) {
     var f = getFilter(view);
     var id = 'f-' + view + '-' + field;
+    var dd = 'cal-' + view + '-' + field;
     var attrs = ' data-view="' + view + '" data-field="' + field + '"';
-    return '<div class="field sm date-field"><div class="fbody"><label for="' + id + '">' + label + '</label>' +
+    return '<div class="field sm date-field anchor"><div class="fbody"><label for="' + id + '">' + label + '</label>' +
       '<input type="text" id="' + id + '" class="date-text" inputmode="numeric" autocomplete="off" maxlength="10" placeholder="dd/mm/yyyy"' +
         ' data-input="date-text" data-change="date-text"' + attrs + ' value="' + esc(f[field] ? fmtDate(f[field]) : '') + '"></div>' +
-      '<span class="faddon date-addon" title="Chọn trên lịch">' + ic('calendar') +
-        '<input type="date" id="' + id + '-pick" class="date-native" tabindex="-1" aria-label="' + label + ' – chọn trên lịch"' +
-        ' data-act="pick-date" data-change="date-pick"' + attrs + ' value="' + esc(f[field]) + '"></span></div>';
+      '<button type="button" class="faddon" data-act="toggle-dd" data-dd="' + dd + '" aria-label="Chọn ' + label.toLowerCase() + ' trên lịch" aria-expanded="' + (S.open === dd) + '">' +
+        ic('calendar') + '</button>' + (S.open === dd ? calendarPanel(view, field, dd) : '') + '</div>';
+  }
+  function calendarPanel(view, field, dd) {
+    var f = getFilter(view);
+    S.calMonth = S.calMonth || {};
+    var month = S.calMonth[dd] || (f[field] || S.today).slice(0, 7);
+    S.calMonth[dd] = month;
+    var y = +month.slice(0, 4), m = +month.slice(5, 7);
+    var first = dayNum(month + '-01');
+    var startDow = (new Date(first * 86400000).getUTCDay() + 6) % 7; // thứ 2 = 0
+    var daysIn = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    var attrs = ' data-view="' + view + '" data-field="' + field + '"';
+    var cells = '';
+    for (var i = 0; i < startDow; i++) cells += '<span></span>';
+    for (var d = 1; d <= daysIn; d++) {
+      var iso = numToIso(first + d - 1);
+      cells += '<button type="button" class="cal-day' + (iso === f[field] ? ' sel' : '') + (iso === S.today ? ' today' : '') + '"' +
+        ' data-act="cal-pick" data-date="' + iso + '"' + attrs + '>' + d + '</button>';
+    }
+    return '<div class="cal-panel" role="dialog" aria-label="Chọn ngày">' +
+      '<div class="cal-head"><button type="button" class="cal-nav" data-act="cal-nav" data-dd="' + dd + '" data-dir="-1" aria-label="Tháng trước">' + ic('chevLeft') + '</button>' +
+      '<b>Tháng ' + ('0' + m).slice(-2) + '/' + y + '</b>' +
+      '<button type="button" class="cal-nav" data-act="cal-nav" data-dd="' + dd + '" data-dir="1" aria-label="Tháng sau">' + ic('chevRight') + '</button></div>' +
+      '<div class="cal-grid cal-dow"><span>T2</span><span>T3</span><span>T4</span><span>T5</span><span>T6</span><span>T7</span><span>CN</span></div>' +
+      '<div class="cal-grid">' + cells + '</div>' +
+      '<div class="cal-foot"><button type="button" data-act="cal-pick" data-date="' + S.today + '"' + attrs + '>Hôm nay</button>' +
+      '<button type="button" data-act="cal-pick" data-date=""' + attrs + '>Xóa</button></div></div>';
   }
   /** "1/9/2026", "01-09-2026", "01.09.2026", "01092026" → "2026-09-01"; '' nếu rỗng; null nếu sai. */
   function parseDmy(v) {
@@ -1527,9 +1557,19 @@
     'help': function () { openHelp(); },
     'logout': function () { closeModal(); logout(); },
     'change-password': function () { S.open = null; render(); openChangePassword(); },
-    'pick-date': function (el) {
-      // Bấm vào nút lịch = bấm vào input date gốc phủ lên nút; Chrome/Edge cần showPicker(), Safari/điện thoại tự mở.
-      try { if (el.showPicker) el.showPicker(); } catch (e) {}
+    'cal-nav': function (el) {
+      var k = S.calMonth[el.dataset.dd];
+      var y = +k.slice(0, 4), m = +k.slice(5, 7) + Number(el.dataset.dir);
+      if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; }
+      S.calMonth[el.dataset.dd] = y + '-' + ('0' + m).slice(-2);
+      render();
+    },
+    'cal-pick': function (el) {
+      S.open = null;
+      var box = document.getElementById('f-' + el.dataset.view + '-' + el.dataset.field);
+      if (box) box.closest('.field').classList.remove('invalid');
+      if (getFilter(el.dataset.view)[el.dataset.field] === el.dataset.date) render();
+      else setDateFilter(el.dataset.view, el.dataset.field, el.dataset.date);
     },
     'reset-filter': function (el) {
       S.filters[el.dataset.view] = defaultFilter(el.dataset.view);
@@ -1698,8 +1738,6 @@
     if (kind === 'filter') {
       getFilter(view)[el.dataset.field] = el.value;
       resetPage(view); render();
-    } else if (kind === 'date-pick') {
-      setDateFilter(view, el.dataset.field, el.value || '');
     } else if (kind === 'date-text') {
       var iso = parseDmy(el.value);
       if (iso === null) {
