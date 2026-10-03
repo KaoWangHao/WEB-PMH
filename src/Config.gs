@@ -129,6 +129,6 @@ function publicConfig_() {
     minPasswordLength: APP_CONFIG.MIN_PASSWORD_LENGTH,
     maxTitleLength: APP_CONFIG.MAX_TITLE_LENGTH,
     folderSync: { rootName: FOLDER_SYNC.ROOT_NAME, rootHint: FOLDER_SYNC.ROOT_HINT, rules: FOLDER_SYNC.RULES,
-                  createInitials: FOLDER_SYNC.CREATE_INITIALS }
+                  createInitials: FOLDER_SYNC.CREATE_INITIALS, note: FOLDER_SYNC.NOTE, createNote: FOLDER_SYNC.CREATE_NOTE }
   };
 }
