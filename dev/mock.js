@@ -66,9 +66,11 @@
     getUuid: function () { return crypto.randomUUID(); },
     formatDate: function (date, tz, fmt) {
       var parts = {};
-      new Intl.DateTimeFormat('en-GB', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' })
+      new Intl.DateTimeFormat('en-GB', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
         .formatToParts(date).forEach(function (p) { parts[p.type] = p.value; });
-      return fmt.replace('yyyy', parts.year).replace('MM', parts.month).replace('dd', parts.day);
+      return fmt.replace('yyyy', parts.year).replace('MM', parts.month).replace('dd', parts.day)
+        .replace('HH', parts.hour).replace('mm', parts.minute);
     }
   };
 

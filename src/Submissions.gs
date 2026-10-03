@@ -40,7 +40,8 @@ function bootstrap_(user) {
     today: dmyToIso_(today_()),
     users: users,
     submissions: readTable_('Submissions').map(serializeSubmission_),
-    history: readTable_('History').map(serializeHistory_)
+    history: readTable_('History').map(serializeHistory_),
+    folderSync: lastFolderSync_()
   };
 }
 

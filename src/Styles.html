@@ -329,6 +329,20 @@ td.nowrap { white-space: nowrap; }
 .matrix td.cell:not(.zero):hover { outline: 2px solid var(--navy-600); outline-offset: -2px; }
 .matrix tfoot td { font-weight: 800; background: #F7F8FA; }
 
+/* ---------- Đồng bộ thư mục ---------- */
+.sync-row { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.sync-text { flex: 1 1 380px; display: flex; flex-direction: column; gap: 6px; line-height: 1.5; }
+.sync-sec { border: 1px solid var(--line); border-radius: 8px; margin-top: 12px; }
+.sync-sec > summary { cursor: pointer; padding: 12px 14px; font-weight: 800; list-style-position: inside; }
+.sync-sec[open] > summary { border-bottom: 1px solid var(--line-soft); }
+.sync-sec .table-wrap { border: 0; border-radius: 0 0 8px 8px; max-height: 360px; overflow: auto; }
+.sync-sec .empty { padding: 18px 12px; }
+.sync-sec select { border: 1px solid #C9CDD6; border-radius: 6px; padding: 5px 8px; background: #fff; max-width: 220px; }
+.sync-sec input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--accent); }
+.sync-count { display: inline-block; background: var(--accent-soft); color: var(--accent-dark); border-radius: 11px; padding: 0 9px; margin-left: 6px; font-size: 13px; }
+.sync-note { margin: 10px 14px 0; font-size: 14px; }
+.sync-list { margin: 10px 0 12px; padding-left: 32px; line-height: 1.7; }
+
 /* ---------- Modal, toast, loading ---------- */
 .modal-bg {
   position: fixed; inset: 0; background: rgba(18, 22, 46, .5); z-index: 80;
