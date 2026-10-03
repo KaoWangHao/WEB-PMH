@@ -51,7 +51,8 @@
     var owner = owners[rand(owners.length)];
     var t = today - rand(150) * DAY;
     var id = 'HS-2026-' + ('000' + (i + 1)).slice(-4);
-    var title = topics[rand(topics.length)] + ' – ' + ['Dự án A', 'Dự án B', 'Văn phòng', 'Nhà máy'][rand(4)] + ' (' + (i + 1) + ')';
+    var title = topics[rand(topics.length)] + ' – ' + ['Dự án A', 'Dự án B', 'Văn phòng', 'Nhà máy'][rand(4)] +
+      (i % 3 === 0 ? ' (Trình xin ý kiến)' : i % 7 === 0 ? '_trinh xin y kien' : '') + ' (' + (i + 1) + ')';
     var s = { id: id, title: title, owner: owner, status: 'CV', createdAt: dmy(t), submittedAt: '', updatedAt: dmy(t), approvedAt: '' };
     events.push({ t: t, h: { submissionId: id, fromStatus: '', toStatus: 'CV', actor: owner, note: '', date: dmy(t) } });
     var step = 0;

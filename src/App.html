@@ -134,6 +134,21 @@
     var st = statusOf(code);
     return '<span class="status-badge"><span class="dot" style="background:' + st.color + '"></span>' + esc(st.label) + '</span>';
   }
+  /** Loại hồ sơ theo tên: có cụm "xin ý kiến" (không dấu, bỏ ngoặc/gạch) → Báo cáo (BC), còn lại → Trình duyệt (TD). */
+  function docTypeOf(title) {
+    var t = ' ' + norm(title).replace(/[^a-z0-9]+/g, ' ').trim() + ' ';
+    var kws = S.cfg.reportKeywords || [];
+    for (var i = 0; i < kws.length; i++) if (t.indexOf(' ' + kws[i] + ' ') >= 0) return 'BC';
+    return 'TD';
+  }
+  function typeOf(code) { return S.typeMap[code] || { code: code, label: code, color: '#9AA0AE' }; }
+  function typeBadge(code) {
+    var t = typeOf(code);
+    return '<span class="type-badge type-' + esc(code) + '">' + esc(t.label) + '</span>';
+  }
+  function typeOptions() {
+    return (S.cfg.docTypes || []).map(function (t) { return { value: t.code, label: t.label, color: t.color }; });
+  }
   function randomPassword() {
     var chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     var out = '';
@@ -160,11 +175,14 @@
     S.cfg.statuses.forEach(function (s, i) { s.order = i; S.statusMap[s.code] = s; });
     S.userMap = {};
     S.users.forEach(function (u) { S.userMap[u.username] = u; });
+    S.typeMap = {};
+    (S.cfg.docTypes || []).forEach(function (t, i) { t.order = i; S.typeMap[t.code] = t; });
     var bySub = {};
     S.hist.sort(function (a, b) { return a.seq - b.seq; });
     S.hist.forEach(function (h) { (bySub[h.submissionId] = bySub[h.submissionId] || []).push(h); });
     S.histBySub = bySub;
     S.subs.forEach(function (s) {
+      s._type = docTypeOf(s.title);
       var changes = (bySub[s.id] || []).filter(function (h) { return h.fromStatus !== h.toStatus; });
       var segs = [];
       for (var i = 0; i < changes.length; i++) {
@@ -181,15 +199,20 @@
 
   function defaultFilter(view) {
     var from = (view === 'home' || view === 'manager') ? S.today.slice(0, 4) + '-01-01' : '';
-    return { from: from, to: '', owners: [], statuses: [], q: '' };
+    return { from: from, to: '', owners: [], statuses: [], types: [], q: '' };
   }
   function getFilter(view) {
     if (!S.filters[view]) S.filters[view] = defaultFilter(view);
     return S.filters[view];
   }
-  function applyFilter(rows, f, ignoreStatus) {
+  /** ignore: true (bỏ lọc tình trạng) hoặc { status: true, type: true }. */
+  function applyFilter(rows, f, ignore) {
     var q = norm(f.q).trim();
+    var ignoreStatus = ignore === true || !!(ignore && ignore.status);
+    var ignoreType = !!(ignore && ignore.type);
+    var types = f.types || [];
     return rows.filter(function (s) {
+      if (!ignoreType && types.length && types.indexOf(s._type) < 0) return false;
       if (f.from && s.createdAt < f.from) return false;
       if (f.to && s.createdAt > f.to) return false;
       if (f.owners.length && f.owners.indexOf(s.owner) < 0) return false;
@@ -381,6 +404,7 @@
       dateField(view, 'from', 'Từ ngày') + dateField(view, 'to', 'Đến ngày') +
       (opts.owners ? multiField(view, 'owners', 'Chuyên viên', ownerOptions()) : '') +
       multiField(view, 'statuses', 'Tình trạng hồ sơ', statusOptions()) +
+      multiField(view, 'types', 'Loại hồ sơ', typeOptions()) +
       '<div class="field"><div class="fbody"><label for="' + qId + '">Tên / mã hồ sơ</label>' +
         '<input type="text" id="' + qId + '" data-input="filter-q" data-view="' + view + '" placeholder="Nhập để tìm…" value="' + esc(f.q) + '"></div></div>' +
       '<button class="primary-btn" data-act="run-report">' + ic('report') + 'Chạy báo cáo</button>' +
@@ -423,6 +447,7 @@
   var COLS = [
     { key: 'id', label: 'Mã HS', sort: function (s) { return s.id; } },
     { key: 'title', label: 'Tên hồ sơ', sort: function (s) { return norm(s.title); } },
+    { key: '_type', label: 'Loại', sort: function (s) { return typeOf(s._type).order; } },
     { key: 'owner', label: 'Chuyên viên', sort: function (s) { return norm(userName(s.owner)); }, ownerOnly: true },
     { key: 'status', label: 'Tình trạng', sort: function (s) { return statusOf(s.status).order; } },
     { key: 'createdAt', label: 'Ngày tạo', sort: function (s) { return s.createdAt; } },
@@ -432,7 +457,7 @@
   ];
   function sortRows(view, rows) {
     var st = S.sorts[view] || (S.sorts[view] = { key: 'updatedAt', dir: 'desc' });
-    var col = COLS.filter(function (c) { return c.key === st.key; })[0] || COLS[6];
+    var col = COLS.filter(function (c) { return c.key === st.key; })[0] || COLS.filter(function (c) { return c.key === 'updatedAt'; })[0];
     var dir = st.dir === 'asc' ? 1 : -1;
     return rows.slice().sort(function (a, b) {
       var x = col.sort(a), y = col.sort(b);
@@ -470,7 +495,7 @@
     }).join('') + '<th></th>';
 
     var body = pageRows.map(function (s) {
-      return '<tr><td class="code">' + esc(s.id) + '</td><td class="title-cell">' + esc(s.title) + '</td>' +
+      return '<tr><td class="code">' + esc(s.id) + '</td><td class="title-cell">' + esc(s.title) + '</td><td>' + typeBadge(s._type) + '</td>' +
         (opts.showOwner ? '<td class="nowrap">' + esc(userName(s.owner)) + '</td>' : '') +
         '<td>' + statusBadge(s.status) + '</td>' +
         '<td class="nowrap">' + fmtDate(s.createdAt) + '</td><td class="nowrap">' + fmtDate(s.submittedAt) + '</td>' +
@@ -701,6 +726,7 @@
     return syncCard() + (isManagerPos() ? pendingCard() : '') +
       paramsCard('manager', { owners: true }) +
       overviewCard('manager', scope) +
+      typeCard(applyFilter(S.subs, f, { status: true, type: true })) +
       matrixCard(scope) +
       submitReportCard() +
       chartsCard('manager', rows, { byOwner: true }) +
@@ -712,14 +738,18 @@
     var rows = S.subs.filter(function (s) { return s.status === pos; })
       .sort(function (a, b) { return b._days - a._days || (a.submittedAt < b.submittedAt ? -1 : 1); });
     var body = rows.length ? '<div class="table-wrap"><table class="grid"><thead><tr>' +
-      '<th>Mã HS</th><th>Tên hồ sơ</th><th>Chuyên viên</th><th>Ngày trình</th><th>Chuyển đến tôi</th><th class="num">Số ngày chờ</th><th></th>' +
+      '<th>Mã HS</th><th>Tên hồ sơ</th><th>Loại</th><th>Chuyên viên</th><th>Ngày trình</th><th>Chuyển đến tôi</th><th class="num">Số ngày chờ</th><th></th>' +
       '</tr></thead><tbody>' + rows.map(function (s) {
-        return '<tr><td class="code">' + esc(s.id) + '</td><td class="title-cell">' + esc(s.title) + '</td>' +
+        return '<tr><td class="code">' + esc(s.id) + '</td><td class="title-cell">' + esc(s.title) + '</td><td>' + typeBadge(s._type) + '</td>' +
           '<td class="nowrap">' + esc(userName(s.owner)) + '</td><td class="nowrap">' + fmtDate(s.submittedAt) + '</td>' +
           '<td class="nowrap">' + fmtDate(s._since) + '</td><td class="num">' + waitCell(s) + '</td><td>' + rowActions(s) + '</td></tr>';
       }).join('') + '</tbody></table></div>'
       : '<div class="empty">' + ic('inbox') + '<div>Không có hồ sơ nào đang trình ' + esc(posLabel(pos)) + '.</div></div>';
-    var tools = '<span class="status-badge" style="font-size:15px"><span class="dot" style="background:' + statusOf(pos).color + '"></span>' + rows.length + ' hồ sơ</span>';
+    var tools = '<span class="status-badge" style="font-size:15px"><span class="dot" style="background:' + statusOf(pos).color + '"></span>' + rows.length + ' hồ sơ</span>' +
+      (S.cfg.docTypes || []).map(function (t) {
+        return '<span class="type-badge type-' + t.code + '" style="font-size:13.5px">' + esc(t.label) + ': ' +
+          rows.filter(function (s) { return s._type === t.code; }).length + '</span>';
+      }).join('');
     return card('manager-pending', 'Hồ sơ ' + esc(statusOf(pos).label), body, { collapsible: true, tools: tools });
   }
 
@@ -934,6 +964,62 @@
     return card('manager-matrix', 'Chuyên viên × Tình trạng', body, { collapsible: true });
   }
 
+  /* ---------- Trình duyệt / Báo cáo ---------- */
+  function typeCard(scope) {
+    var f = getFilter('manager');
+    var types = S.cfg.docTypes || [];
+    var sts = S.cfg.statuses;
+    var selT = f.types.length === 1 ? f.types[0] : null;
+    var by = function (list, t) { return list.filter(function (s) { return s._type === t; }); };
+    var pending = function (list) { return list.filter(function (s) { return S.cfg.submittingStatuses.indexOf(s.status) >= 0; }).length; };
+    function link(n, attrs, strong) {
+      return n ? '<td class="cell" data-act="type-filter"' + attrs + '>' + (strong ? '<b>' + fmtNum(n) + '</b>' : fmtNum(n)) + '</td>' : '<td class="cell zero">0</td>';
+    }
+
+    var tiles = '<button class="tile' + (!f.types.length ? ' selected' : '') + '" data-act="type-filter" data-type="">' +
+      '<div class="circle" style="background:#1E2B59">' + fmtNum(scope.length) + '</div><div class="tlabel">Tổng hồ sơ</div></button>' +
+      types.map(function (t) {
+        var list = by(scope, t.code);
+        var pct = scope.length ? Math.round(list.length * 100 / scope.length) : 0;
+        return '<button class="tile' + (selT === t.code ? ' selected' : '') + '" data-act="type-filter" data-type="' + t.code + '">' +
+          '<div class="circle" style="background:' + t.color + '">' + fmtNum(list.length) + '</div>' +
+          '<div class="tlabel">' + esc(t.label) + '<small>' + pct + '% · ' + pending(list) + ' đang trình</small></div></button>';
+      }).join('');
+
+    var byStatus = '<div class="table-wrap"><table class="grid matrix"><thead><tr><th>Loại</th>' +
+      sts.map(function (st) { return '<th class="center"><span class="dot" style="background:' + st.color + ';margin-right:6px"></span>' + esc(st.short) + '</th>'; }).join('') +
+      '<th class="num">Tổng</th></tr></thead><tbody>' +
+      types.map(function (t) {
+        var list = by(scope, t.code);
+        return '<tr><td class="nowrap">' + typeBadge(t.code) + '</td>' + sts.map(function (st) {
+          return link(list.filter(function (s) { return s.status === st.code; }).length, ' data-type="' + t.code + '" data-status="' + st.code + '"');
+        }).join('') + link(list.length, ' data-type="' + t.code + '"', true) + '</tr>';
+      }).join('') + '</tbody><tfoot><tr><td>Tổng cộng</td>' + sts.map(function (st) {
+        return link(scope.filter(function (s) { return s.status === st.code; }).length, ' data-type="" data-status="' + st.code + '"');
+      }).join('') + link(scope.length, ' data-type=""', true) + '</tr></tfoot></table></div>';
+
+    var owners = ownerOptions().map(function (o) { return o.value; });
+    if (f.owners.length) owners = owners.filter(function (o) { return f.owners.indexOf(o) >= 0; });
+    var byOwner = '<div class="table-wrap"><table class="grid matrix"><thead><tr><th>Chuyên viên</th>' +
+      types.map(function (t) { return '<th class="center">' + typeBadge(t.code) + '</th><th class="center muted-th">Đang trình</th>'; }).join('') +
+      '<th class="num">Tổng</th></tr></thead><tbody>' +
+      owners.map(function (o) {
+        var mine = scope.filter(function (s) { return s.owner === o; });
+        return '<tr><td class="nowrap"><b>' + esc(userName(o)) + '</b></td>' + types.map(function (t) {
+          var list = by(mine, t.code);
+          return link(list.length, ' data-type="' + t.code + '" data-owner="' + esc(o) + '"', true) +
+            '<td class="center muted">' + (pending(list) || '–') + '</td>';
+        }).join('') + link(mine.length, ' data-type="" data-owner="' + esc(o) + '"', true) + '</tr>';
+      }).join('') + '</tbody></table></div>';
+
+    var body = '<div class="tiles type-tiles">' + tiles + '</div>' +
+      '<div class="type-grid"><div><p class="sub-title">Theo tình trạng</p>' + byStatus + '</div>' +
+      '<div><p class="sub-title">Theo chuyên viên</p>' + byOwner + '</div></div>' +
+      '<p class="muted" style="margin:10px 0 0">Hồ sơ có cụm <b>"xin ý kiến"</b> trong tên (ví dụ "(Trình xin ý kiến)") là <b>Báo cáo</b>, còn lại là <b>Trình duyệt</b>. ' +
+      '"Đang trình" = đang ở TP.MH, GĐTM hoặc TP.C&amp;C. Bấm vào số để lọc bảng tổng hợp bên dưới.</p>';
+    return card('manager-types', 'Trình duyệt &amp; Báo cáo', body, { collapsible: true });
+  }
+
   /* ---------- Hồ sơ đệ trình theo chuyên viên × khoảng thời gian ---------- */
   var GRANS = [['week', 'Tuần'], ['month', 'Tháng'], ['quarter', 'Quý'], ['year', 'Năm']];
   function periodKey(iso, g) {
@@ -974,6 +1060,7 @@
       if (f.from && s.submittedAt < f.from) return false;
       if (f.to && s.submittedAt > f.to) return false;
       if (f.owners.length && f.owners.indexOf(s.owner) < 0) return false;
+      if (f.types && f.types.length && f.types.indexOf(s._type) < 0) return false;
       if (q && norm(s.id + ' ' + s.title + ' ' + userName(s.owner) + ' ' + s.owner).indexOf(q) < 0) return false;
       return true;
     });
@@ -1072,20 +1159,20 @@
     list.forEach(function (s) {
       if (s.status !== cur) {
         cur = s.status;
-        bodyRows += '<tr class="group-row"><td colspan="8">' + statusBadge(cur) + ' <span class="muted">' + counts[cur] + ' hồ sơ</span></td></tr>';
+        bodyRows += '<tr class="group-row"><td colspan="9">' + statusBadge(cur) + ' <span class="muted">' + counts[cur] + ' hồ sơ</span></td></tr>';
       }
-      bodyRows += '<tr><td class="code">' + esc(s.id) + '</td><td class="title-cell">' + esc(s.title) + '</td>' +
+      bodyRows += '<tr><td class="code">' + esc(s.id) + '</td><td class="title-cell">' + esc(s.title) + '</td><td>' + typeBadge(s._type) + '</td>' +
         '<td class="nowrap">' + esc(userName(s.owner)) + '</td><td class="nowrap">' + fmtDate(s.submittedAt) + '</td>' +
         '<td>' + statusBadge(s.status) + '</td><td class="nowrap">' + fmtDate(s.approvedAt) + '</td>' +
         '<td class="num">' + waitCell(s) + '</td><td>' + rowActions(s) + '</td></tr>';
     });
-    if (!list.length) bodyRows = '<tr><td colspan="8" class="empty">Không có hồ sơ nào.</td></tr>';
+    if (!list.length) bodyRows = '<tr><td colspan="9" class="empty">Không có hồ sơ nào.</td></tr>';
     return '<div class="sub-detail" id="sub-detail"><div class="sub-detail-head"><h3 class="sub-title" style="margin:0">Chi tiết: ' + esc(who) + ' · ' + esc(when) +
       ' <span class="muted">(' + list.length + ' hồ sơ)</span></h3><div class="grow"></div>' +
       '<button class="secondary-btn" data-act="export-csv" data-view="manager-submit">' + ic('download') + 'Xuất CSV</button>' +
       '<button class="ghost-btn" data-act="sub-close" aria-label="Đóng chi tiết">' + ic('x') + '</button></div>' +
       '<div class="sub-chips">' + chips + '</div>' +
-      '<div class="table-wrap"><table class="grid"><thead><tr><th>Mã HS</th><th>Tên hồ sơ</th><th>Chuyên viên</th><th>Ngày trình</th>' +
+      '<div class="table-wrap"><table class="grid"><thead><tr><th>Mã HS</th><th>Tên hồ sơ</th><th>Loại</th><th>Chuyên viên</th><th>Ngày trình</th>' +
       '<th>Tình trạng hiện tại</th><th>Ngày duyệt</th><th class="num">Số ngày ở TT hiện tại</th><th></th></tr></thead><tbody>' +
       bodyRows + '</tbody></table></div></div>';
   }
@@ -1263,6 +1350,7 @@
       '<li>Chuyên viên xem được mọi hồ sơ nhưng chỉ sửa hồ sơ của mình. TP.MH, TP.C&amp;C, GĐTM sửa được mọi hồ sơ.</li>' +
       '<li>Chuông thông báo hiện hồ sơ đang trình bạn và hồ sơ của bạn bị trả lại.</li>' +
       '<li>Ô "Số ngày ở TT hiện tại" chuyển màu cam khi ≥ 7 ngày, đỏ khi ≥ 14 ngày.</li>' +
+      '<li>Hồ sơ có cụm <b>"xin ý kiến"</b> trong tên (ví dụ "(Trình xin ý kiến)") được tính là <b>Báo cáo</b>, còn lại là <b>Trình duyệt</b>; lọc theo ô "Loại hồ sơ".</li>' +
       '<li>Trưởng phòng dùng <b>Đồng bộ từ thư mục</b> (Dashboard Trưởng phòng) để cập nhật tình trạng theo thư mục hồ sơ trên ổ chia sẻ: ' +
       'tên hồ sơ trên web phải trùng tên file (không cần đuôi file, không phân biệt chữ hoa/thường); file không có trên web được bỏ qua.</li>' +
       (S.cfg.installUrl ? '<li>Cài icon <b>CENTRAL PMH</b> lên màn hình điện thoại: mở <a href="' + esc(S.cfg.installUrl) + '" target="_blank" rel="noopener">' +
@@ -1427,7 +1515,7 @@
       S.open = null; render();
     },
     'ms-all': function (el) {
-      var opts = el.dataset.field === 'owners' ? ownerOptions() : statusOptions();
+      var opts = el.dataset.field === 'owners' ? ownerOptions() : el.dataset.field === 'types' ? typeOptions() : statusOptions();
       getFilter(el.dataset.view)[el.dataset.field] = opts.map(function (o) { return o.value; });
       resetPage(el.dataset.view); render();
     },
@@ -1437,6 +1525,18 @@
       var code = el.dataset.status;
       f.statuses = !code || (f.statuses.length === 1 && f.statuses[0] === code) ? [] : [code];
       resetPage(el.dataset.view); render();
+    },
+    'type-filter': function (el) {
+      var f = getFilter('manager');
+      var t = el.dataset.type;
+      f.types = t ? [t] : [];
+      if (el.dataset.status !== undefined) f.statuses = el.dataset.status ? [el.dataset.status] : [];
+      if (el.dataset.owner !== undefined) f.owners = [el.dataset.owner];
+      resetPage('manager'); render();
+      if (el.tagName === 'TD') {
+        var target = document.getElementById('card-manager-detail');
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     },
     'matrix-cell': function (el) {
       var f = getFilter('manager');
@@ -1628,12 +1728,12 @@
   function exportCsv(view) {
     var data = S.lastRows[view];
     if (!data || !data.rows.length) { toast('Không có dữ liệu để xuất.', 'err'); return; }
-    var head = ['Mã HS', 'Tên hồ sơ'];
+    var head = ['Mã HS', 'Tên hồ sơ', 'Loại'];
     if (data.showOwner) head.push('Chuyên viên', 'Tài khoản');
     head.push('Tình trạng', 'Ngày tạo', 'Ngày trình', 'Ngày cập nhật', 'Ngày duyệt', 'Số ngày ở tình trạng hiện tại');
     var lines = [head];
     data.rows.forEach(function (s) {
-      var r = [s.id, s.title];
+      var r = [s.id, s.title, typeOf(s._type).label];
       if (data.showOwner) r.push(userName(s.owner), s.owner);
       r.push(statusOf(s.status).label, fmtDate(s.createdAt), fmtDate(s.submittedAt), fmtDate(s.updatedAt), fmtDate(s.approvedAt),
         s.status === S.cfg.approvedStatus ? '' : s._days);

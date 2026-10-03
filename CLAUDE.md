@@ -13,6 +13,7 @@ Web app nội bộ theo dõi tình trạng trình duyệt hồ sơ của một t
 ## Yêu cầu nghiệp vụ đã chốt với người dùng
 - Đăng nhập bằng **tài khoản riêng của app** (username + mật khẩu), **không cần Gmail**. Không có tự đăng ký: admin tạo tài khoản với mật khẩu tạm, người dùng bắt buộc đổi ở lần đăng nhập đầu. Khóa 15 phút sau 5 lần sai.
 - Hồ sơ **chỉ có tên** (đặt theo quy ước team) + mã tự sinh `HS-yyyy-0001`. Không đính kèm file, không gửi email.
+- **Loại hồ sơ** (không lưu trong sheet, tính ở client từ tên — `docTypeOf` trong `App.html`): tên chứa cụm trong `REPORT_KEYWORDS` (`Config.gs`, mặc định `xin y kien`; so không dấu, không phân biệt hoa/thường, bỏ ngoặc/gạch) → **Báo cáo** (`BC`), còn lại → **Trình duyệt** (`TD`). Có ô lọc "Loại hồ sơ" trong THAM SỐ, cột Loại trong các bảng/CSV, thẻ **"Trình duyệt & Báo cáo"** trên Dashboard Trưởng phòng (theo tình trạng, theo chuyên viên, bấm để lọc) và số đếm theo loại ở khối "Đang trình <chức danh>".
 - 6 tình trạng cố định: `CV` Hồ sơ trong ổ Chuyên viên, `TP_MH` Đang trình TP.MH, `GDTM` Đang trình GĐTM, `TP_CC` Đang trình TP.C&C, `TRA_LAI` Trả lại hồ sơ, `DA_DUYET` Đã duyệt. **Không có luồng duyệt cố định** — người dùng tự chọn tình trạng.
 - Mỗi lần tạo/cập nhật, **server tự ghi ngày** dạng `dd/MM/yyyy` (giờ Việt Nam, không có giờ). `submittedAt` = lần đầu chuyển sang "Đang trình …"; `approvedAt` = ngày chuyển sang Đã duyệt. Mọi thay đổi ghi 1 dòng `History`.
 - Phân quyền theo chức danh (`position`):

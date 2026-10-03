@@ -32,6 +32,17 @@ var STATUSES = [
   { code: 'DA_DUYET', label: 'Đã duyệt',                  short: 'Đã duyệt',            color: '#7CB342' }
 ];
 
+/**
+ * Loại hồ sơ, xác định tự động từ tên (không lưu trong sheet): tên chứa một cụm trong REPORT_KEYWORDS
+ * (so không dấu, không phân biệt hoa/thường, bỏ ngoặc/gạch) → Báo cáo, còn lại → Trình duyệt.
+ * Ví dụ "(Trinh xin y kien)", "_Trình xin ý kiến", "trinh xin y kien" đều là Báo cáo.
+ */
+var DOC_TYPES = [
+  { code: 'TD', label: 'Trình duyệt', color: '#2B4396' },
+  { code: 'BC', label: 'Báo cáo',     color: '#F16314' }
+];
+var REPORT_KEYWORDS = ['xin y kien'];
+
 /** Các tình trạng "Đang trình …" — lần đầu chuyển sang sẽ ghi nhận ngày trình. */
 var SUBMITTING_STATUSES = ['TP_MH', 'GDTM', 'TP_CC'];
 var APPROVED_STATUS = 'DA_DUYET';
@@ -93,6 +104,8 @@ function publicConfig_() {
     helpdesk: APP_CONFIG.HELPDESK,
     installUrl: APP_CONFIG.INSTALL_URL,
     statuses: STATUSES,
+    docTypes: DOC_TYPES,
+    reportKeywords: REPORT_KEYWORDS,
     submittingStatuses: SUBMITTING_STATUSES,
     approvedStatus: APPROVED_STATUS,
     defaultStatus: DEFAULT_STATUS,
