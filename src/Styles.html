@@ -218,7 +218,26 @@ svg.ic { width: 22px; height: 22px; flex: none; stroke: currentColor; fill: none
   border: 0; outline: 0; font-size: 17px; padding: 0; background: transparent; width: 100%;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.field input[type=date]::-webkit-calendar-picker-indicator { display: none; }
+.cal-panel {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 36; width: 292px; padding: 10px;
+  background: #fff; border-radius: 10px; border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(20, 28, 60, .18);
+}
+.cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.cal-head b { font-size: 15px; color: var(--navy-900); }
+.cal-nav { border: 0; background: none; width: 34px; height: 34px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; color: var(--navy-800); }
+.cal-nav:hover { background: #F0F2F7; }
+.cal-nav svg.ic { width: 20px; height: 20px; stroke-width: 2.2; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.cal-dow span { text-align: center; font-size: 12px; font-weight: 800; color: var(--muted); padding: 4px 0; }
+.cal-day { border: 0; background: none; height: 36px; border-radius: 8px; font-size: 14.5px; color: var(--ink); }
+.cal-day:hover { background: #F0F2F7; }
+.cal-day.today { box-shadow: inset 0 0 0 1.5px var(--accent); font-weight: 800; }
+.cal-day.sel { background: var(--navy-900); color: #fff; font-weight: 800; }
+.cal-foot { display: flex; justify-content: space-between; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line-soft); }
+.cal-foot button { border: 0; background: none; color: var(--navy-700); font-weight: 800; font-size: 14px; padding: 6px 10px; border-radius: 6px; }
+.cal-foot button:hover { background: #F0F2F7; }
+.field.invalid { border-color: var(--danger); box-shadow: 0 0 0 3px rgba(217, 73, 59, .15); }
+.field.invalid label { color: var(--danger); }
 .field .faddon {
   width: 38px; border: 0; border-left: 1px solid #C9CDD6; background: none;
   display: flex; align-items: center; justify-content: center; color: #333; border-radius: 0 7px 7px 0;
@@ -329,6 +348,19 @@ td.nowrap { white-space: nowrap; }
 .matrix td.cell.zero { color: #B8BCC6; cursor: default; }
 .matrix td.cell:not(.zero):hover { outline: 2px solid var(--navy-600); outline-offset: -2px; }
 .matrix tfoot td { font-weight: 800; background: #F7F8FA; }
+
+/* ---------- Trình duyệt / Báo cáo ---------- */
+.type-badge { display: inline-block; white-space: nowrap; border-radius: 12px; padding: 2px 10px; font-size: 12.5px; font-weight: 800; }
+.type-badge.type-TD { background: #E3EAFB; color: #22357A; }
+.type-badge.type-BC { background: var(--accent-soft); color: #B4440A; }
+.card-head .type-badge { margin-left: 6px; }
+.type-tiles { grid-template-columns: repeat(auto-fill, minmax(170px, 210px)); margin-bottom: 18px; }
+.tile .tlabel small { display: block; font-size: 13.5px; color: var(--muted); margin-top: 4px; }
+.type-grid { display: grid; grid-template-columns: 1fr; gap: 18px; }
+.type-grid > div { min-width: 0; }
+.matrix td.cell b { font-weight: 800; }
+th.muted-th { color: var(--muted); font-weight: 700; }
+@media (max-width: 640px) { .type-tiles { grid-template-columns: repeat(3, 1fr); } }
 
 /* ---------- Hồ sơ đệ trình theo chuyên viên ---------- */
 .subrep th small { display: block; font-weight: 600; color: var(--muted); font-size: 11.5px; }
