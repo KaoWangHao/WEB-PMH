@@ -36,7 +36,8 @@ Web app nội bộ theo dõi tình trạng trình duyệt hồ sơ của một t
 | `src/Setup.gs` | `setup()`, `resetAdminPassword()` — chỉ chủ sở hữu chạy từ editor (`requireOwner_`) |
 | `src/Index.html` / `Styles.html` / `App.html` | SPA vanilla JS; dashboard & thống kê **tính ở client**; Chart.js 4 từ cdnjs |
 | `src/Brand.html` | Logo CENTRAL nhúng base64 (`.brand-logo`, `.brand-mark`) — **file sinh tự động** từ `assets/` bằng `node dev/build-brand.js`, không sửa tay |
-| `assets/` | Ảnh logo gốc + `favicon.png` (favicon dùng link raw GitHub nhánh `main`, xem `FAVICON_URL`) |
+| `assets/` | Ảnh logo gốc, `app-icon-1024.png` (icon app gốc, mẫu C: logo trắng nền navy) + `favicon.png` (favicon dùng link raw GitHub nhánh `main`, xem `FAVICON_URL`) |
+| `docs/` | **GitHub Pages** (nhánh `main`, thư mục `/docs`) → https://kaowanghao.github.io/WEB-PMH/ : trang cài icon **CENTRAL PMH** lên màn hình điện thoại (manifest + apple-touch-icon, vì Apps Script không cho khai báo icon). Mở từ icon (standalone hoặc `?app=1`) thì tự chuyển sang web app; `?huongdan` để luôn xem hướng dẫn. Link nằm ở `APP_CONFIG.INSTALL_URL` |
 | `dev/` | Chạy thử local: `serve.js` ghép HTML như HtmlService, `mock.js` giả lập SpreadsheetApp/Cache/Lock/Utilities, `seed.js` dữ liệu mẫu |
 
 Quy ước code:
