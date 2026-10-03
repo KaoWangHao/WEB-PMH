@@ -1649,8 +1649,8 @@
   function repCard(D, key, title, note, chartFn, tableFn, defMode) {
     var mode = repModes()[key] || defMode || 'chart';
     var seg = '<div class="seg rep-mode" role="group" aria-label="Kiểu hiển thị">' +
-      '<button class="' + (mode === 'chart' ? 'on' : '') + '" data-act="rep-mode" data-key="' + key + '" data-mode="chart">' + ic('chart') + 'Biểu đồ</button>' +
-      '<button class="' + (mode === 'table' ? 'on' : '') + '" data-act="rep-mode" data-key="' + key + '" data-mode="table">' + ic('table') + 'Bảng</button></div>';
+      '<button class="' + (mode === 'chart' ? 'on' : '') + '" data-act="rep-mode" data-key="' + key + '" data-mode="chart" title="Xem dạng biểu đồ">' + ic('chart') + '<span class="lbl">Biểu đồ</span></button>' +
+      '<button class="' + (mode === 'table' ? 'on' : '') + '" data-act="rep-mode" data-key="' + key + '" data-mode="table" title="Xem dạng bảng">' + ic('table') + '<span class="lbl">Bảng</span></button></div>';
     var body = '<p class="rep-note">' + note + '</p>';
     if (mode === 'chart' && typeof Chart !== 'undefined') body += chartFn();
     else body += (mode === 'chart' ? '<p class="muted">Không tải được thư viện biểu đồ, hiển thị dạng bảng.</p>' : '') + tableFn();
@@ -1681,24 +1681,28 @@
         return { label: st.short, backgroundColor: st.color, stack: 's',
                  data: list.map(function (o) { return by[o].filter(function (s) { return s.status === st.code; }).length; }) };
       }).filter(function (d) { return d.data.some(function (v) { return v > 0; }); });
-      return repChart(D, 'owners', Math.max(240, list.length * 40 + 90), chartClick(D, barConfig(list.map(userName), ds, { horizontal: true, stacked: true, legend: true }),
+      return repChart(D, 'owners', Math.max(200, list.length * 32 + 80), chartClick(D, barConfig(list.map(userName), ds, { horizontal: true, stacked: true, legend: true }),
         function (i) { return { card: 'owners', kind: 'owner', key: list[i], sub: '' }; }));
     };
     var table = function () {
       if (!owners.length) return '<div class="empty">Chưa có chuyên viên nào.</div>';
-      var row = function (key, list, label, cls) {
-        return '<tr' + (cls ? ' class="' + cls + '"' : '') + '><td class="nowrap sticky-col"><b>' + label + '</b></td>' +
+      // Gọn: Đệ trình (thanh màu = tình trạng chi tiết) · loại · 3 nhóm kết quả chính.
+      var groups = [['PENDING', 'Đang trình', '#4A90D9'], ['TRA_LAI', statusOf('TRA_LAI').short, statusOf('TRA_LAI').color],
+                    [S.cfg.approvedStatus, statusOf(S.cfg.approvedStatus).short, statusOf(S.cfg.approvedStatus).color]];
+      var row = function (key, list, label) {
+        return '<tr><td class="nowrap sticky-col"><b>' + label + '</b></td>' +
           repNum(D, list, 'owners', 'owner', key, '', { strong: true, bar: true, cls: 'total' }) +
           types.map(function (t) { return repNum(D, list.filter(function (s) { return s._type === t.code; }), 'owners', 'owner', key, t.code); }).join('') +
-          sts.map(function (st) { return repNum(D, list.filter(function (s) { return s.status === st.code; }), 'owners', 'owner', key, st.code); }).join('') + '</tr>';
+          groups.map(function (g) { return repNum(D, list.filter(function (s) { return matchSub(s, g[0]); }), 'owners', 'owner', key, g[0]); }).join('') + '</tr>';
       };
       return '<div class="table-wrap"><table class="grid matrix subrep"><thead><tr><th class="sticky-col">Chuyên viên</th><th class="center">Đệ trình</th>' +
-        typeHead() + statusHead(sts) + '</tr></thead><tbody>' +
+        typeHead() + groups.map(function (g) { return '<th class="center"><span class="dot" style="background:' + g[2] + ';margin-right:6px"></span>' + esc(g[1]) + '</th>'; }).join('') +
+        '</tr></thead><tbody>' +
         owners.map(function (o) { return row(o, by[o] || [], esc(userName(o))); }).join('') + '</tbody><tfoot>' +
         row('*', D.sub, 'Tổng cộng') + '</tfoot></table></div>';
     };
     return repCard(D, 'owners', 'Hồ sơ đệ trình theo chuyên viên',
-      'Số hồ sơ đệ trình trong kỳ (' + esc(D.label) + ') theo loại và <b>tình trạng hiện tại</b> · bấm vào số hoặc thanh để xem hồ sơ', chart, table, 'table');
+      'Đệ trình trong kỳ theo loại và tình trạng hiện tại · bấm số/thanh để xem hồ sơ', chart, table, 'table');
   }
 
   /* ---------- 2. Đệ trình các kỳ gần nhất ---------- */
@@ -1712,7 +1716,7 @@
       var ds = types.map(function (t) {
         return { label: t.label, backgroundColor: t.color, stack: 's', data: lists.map(function (l) { return l.filter(function (s) { return s._type === t.code; }).length; }) };
       });
-      return repChart(D, 'trend', 300, chartClick(D, barConfig(periods.map(function (p) { return periodShort(p, D.g); }), ds, { stacked: true, legend: true }),
+      return repChart(D, 'trend', 230, chartClick(D, barConfig(periods.map(function (p) { return periodShort(p, D.g); }), ds, { stacked: true, legend: true }),
         function (i) { return { card: 'trend', kind: 'period', key: periods[i], sub: '' }; }));
     };
     var table = function () {
@@ -1720,7 +1724,7 @@
         '<th class="center">Đang trình</th><th class="center">Đã duyệt</th><th class="num">Tổng</th></tr></thead><tbody>' +
         periods.map(function (p, i) { return { p: p, l: lists[i] }; }).reverse().map(function (x) {
           return '<tr' + (x.p === D.k ? ' class="cur"' : '') + '><td class="nowrap"><button class="link-btn" data-act="per-goto" data-view="' + D.view + '" data-gran="' + D.g +
-            '" data-period="' + x.p + '" title="Xem báo cáo kỳ này">' + esc(periodName(x.p, D.g)) + '</button></td>' +
+            '" data-period="' + x.p + '" title="Xem báo cáo ' + esc(periodName(x.p, D.g)) + '">' + esc(periodShort(x.p, D.g)) + '</button></td>' +
             types.map(function (t) { return repNum(D, x.l.filter(function (s) { return s._type === t.code; }), 'trend', 'period', x.p, t.code); }).join('') +
             repNum(D, x.l.filter(isSubmitting), 'trend', 'period', x.p, 'PENDING') +
             repNum(D, x.l.filter(function (s) { return s.status === S.cfg.approvedStatus; }), 'trend', 'period', x.p, S.cfg.approvedStatus) +
@@ -1728,8 +1732,8 @@
         }).join('') + '</tbody></table></div>';
     };
     var unit = ({ week: 'tuần', month: 'tháng', quarter: 'quý', year: 'năm' })[D.g];
-    return repCard(D, 'trend', 'Hồ sơ đệ trình ' + n + ' ' + unit + ' gần nhất',
-      'Theo loại hồ sơ · bấm vào cột để xem danh sách' + (D.f.period ? ', bấm tên kỳ (dạng Bảng) để chuyển sang kỳ đó' : ''), chart, table);
+    return repCard(D, 'trend', 'Đệ trình ' + n + ' ' + unit + ' gần nhất',
+      'Theo loại hồ sơ · bấm cột để xem hồ sơ' + (D.f.period ? ', bấm tên kỳ (Bảng) để chuyển kỳ' : ''), chart, table);
   }
 
   /* ---------- 3. Kết quả hồ sơ đệ trình trong kỳ ---------- */
@@ -1745,7 +1749,7 @@
         options: {
           animation: false, responsive: true, maintainAspectRatio: false, cutout: '62%',
           plugins: {
-            legend: { position: 'bottom', labels: { usePointStyle: true, pointStyle: 'circle', boxWidth: 8, boxHeight: 8, color: '#3A4050',
+            legend: { position: 'right', labels: { usePointStyle: true, pointStyle: 'circle', boxWidth: 8, boxHeight: 8, color: '#3A4050',
               filter: function (item, data) { return data.datasets[0].data[item.index] > 0; } } },
             tooltip: { backgroundColor: '#1E2554', padding: 10, cornerRadius: 8,
               callbacks: { label: function (ctx) { return ' ' + ctx.label + ': ' + ctx.raw + ' hồ sơ (' + Math.round(ctx.raw * 100 / total) + '%)'; } } }
@@ -1756,16 +1760,16 @@
           if (!a) return;
           c.save(); c.textAlign = 'center'; c.textBaseline = 'middle';
           var x = (a.left + a.right) / 2, y = (a.top + a.bottom) / 2;
-          c.fillStyle = '#1E2B59'; c.font = '800 30px "Nunito Sans", sans-serif'; c.fillText(String(total), x, y - 8);
-          c.fillStyle = '#6B7180'; c.font = '600 13px "Nunito Sans", sans-serif'; c.fillText('hồ sơ đệ trình', x, y + 16);
+          c.fillStyle = '#1E2B59'; c.font = '800 24px "Nunito Sans", sans-serif'; c.fillText(String(total), x, y - 7);
+          c.fillStyle = '#6B7180'; c.font = '600 12px "Nunito Sans", sans-serif'; c.fillText('hồ sơ', x, y + 13);
           c.restore();
         } }]
       };
-      return repChart(D, 'result', 300, chartClick(D, cfg, function (i) { return counts[i] ? { card: 'result', kind: 'kpi', key: 'sub', sub: sts[i].code } : null; }));
+      return repChart(D, 'result', 230, chartClick(D, cfg, function (i) { return counts[i] ? { card: 'result', kind: 'kpi', key: 'sub', sub: sts[i].code } : null; }));
     };
     var table = function () {
       var types = S.cfg.docTypes || [];
-      return '<div class="table-wrap"><table class="grid matrix"><thead><tr><th>Tình trạng hiện tại</th>' + typeHead() +
+      return '<div class="table-wrap"><table class="grid matrix"><thead><tr><th>Tình trạng</th>' + typeHead() +
         '<th class="num">Số hồ sơ</th><th class="num">Tỉ lệ</th></tr></thead><tbody>' +
         sts.map(function (st, i) {
           var l = D.sub.filter(function (s) { return s.status === st.code; });
@@ -1777,7 +1781,7 @@
         types.map(function (t) { return '<td class="center">' + D.sub.filter(function (s) { return s._type === t.code; }).length + '</td>'; }).join('') +
         '<td class="num">' + total + '</td><td class="num">' + (total ? '100%' : '—') + '</td></tr></tfoot></table></div>';
     };
-    return repCard(D, 'result', 'Kết quả hồ sơ đệ trình trong kỳ', 'Tình trạng hiện tại của hồ sơ đệ trình trong kỳ · bấm vào phần để xem hồ sơ', chart, table);
+    return repCard(D, 'result', 'Kết quả đệ trình trong kỳ', 'Tình trạng hiện tại · bấm vào phần để xem hồ sơ', chart, table);
   }
 
   /* ---------- 4. Đang chờ ai duyệt (không phụ thuộc kỳ) ---------- */
@@ -1793,26 +1797,26 @@
       var ds = types.map(function (t) {
         return { label: t.label, backgroundColor: t.color, stack: 's', data: lists.map(function (l) { return l.filter(function (s) { return s._type === t.code; }).length; }) };
       });
-      var labels = codes.map(function (c) { var n = who(c); return statusOf(c).short + (n ? ' – ' + n : ''); });
-      return repChart(D, 'pending', Math.max(220, codes.length * 52 + 90),
+      var labels = codes.map(function (c) { var n = who(c); return n ? [statusOf(c).short, n] : statusOf(c).short; });
+      return repChart(D, 'pending', Math.max(200, codes.length * 48 + 70),
         chartClick(D, barConfig(labels, ds, { horizontal: true, stacked: true, legend: true }), function (i) { return { card: 'pending', kind: 'pending', key: codes[i], sub: '' }; }));
     };
     var table = function () {
-      var row = function (key, l, label, person) {
+      var row = function (key, l, label) {
         var longest = l.reduce(function (m, s) { return Math.max(m, s._days); }, 0);
-        var avg = l.length ? l.reduce(function (a, s) { return a + s._days; }, 0) / l.length : 0;
-        return '<tr><td class="nowrap">' + label + '</td><td>' + esc(person) + '</td>' +
+        return '<tr><td>' + label + '</td>' +
           types.map(function (t) { return repNum(D, l.filter(function (s) { return s._type === t.code; }), 'pending', 'pending', key, t.code); }).join('') +
           repNum(D, l, 'pending', 'pending', key, '', { strong: true, cls: 'num' }) +
-          '<td class="num">' + (l.length ? fmt1(avg) : '—') + '</td><td class="num">' +
-          (l.length ? '<span class="wait' + (longest >= 14 ? ' bad' : longest >= 7 ? ' warn' : '') + '">' + longest + '</span>' : '—') + '</td></tr>';
+          '<td class="num">' + (l.length ? '<span class="wait' + (longest >= 14 ? ' bad' : longest >= 7 ? ' warn' : '') + '">' + longest + '</span>' : '—') + '</td></tr>';
       };
-      return '<div class="table-wrap"><table class="grid matrix"><thead><tr><th>Đang chờ</th><th>Người duyệt</th>' + typeHead() +
-        '<th class="num">Tổng</th><th class="num">TB ngày chờ</th><th class="num">Chờ lâu nhất</th></tr></thead><tbody>' +
-        codes.map(function (c, i) { return row(c, lists[i], statusBadge(c), who(c) || '—'); }).join('') + '</tbody><tfoot>' +
-        row('*', D.pending, 'Tổng cộng', '') + '</tfoot></table></div>';
+      return '<div class="table-wrap"><table class="grid matrix"><thead><tr><th>Đang chờ</th>' + typeHead() +
+        '<th class="num">Tổng</th><th class="num" title="Số ngày chờ lâu nhất">Lâu nhất</th></tr></thead><tbody>' +
+        codes.map(function (c, i) {
+          var n = who(c);
+          return row(c, lists[i], statusBadge(c) + (n ? '<small class="who">' + esc(n) + '</small>' : ''));
+        }).join('') + '</tbody><tfoot>' + row('*', D.pending, 'Tổng cộng') + '</tfoot></table></div>';
     };
-    return repCard(D, 'pending', 'Đang chờ ai duyệt', 'Toàn bộ hồ sơ đang trình hiện nay (không phụ thuộc kỳ) · số ngày tính từ lúc chuyển đến', chart, table);
+    return repCard(D, 'pending', 'Đang chờ ai duyệt', 'Hồ sơ đang trình hiện nay (mọi kỳ) · bấm để xem hồ sơ', chart, table);
   }
 
   /* ---------- 5. Hồ sơ đệ trình theo dự án ---------- */
@@ -1823,29 +1827,28 @@
     var types = S.cfg.docTypes || [];
     var chart = function () {
       if (!keys.length) return repEmpty('Không có hồ sơ đệ trình trong kỳ này.');
-      var top = keys.slice(0, 10);
+      var top = keys.slice(0, 8);
       var ds = types.map(function (t) {
         return { label: t.label, backgroundColor: t.color, stack: 's', data: top.map(function (k) { return groups[k].filter(function (s) { return s._type === t.code; }).length; }) };
       });
-      var labels = top.map(function (k) { var l = projectLabel(k); return l.length > 28 ? l.slice(0, 27) + '…' : l; });
-      return repChart(D, 'projects', Math.max(240, top.length * 36 + 90),
+      var labels = top.map(function (k) { var l = projectLabel(k); return l.length > 20 ? l.slice(0, 19) + '…' : l; });
+      return repChart(D, 'projects', Math.max(200, top.length * 28 + 80),
         chartClick(D, barConfig(labels, ds, { horizontal: true, stacked: true, legend: true }), function (i) { return { card: 'projects', kind: 'project', key: top[i], sub: '' }; })) +
-        (keys.length > 10 ? '<p class="muted" style="margin:6px 0 0">Hiện 10 dự án nhiều hồ sơ nhất / ' + keys.length + ' dự án — chọn "Bảng" để xem tất cả.</p>' : '');
+        (keys.length > 8 ? '<p class="rep-note" style="margin:6px 0 0">8 dự án nhiều hồ sơ nhất / ' + keys.length + ' — chọn "Bảng" để xem tất cả.</p>' : '');
     };
     var table = function () {
       if (!keys.length) return '<div class="empty">Không có hồ sơ đệ trình trong kỳ này.</div>';
-      return '<div class="table-wrap table-scroll" style="max-height:360px"><table class="grid matrix"><thead><tr><th>Dự án</th>' + typeHead() +
-        '<th class="center">Đang trình</th><th class="center">Đã duyệt</th><th class="num">Tổng</th></tr></thead><tbody>' +
+      return '<div class="table-wrap table-scroll" style="max-height:300px"><table class="grid matrix"><thead><tr><th>Dự án</th>' + typeHead() +
+        '<th class="center">Đã duyệt</th><th class="num">Tổng</th></tr></thead><tbody>' +
         keys.map(function (k) {
           var l = groups[k];
           return '<tr><td class="proj-name">' + projectCell(k) + '</td>' +
             types.map(function (t) { return repNum(D, l.filter(function (s) { return s._type === t.code; }), 'projects', 'project', k, t.code); }).join('') +
-            repNum(D, l.filter(isSubmitting), 'projects', 'project', k, 'PENDING') +
             repNum(D, l.filter(function (s) { return s.status === S.cfg.approvedStatus; }), 'projects', 'project', k, S.cfg.approvedStatus) +
             repNum(D, l, 'projects', 'project', k, '', { strong: true, cls: 'num' }) + '</tr>';
         }).join('') + '</tbody></table></div>';
     };
-    return repCard(D, 'projects', 'Hồ sơ đệ trình theo dự án', 'Dự án lấy theo số/mã đầu tên hồ sơ · bấm để xem hồ sơ', chart, table);
+    return repCard(D, 'projects', 'Đệ trình theo dự án', 'Theo số/mã đầu tên hồ sơ · bấm để xem hồ sơ', chart, table);
   }
 
   /** Bảng danh sách hồ sơ nhóm theo tình trạng (chi tiết báo cáo). */
@@ -1895,7 +1898,7 @@
     S.lastRows['rep-' + D.view] = { rows: list, showOwner: true };
     var tools = '<button class="secondary-btn" data-act="export-csv" data-view="rep-' + D.view + '">' + ic('download') + 'Xuất CSV</button>' +
       '<button class="ghost-btn" data-act="rep-close" data-view="' + D.view + '" aria-label="Đóng chi tiết">' + ic('x') + '</button>';
-    return '<div class="rep-span" id="rep-detail-' + D.view + '">' + card('rep-' + D.view + '-detail', 'Chi tiết: ' + esc(repSelTitle(sel, D)) +
+    return '<div class="rep-full" id="rep-detail-' + D.view + '">' + card('rep-' + D.view + '-detail', 'Chi tiết: ' + esc(repSelTitle(sel, D)) +
       ' <span class="tab-count filter-count">' + list.length + ' hồ sơ</span>', groupedTable(list), { tools: tools }) + '</div>';
   }
 
@@ -1921,16 +1924,17 @@
   /** Các ô báo cáo (giữa TỔNG QUAN và thanh tab); ô "Hồ sơ đệ trình theo chuyên viên" luôn đầu tiên. */
   function repSection(D) {
     var sel = repSelOf(D.view);
-    var after = sel ? ({ kpi: 'kpi', owners: 'owners', trend: 'result', result: 'result', pending: 'projects', projects: 'projects' })[sel.card] : null;
     var detail = sel ? repDetail(D) : '';
     var cells = [
-      { key: 'owners', html: repOwnerCard(D), span: true },
+      { key: 'owners', html: repOwnerCard(D), wide: true },
       { key: 'trend', html: repTrendCard(D) }, { key: 'result', html: repResultCard(D) },
       { key: 'pending', html: repPendingCard(D) }, { key: 'projects', html: repProjectCard(D) }
     ];
-    return '<div class="rep-grid">' + (after === 'kpi' ? detail : '') + cells.map(function (c) {
-      return '<div class="' + (c.span ? 'rep-span' : 'rep-cell') + '">' + c.html + '</div>' + (after === c.key ? detail : '');
-    }).join('') + '</div>';
+    // Lưới 3 / 2 / 1 cột theo bề rộng (container query); bảng chi tiết chiếm cả hàng ngay sau ô được bấm,
+    // grid-auto-flow: dense lấp chỗ trống phía trước.
+    return '<div class="rep-wrap"><div class="rep-grid">' + (sel && sel.card === 'kpi' ? detail : '') + cells.map(function (c) {
+      return '<div class="rep-cell' + (c.wide ? ' rep-wide' : '') + '">' + c.html + '</div>' + (sel && sel.card === c.key ? detail : '');
+    }).join('') + '</div></div>';
   }
 
   /** Trang "Báo cáo tổng hợp" cho chuyên viên: cùng bố cục với Dashboard Trưởng phòng (toàn bộ hồ sơ của team). */

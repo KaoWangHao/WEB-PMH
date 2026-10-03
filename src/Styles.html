@@ -433,11 +433,33 @@ tr.group-row td { background: #F7F8FA; padding: 8px 12px; }
 .rep-kpi .rk-l { font-size: 13.5px; font-weight: 700; color: var(--ink-2); }
 .rep-kpi b { font-size: 28px; line-height: 1.15; color: var(--navy-900); font-variant-numeric: tabular-nums; }
 .rep-kpi .rk-n { font-size: 12.5px; color: var(--muted); }
-.rep-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 22px; }
-.rep-grid > .rep-span { grid-column: 1 / -1; }
-.rep-grid > div > .card { height: calc(100% - 22px); }
-.rep-grid .card-title { font-size: 19px; }
-.rep-note { margin: -8px 0 12px; color: var(--muted); font-size: 13.5px; }
+/* Lưới ô báo cáo: 3 cột (rộng) / 2 cột / 1 cột theo bề rộng vùng nội dung; ô "theo chuyên viên" rộng gấp đôi. */
+.rep-wrap { container-type: inline-size; }
+.rep-grid { display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-flow: row dense; gap: 0 16px; }
+@container (min-width: 700px) { .rep-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .rep-grid > .rep-wide { grid-column: span 2; } }
+@container (min-width: 1040px) { .rep-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.rep-grid > .rep-full { grid-column: 1 / -1; }
+.rep-grid > div > .card { height: calc(100% - 16px); margin-bottom: 16px; }
+.rep-cell > .card { padding: 14px 16px 16px; }
+.rep-cell .card-head { gap: 8px; margin-bottom: 8px; }
+.rep-cell { container-type: inline-size; }
+.rep-cell .card-title { font-size: 15px; border-left-width: 4px; padding-left: 9px; }
+/* Ô hẹp: nút Biểu đồ/Bảng chỉ còn biểu tượng (di chuột để xem tên) để tiêu đề nằm trên 1 dòng. */
+@container (max-width: 460px) {
+  .rep-mode .lbl { display: none; }
+  .rep-mode .ic { margin-right: 0; }
+  .rep-cell .seg button { padding: 5px 9px; }
+}
+.rep-cell .card-head .ghost-btn { width: 30px; height: 30px; }
+.rep-cell .seg button { padding: 4px 8px; font-size: 12.5px; }
+.rep-cell table.grid th { padding: 7px 8px; font-size: 12.5px; }
+.rep-cell table.grid td { padding: 6px 8px; font-size: 13.5px; }
+.rep-cell .subrep td.cell { min-width: 50px; padding: 6px 8px; }
+.rep-cell .type-badge, .rep-cell .status-badge { font-size: 12px; }
+.rep-cell .who { display: block; font-size: 12px; color: var(--muted); margin-top: 3px; }
+.rep-cell .chart-empty { height: 200px; }
+.rep-note { margin: -4px 0 10px; color: var(--muted); font-size: 12.5px; line-height: 1.35; }
+.rep-full .card-title { font-size: 18px; }
 .rep-mode button { white-space: nowrap; display: inline-flex; align-items: center; }
 .rep-mode .ic { width: 15px; height: 15px; margin-right: 5px; vertical-align: -3px; }
 .matrix td.cell.on { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
@@ -445,7 +467,6 @@ tr.group-row td { background: #F7F8FA; padding: 8px 12px; }
 .link-btn { border: 0; background: none; padding: 0; color: var(--navy-700, #2B4396); font-weight: 700; cursor: pointer; text-align: left; }
 .link-btn:hover { text-decoration: underline; }
 .rep-grid > div { min-width: 0; }
-@media (max-width: 1100px) { .rep-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 640px) {
   .period-bar { gap: 8px; }
   .period-bar .seg button { padding: 6px 11px; font-size: 13.5px; }
@@ -456,7 +477,7 @@ tr.group-row td { background: #F7F8FA; padding: 8px 12px; }
   .rep-kpi b { font-size: 20px; }
   .rep-kpi .rk-n { font-size: 11px; line-height: 1.25; }
   .ov-period { display: block; margin: 4px 0 0; font-size: 13.5px; }
-  .rep-grid .card-title { font-size: 17px; }
+  .rep-full .card-title { font-size: 16px; }
 }
 
 /* ---------- Đồng bộ thư mục ---------- */
