@@ -74,6 +74,8 @@ function applyFolderSync_(user, payload) {
       if (!isValidStatus_(status)) { skipped.push({ title: rec.title, reason: 'Tình trạng không hợp lệ.' }); return; }
       var oldStatus = String(rec.status);
       if (oldStatus === status) return;
+      // Hồ sơ đã duyệt luôn được giữ "Đã duyệt" khi đồng bộ (file có thể đã chuyển/lưu trữ ở thư mục khác).
+      if (oldStatus === APPROVED_STATUS) { skipped.push({ title: rec.title, reason: 'Hồ sơ đã duyệt được giữ nguyên khi đồng bộ.' }); return; }
       if (c.from && String(c.from) !== oldStatus) {
         skipped.push({ title: rec.title, reason: 'Hồ sơ vừa được người khác cập nhật, hãy đồng bộ lại.' });
         return;

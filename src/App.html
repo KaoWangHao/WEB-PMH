@@ -1077,7 +1077,7 @@
       throw new Error('Không thấy file nào trong các thư mục tình trạng. Hãy chọn đúng thư mục ' + S.cfg.folderSync.rootName + '.');
     }
 
-    var plan = { changes: [], conflicts: [], dupWeb: [], owners: [], ownerAmbiguous: 0, notMine: 0, same: 0, total: total, ignored: ignored, notOnWeb: notOnWeb, notInFolder: 0,
+    var plan = { changes: [], conflicts: [], dupWeb: [], owners: [], ownerAmbiguous: 0, notMine: 0, keptApproved: 0, same: 0, total: total, ignored: ignored, notOnWeb: notOnWeb, notInFolder: 0,
                  fresh: Object.keys(fresh).map(function (k) { return fresh[k]; }), freshOthers: freshOthers, noAccount: noAccount };
     Object.keys(items).forEach(function (k) {
       var it = items[k];
@@ -1089,6 +1089,11 @@
       if (S.me.isManager) {
         if (it.owners.length > 1) plan.ownerAmbiguous++;
         else if (it.owners.length === 1 && it.owners[0] !== sub.owner) plan.owners.push({ item: it, sub: sub, owner: it.owners[0], code: it.codes[0] });
+      }
+      // Hồ sơ đã duyệt trên web luôn giữ "Đã duyệt", dù file đang nằm ở thư mục khác.
+      if (sub.status === S.cfg.approvedStatus) {
+        if (it.statuses.length === 1 && it.statuses[0] === sub.status) plan.same++; else plan.keptApproved++;
+        return;
       }
       if (it.statuses.length > 1) { plan.conflicts.push({ item: it, sub: sub }); return; }
       if (it.statuses[0] === sub.status) plan.same++;
@@ -1154,6 +1159,7 @@
       '<div><small>File đã đọc</small>' + fmtNum(plan.total) + '</div>' +
       '<div><small>Đổi tình trạng</small>' + plan.changes.length + '</div>' +
       '<div><small>Không đổi</small>' + plan.same + '</div>' +
+      (plan.keptApproved ? '<div><small>Đã duyệt – giữ nguyên</small>' + plan.keptApproved + '</div>' : '') +
       (S.me.isManager ? '<div><small>Lệch chuyên viên</small>' + plan.owners.length + '</div>' : '') +
       (plan.notMine ? '<div><small>Hồ sơ của người khác (bỏ qua)</small>' + plan.notMine + '</div>' : '') +
       '<div><small>Tạo mới (có ký hiệu)</small>' + plan.fresh.length + '</div>' +
@@ -1175,6 +1181,7 @@
       (plan.dupWeb.length ? syncSection('Trùng tên trên web (bỏ qua)', plan.dupWeb.length, dup, false,
         'Có nhiều hồ sơ trên web cùng tên nên không biết cập nhật hồ sơ nào. Hãy đổi tên cho khác nhau.') : '') +
       '<div class="info-box" style="margin-top:14px">' + fmtNum(plan.notInFolder) + ' hồ sơ trên web không thấy trong thư mục: giữ nguyên. ' +
+      'Hồ sơ đã duyệt luôn giữ "Đã duyệt" khi đồng bộ' + (plan.keptApproved ? ' (' + plan.keptApproved + ' hồ sơ có file ở thư mục khác)' : '') + '. ' +
       'Ngày ghi nhận thay đổi: <b>' + fmtDate(S.today) + '</b>.</div></div>' +
       '<div class="modal-foot"><button class="secondary-btn" data-act="close-modal">Hủy</button>' +
       '<button class="primary-btn" style="min-height:42px;font-size:16px" data-act="submit-sync">' + ic('check') + 'Xác nhận cập nhật</button></div>', true);
@@ -1725,7 +1732,8 @@
       '<li>Bấm <b>Đồng bộ thư mục</b> (ở thẻ THAM SỐ) để cập nhật tình trạng theo thư mục hồ sơ trên ổ chia sẻ — chuyên viên chỉ cập nhật hồ sơ của mình: ' +
       'tên hồ sơ trên web phải trùng tên file (không cần đuôi file, không phân biệt chữ hoa/thường); file không có trên web được bỏ qua. ' +
       'File chưa có trên web mà tên kết thúc bằng ký hiệu chuyên viên (' + esc((S.cfg.folderSync.createInitials || []).join(', ')) + ', vd "..._CQH") được tạo mới cho chuyên viên đó; ' +
-      'file không có ký hiệu thì không được tạo. Nếu ký hiệu khác người đang phụ trách, Trưởng phòng được chọn đổi chuyên viên.</li>' +
+      'file không có ký hiệu thì không được tạo. Nếu ký hiệu khác người đang phụ trách, Trưởng phòng được chọn đổi chuyên viên. ' +
+      'Hồ sơ đã duyệt luôn được giữ "Đã duyệt" khi đồng bộ, kể cả khi file không còn trong thư mục Đã duyệt.</li>' +
       (S.cfg.installUrl ? '<li>Cài icon <b>CENTRAL PMH</b> lên màn hình điện thoại: mở <a href="' + esc(S.cfg.installUrl) + '" target="_blank" rel="noopener">' +
         esc(S.cfg.installUrl) + '</a> trên điện thoại và làm theo hướng dẫn.</li>' : '') + '</ul></div>' +
       '<div class="modal-foot"><button class="secondary-btn" data-act="close-modal">Đóng</button></div>');
