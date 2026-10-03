@@ -394,19 +394,6 @@ tr.inactive td { color: var(--muted); }
 tr.group-row td { background: #F7F8FA; padding: 8px 12px; }
 
 /* ---------- Dashboard Trưởng phòng gọn: TỔNG QUAN + tab ---------- */
-.kstrip { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; }
-.kchip {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 112px; flex: 1 1 112px; max-width: 170px;
-  background: #fff; border: 1px solid var(--line); border-left: 5px solid var(--c); border-radius: 8px; padding: 9px 12px; text-align: left;
-}
-.kchip b { font-size: 22px; line-height: 1.1; color: var(--ink); }
-.kchip span { font-size: 13px; color: var(--ink-2); font-weight: 600; line-height: 1.25; }
-.kchip:hover { box-shadow: 0 4px 12px rgba(20, 28, 60, .1); }
-.kchip.on { background: #F3F6FD; box-shadow: 0 0 0 2px var(--c) inset; }
-.ksep { width: 1px; background: var(--line); margin: 2px 4px; }
-.kmini { display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 6px 12px; background: #F4F5F8; border-radius: 8px; min-width: 120px; }
-.kmini b { font-size: 18px; color: var(--navy-900); }
-.kmini span { font-size: 12.5px; color: var(--ink-2); font-weight: 600; }
 .kfoot { margin-top: 10px; font-size: 13.5px; }
 .mgr-tabs {
   position: sticky; top: var(--topbar-h); z-index: 15; display: flex; gap: 8px; overflow-x: auto; scrollbar-width: thin;
@@ -422,14 +409,6 @@ tr.group-row td { background: #F7F8FA; padding: 8px 12px; }
 .tab-count { background: var(--accent-soft); color: var(--accent-dark); border-radius: 11px; padding: 0 8px; font-size: 12.5px; font-weight: 800; }
 .mgr-tabs button.on .tab-count { background: var(--accent); color: #fff; }
 @media (max-width: 640px) {
-  .kstrip { gap: 6px; }
-  .kchip { min-width: 0; flex: 1 1 calc(33.3% - 6px); max-width: none; padding: 6px 8px; border-left-width: 4px; }
-  .kchip b { font-size: 18px; }
-  .kchip span { font-size: 11.5px; }
-  .ksep { display: none; }
-  .kmini { flex: 1 1 calc(33.3% - 6px); min-width: 0; padding: 5px 8px; }
-  .kmini b { font-size: 15px; }
-  .kmini span { font-size: 11px; }
   .kfoot { margin-top: 6px; font-size: 12px; }
   .mgr-tabs button { padding: 8px 13px; font-size: 14px; }
 }
@@ -443,9 +422,7 @@ tr.group-row td { background: #F7F8FA; padding: 8px 12px; }
 .per-nav .ghost-btn { width: 34px; height: 34px; }
 .per-nav .ghost-btn:disabled { opacity: .3; cursor: default; background: none; }
 .per-name { font-size: 15px; white-space: nowrap; padding: 0 4px; }
-.ov-title { font-size: 14.5px; margin: 0 0 8px; }
-.ov-title .muted { font-weight: 600; font-size: 13px; }
-.rep-kpis + .ov-title { margin-top: 16px; }
+.ov-period { font-size: 15px; text-transform: none; letter-spacing: 0; color: var(--accent-dark); margin-left: 10px; font-weight: 800; }
 .rep-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
 .rep-kpi {
   display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; cursor: pointer;
@@ -473,9 +450,12 @@ tr.group-row td { background: #F7F8FA; padding: 8px 12px; }
   .period-bar { gap: 8px; }
   .period-bar .seg button { padding: 6px 11px; font-size: 13.5px; }
   .per-name { font-size: 13.5px; white-space: normal; }
-  .rep-kpis { grid-template-columns: repeat(2, 1fr); gap: 8px; }
-  .rep-kpi { padding: 8px 10px; }
-  .rep-kpi b { font-size: 22px; }
+  .rep-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .rep-kpi { padding: 6px 8px; border-left-width: 4px; }
+  .rep-kpi .rk-l { font-size: 12px; }
+  .rep-kpi b { font-size: 20px; }
+  .rep-kpi .rk-n { font-size: 11px; line-height: 1.25; }
+  .ov-period { display: block; margin: 4px 0 0; font-size: 13.5px; }
   .rep-grid .card-title { font-size: 17px; }
 }
 
