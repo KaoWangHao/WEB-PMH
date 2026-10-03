@@ -83,6 +83,10 @@ var FOLDER_SYNC = {
     { path: '04_HS_TraLai',                                status: 'TRA_LAI' }
   ],
   NOTE: 'Đồng bộ từ thư mục chia sẻ',
+  // File CHƯA có trên web mà tên (bỏ đuôi) kết thúc bằng 1 trong các ký hiệu này → tự tạo hồ sơ cho chuyên viên có ký hiệu đó.
+  // File không có các ký hiệu này thì không được tạo (hồ sơ đã có trên web vẫn cập nhật tình trạng bình thường).
+  CREATE_INITIALS: ['CQH', 'LDS', 'HTT', 'NSK', 'DNQ'],
+  CREATE_NOTE: 'Tạo từ đồng bộ thư mục chia sẻ',
   MAX_ITEMS: 3000
 };
 
@@ -124,6 +128,7 @@ function publicConfig_() {
     positions: POSITIONS,
     minPasswordLength: APP_CONFIG.MIN_PASSWORD_LENGTH,
     maxTitleLength: APP_CONFIG.MAX_TITLE_LENGTH,
-    folderSync: { rootName: FOLDER_SYNC.ROOT_NAME, rootHint: FOLDER_SYNC.ROOT_HINT, rules: FOLDER_SYNC.RULES }
+    folderSync: { rootName: FOLDER_SYNC.ROOT_NAME, rootHint: FOLDER_SYNC.ROOT_HINT, rules: FOLDER_SYNC.RULES,
+                  createInitials: FOLDER_SYNC.CREATE_INITIALS }
   };
 }

@@ -819,7 +819,7 @@
       extra = '<button class="tile" data-act="nav" data-view="manager"><div class="circle" style="background:#1E2554">' + fmtNum(cnt) +
         '</div><div class="tlabel">Đang trình tôi (' + esc(posLabel(S.me.position)) + ')</div></button>';
     }
-    return paramsCard('home', {}) +
+    return paramsCard('home', { tools: syncButton() }) +
       overviewCard('home', scope, { extraTile: extra }) +
       chartsCard('home', rows, {}) +
       detailCard('home', rows, { title: 'Thông tin chi tiết hồ sơ của tôi', create: true }) +
@@ -829,7 +829,7 @@
   function viewMine() {
     var f = getFilter('mine');
     var mine = S.subs.filter(function (s) { return s.owner === S.me.username; });
-    return paramsCard('mine', {}) + detailCard('mine', applyFilter(mine, f), { title: 'Hồ sơ của tôi', create: true });
+    return paramsCard('mine', { tools: syncButton() }) + detailCard('mine', applyFilter(mine, f), { title: 'Hồ sơ của tôi', create: true });
   }
 
   function viewAll() {
@@ -861,7 +861,7 @@
     if (!tabs.some(function (t) { return t.key === S.mgrTab; })) S.mgrTab = tabs[0].key;
     var tab = S.mgrTab;
 
-    var syncBtn = S.cfg.folderSync ? '<button class="secondary-btn" data-act="folder-sync" title="' + esc(syncTitle()) + '">' + ic('refresh') + 'Đồng bộ thư mục</button>' : '';
+    var syncBtn = syncButton();
     var bar = '<nav class="mgr-tabs" id="mgr-tabs" role="tablist">' + tabs.map(function (t) {
       var n = t.key === 'list' ? rows.length : t.count;
       return '<button role="tab" aria-selected="' + (t.key === tab) + '" class="' + (t.key === tab ? 'on' : '') + '" data-act="mgr-tab" data-tab="' + t.key + '">' +
@@ -880,12 +880,17 @@
     }
     return paramsCard('manager', { owners: true, tools: syncBtn }) + mgrOverview(scope) + bar + content;
   }
+  /** Nút "Đồng bộ thư mục" — mọi tài khoản (chuyên viên: chỉ hồ sơ của mình). */
+  function syncButton() {
+    return S.cfg.folderSync ? '<button class="secondary-btn" data-act="folder-sync" title="' + esc(syncTitle()) + '">' + ic('refresh') + 'Đồng bộ thư mục</button>' : '';
+  }
   function syncTitle() {
     var last = S.folderSync;
     return (last ? 'Lần đồng bộ gần nhất: ' + last.at + ' bởi ' + userName(last.by) + ' (' + last.changed + ' hồ sơ đổi tình trạng' +
-        (last.reassigned ? ', ' + last.reassigned + ' đổi chuyên viên' : '') + '). '
+        (last.reassigned ? ', ' + last.reassigned + ' đổi chuyên viên' : '') + (last.created ? ', ' + last.created + ' tạo mới' : '') + '). '
                  : 'Chưa đồng bộ lần nào. ') +
-      'Kết nối VPN, bấm nút rồi chọn thư mục ' + S.cfg.folderSync.rootName + ' trên ổ chia sẻ; web chỉ đọc tên file và cho xem trước trước khi cập nhật.';
+      'Kết nối VPN, bấm nút rồi chọn thư mục ' + S.cfg.folderSync.rootName + ' trên ổ chia sẻ; web chỉ đọc tên file và cho xem trước trước khi cập nhật.' +
+      (S.me.isManager ? '' : ' Bạn chỉ cập nhật được hồ sơ của mình.');
   }
   /** TỔNG QUAN gọn: tình trạng + loại hồ sơ + chỉ số nhanh trên 1–2 hàng; bấm ô để lọc. */
   function mgrOverview(scope) {
@@ -1023,6 +1028,10 @@
       return code && byInitials[code] ? { code: code, owner: byInitials[code], rest: base.slice(0, m.index) } : null;
     }
 
+    // Tạo mới: chỉ file có ký hiệu cuối tên nằm trong danh sách cho phép (CQH, LDS, HTT, NSK, DNQ).
+    var createIni = (S.cfg.folderSync.createInitials || []).map(function (c) { return String(c).toUpperCase(); });
+    var fresh = {}, freshOthers = 0, noAccount = 0;
+
     var items = {};
     var total = 0, ignored = 0, notOnWeb = 0;
     for (var i = 0; i < files.length; i++) {
@@ -1049,27 +1058,46 @@
         if (it.paths.indexOf(where) < 0) it.paths.push(where);
         if (ini && it.owners.indexOf(ini.owner) < 0) { it.owners.push(ini.owner); it.codes.push(ini.code); }
       }
-      if (!found) notOnWeb++;
+      if (!found) {
+        var base = stripExt(name).replace(/\s+/g, ' ').trim();
+        var fini = trailingInitials(base);
+        var rawIni = (base.match(INI_RE) || [])[1];
+        rawIni = rawIni ? rawIni.toUpperCase() : '';
+        if (fini && createIni.indexOf(fini.code) >= 0) {
+          if (!S.me.isManager && fini.owner !== S.me.username) { freshOthers++; continue; }
+          var fk = syncKey(base);
+          var fi = fresh[fk] || (fresh[fk] = { title: base, owner: fini.owner, code: fini.code, statuses: [], paths: [] });
+          if (fi.statuses.indexOf(rule.status) < 0) fi.statuses.push(rule.status);
+          fi.paths.push(parts.join('/') + '/' + name);
+        } else if (rawIni && createIni.indexOf(rawIni) >= 0) noAccount++;
+        else notOnWeb++;
+      }
     }
     if (total === ignored) {
       throw new Error('Không thấy file nào trong các thư mục tình trạng. Hãy chọn đúng thư mục ' + S.cfg.folderSync.rootName + '.');
     }
 
-    var plan = { changes: [], conflicts: [], dupWeb: [], owners: [], ownerAmbiguous: 0, same: 0, total: total, ignored: ignored, notOnWeb: notOnWeb, notInFolder: 0 };
+    var plan = { changes: [], conflicts: [], dupWeb: [], owners: [], ownerAmbiguous: 0, notMine: 0, same: 0, total: total, ignored: ignored, notOnWeb: notOnWeb, notInFolder: 0,
+                 fresh: Object.keys(fresh).map(function (k) { return fresh[k]; }), freshOthers: freshOthers, noAccount: noAccount };
     Object.keys(items).forEach(function (k) {
       var it = items[k];
       var web = webByKey[k];
       if (web.length > 1) { plan.dupWeb.push({ item: it, subs: web }); return; }
       var sub = web[0];
-      if (it.owners.length > 1) plan.ownerAmbiguous++;
-      else if (it.owners.length === 1 && it.owners[0] !== sub.owner) plan.owners.push({ item: it, sub: sub, owner: it.owners[0], code: it.codes[0] });
+      // Chuyên viên chỉ cập nhật được hồ sơ của mình; hồ sơ của người khác bỏ qua.
+      if (!canEdit(sub)) { plan.notMine++; return; }
+      if (S.me.isManager) {
+        if (it.owners.length > 1) plan.ownerAmbiguous++;
+        else if (it.owners.length === 1 && it.owners[0] !== sub.owner) plan.owners.push({ item: it, sub: sub, owner: it.owners[0], code: it.codes[0] });
+      }
       if (it.statuses.length > 1) { plan.conflicts.push({ item: it, sub: sub }); return; }
       if (it.statuses[0] === sub.status) plan.same++;
       else plan.changes.push({ item: it, sub: sub, status: it.statuses[0] });
     });
-    plan.notInFolder = S.subs.filter(function (s) { return !items[syncKey(s.title)]; }).length;
+    plan.notInFolder = S.subs.filter(function (s) { return canEdit(s) && !items[syncKey(s.title)]; }).length;
     var byTitle = function (a, b) { return a.item.title.localeCompare(b.item.title, 'vi'); };
     plan.changes.sort(byTitle); plan.conflicts.sort(byTitle); plan.dupWeb.sort(byTitle); plan.owners.sort(byTitle);
+    plan.fresh.sort(function (a, b) { return a.title.localeCompare(b.title, 'vi'); });
     S.syncPlan = plan;
     return plan;
   }
@@ -1092,6 +1120,16 @@
           '<td class="title-cell">' + esc(c.sub.title) + '<div class="code">' + esc(c.sub.id) + ' · ' + esc(userName(c.sub.owner)) + '</div></td>' +
           '<td>' + statusBadge(c.sub.status) + '</td><td>→</td><td>' + statusBadge(c.status) + '</td></tr>';
       }).join('') + '</tbody></table></div>' : '<div class="empty">Không có hồ sơ nào cần đổi tình trạng.</div>';
+
+    var freshTbl = plan.fresh.length ? '<div class="table-wrap"><table class="grid"><thead><tr>' +
+      '<th class="center"><input type="checkbox" checked data-change="sync-all-new" aria-label="Chọn tất cả"></th>' +
+      '<th>Tên hồ sơ (theo tên file)</th><th>Tình trạng</th><th>Chuyên viên</th></tr></thead><tbody>' +
+      plan.fresh.map(function (it, i) {
+        return '<tr><td class="center"><input type="checkbox" checked data-sync-new="' + i + '"></td>' +
+          '<td class="title-cell">' + esc(it.title) + '</td>' +
+          '<td>' + (it.statuses.length > 1 ? syncStatusSelect('data-sync-nstatus', i, it.statuses, true) : statusBadge(it.statuses[0])) + '</td>' +
+          '<td class="nowrap"><b>' + esc(userName(it.owner)) + '</b> <span class="proj-code">' + esc(it.code) + '</span></td></tr>';
+      }).join('') + '</tbody></table></div>' : '';
 
     var ownersTbl = plan.owners.length ? '<div class="table-wrap"><table class="grid"><thead><tr><th class="center">Đổi</th>' +
       '<th>Hồ sơ</th><th>Chuyên viên trên web</th><th></th><th>Theo ký hiệu cuối tên file</th></tr></thead><tbody>' +
@@ -1116,12 +1154,19 @@
       '<div><small>File đã đọc</small>' + fmtNum(plan.total) + '</div>' +
       '<div><small>Đổi tình trạng</small>' + plan.changes.length + '</div>' +
       '<div><small>Không đổi</small>' + plan.same + '</div>' +
-      '<div><small>Lệch chuyên viên</small>' + plan.owners.length + '</div>' +
-      '<div><small>Không có trên web (bỏ qua)</small>' + fmtNum(plan.notOnWeb) + '</div>' +
+      (S.me.isManager ? '<div><small>Lệch chuyên viên</small>' + plan.owners.length + '</div>' : '') +
+      (plan.notMine ? '<div><small>Hồ sơ của người khác (bỏ qua)</small>' + plan.notMine + '</div>' : '') +
+      '<div><small>Tạo mới (có ký hiệu)</small>' + plan.fresh.length + '</div>' +
+      '<div><small>Chưa có trên web, không ký hiệu (bỏ qua)</small>' + fmtNum(plan.notOnWeb) + '</div>' +
+      (plan.freshOthers ? '<div><small>Ký hiệu của người khác (bỏ qua)</small>' + plan.freshOthers + '</div>' : '') +
+      (plan.noAccount ? '<div><small>Ký hiệu chưa gán tài khoản (bỏ qua)</small>' + plan.noAccount + '</div>' : '') +
       '<div><small>Thư mục khác (bỏ qua)</small>' + fmtNum(plan.ignored) + '</div></div>';
 
     openModal(modalHead('Xem trước đồng bộ') + '<div class="modal-body"><div id="m-err"></div>' + summary +
       syncSection('Đổi tình trạng', plan.changes.length, changes, true) +
+      (plan.fresh.length ? syncSection('Tạo mới trên web (file có ký hiệu ' + esc((S.cfg.folderSync.createInitials || []).join(', ')) + ')', plan.fresh.length, freshTbl, true,
+        'File chưa có trên web, tên kết thúc bằng ký hiệu chuyên viên → tạo hồ sơ mới gán cho chuyên viên đó, tình trạng theo thư mục. Bỏ tích file không muốn tạo.' +
+        (plan.fresh.some(function (it) { return it.statuses.length > 1; }) ? ' File nằm ở nhiều thư mục: chọn tình trạng hoặc bỏ qua.' : '')) : '') +
       (plan.owners.length ? syncSection('Đổi chuyên viên phụ trách (theo ký hiệu cuối tên file)', plan.owners.length, ownersTbl, true,
         'Ký hiệu ở cuối tên file khác chuyên viên đang phụ trách trên web. Mặc định giữ nguyên — tích ô "Đổi" để chuyển hồ sơ sang chuyên viên theo ký hiệu.' +
         (plan.ownerAmbiguous ? ' (' + plan.ownerAmbiguous + ' hồ sơ có nhiều ký hiệu khác nhau ở các file cùng tên: bỏ qua.)' : '')) : '') +
@@ -1150,7 +1195,14 @@
       var c = plan.owners[+el.dataset.syncOwner];
       return { id: c.sub.id, from: c.sub.owner, owner: c.owner };
     });
-    return { changes: changes, owners: owners };
+    var creates = [];
+    q('[data-sync-new]:checked').forEach(function (el) {
+      var i = el.dataset.syncNew, it = plan.fresh[+i];
+      var sel = modalRoot.querySelector('[data-sync-nstatus="' + i + '"]');
+      var st = sel ? sel.value : it.statuses[0];
+      if (st) creates.push({ title: it.title, owner: it.owner, status: st });
+    });
+    return { changes: changes, owners: owners, creates: creates };
   }
 
   function matrixCard(scope) {
@@ -1670,9 +1722,10 @@
       '<li>Chuông thông báo hiện hồ sơ đang trình bạn và hồ sơ của bạn bị trả lại.</li>' +
       '<li>Ô "Số ngày ở TT hiện tại" chuyển màu cam khi ≥ 7 ngày, đỏ khi ≥ 14 ngày.</li>' +
       '<li>Hồ sơ có cụm <b>"xin ý kiến"</b> trong tên (ví dụ "(Trình xin ý kiến)") được tính là <b>Báo cáo</b>, còn lại là <b>Trình duyệt</b>; lọc theo ô "Loại hồ sơ".</li>' +
-      '<li>Trưởng phòng dùng <b>Đồng bộ từ thư mục</b> (Dashboard Trưởng phòng) để cập nhật tình trạng theo thư mục hồ sơ trên ổ chia sẻ: ' +
+      '<li>Bấm <b>Đồng bộ thư mục</b> (ở thẻ THAM SỐ) để cập nhật tình trạng theo thư mục hồ sơ trên ổ chia sẻ — chuyên viên chỉ cập nhật hồ sơ của mình: ' +
       'tên hồ sơ trên web phải trùng tên file (không cần đuôi file, không phân biệt chữ hoa/thường); file không có trên web được bỏ qua. ' +
-      'Nếu cuối tên file có ký hiệu chuyên viên (vd "..._CQH") khác người đang phụ trách, bảng xem trước cho chọn đổi chuyên viên.</li>' +
+      'File chưa có trên web mà tên kết thúc bằng ký hiệu chuyên viên (' + esc((S.cfg.folderSync.createInitials || []).join(', ')) + ', vd "..._CQH") được tạo mới cho chuyên viên đó; ' +
+      'file không có ký hiệu thì không được tạo. Nếu ký hiệu khác người đang phụ trách, Trưởng phòng được chọn đổi chuyên viên.</li>' +
       (S.cfg.installUrl ? '<li>Cài icon <b>CENTRAL PMH</b> lên màn hình điện thoại: mở <a href="' + esc(S.cfg.installUrl) + '" target="_blank" rel="noopener">' +
         esc(S.cfg.installUrl) + '</a> trên điện thoại và làm theo hướng dẫn.</li>' : '') + '</ul></div>' +
       '<div class="modal-foot"><button class="secondary-btn" data-act="close-modal">Đóng</button></div>');
@@ -1908,19 +1961,20 @@
     'folder-sync': function () { startFolderSync(); },
     'submit-sync': function (el) {
       var picked = collectSync();
-      if (!picked.changes.length && !picked.owners.length) { modalError('Không có thay đổi nào được chọn.'); return; }
+      if (!picked.changes.length && !picked.owners.length && !picked.creates.length) { modalError('Không có thay đổi nào được chọn.'); return; }
       busy(el, true);
       call('folderSync', picked).then(function (r) {
         closeModal();
         r.submissions.forEach(function (s) {
           var i = S.subs.findIndex(function (x) { return x.id === s.id; });
-          if (i >= 0) S.subs[i] = s;
+          if (i >= 0) S.subs[i] = s; else S.subs.push(s);
         });
         r.history.forEach(function (h) { S.hist.push(h); });
         S.folderSync = r.folderSync;
         derive(); render();
         var msg = 'Đồng bộ xong: ' + r.folderSync.changed + ' hồ sơ đổi tình trạng' +
-          (r.folderSync.reassigned ? ', ' + r.folderSync.reassigned + ' hồ sơ đổi chuyên viên' : '') + '.';
+          (r.folderSync.reassigned ? ', ' + r.folderSync.reassigned + ' hồ sơ đổi chuyên viên' : '') +
+          (r.folderSync.created ? ', ' + r.folderSync.created + ' hồ sơ tạo mới' : '') + '.';
         if (r.skipped.length) msg += ' Bỏ qua ' + r.skipped.length + ': ' + r.skipped.slice(0, 3).map(function (s) { return s.title + ' (' + s.reason + ')'; }).join('; ');
         toast(msg, r.skipped.length ? 'err' : '');
       }).catch(function (err) { busy(el, false); if (err.code === 'AUTH') handleErr(err); else modalError(err.message); });
@@ -2051,6 +2105,8 @@
       if (el.checked && i < 0) arr.push(el.value);
       if (!el.checked && i >= 0) arr.splice(i, 1);
       resetPage(view); render();
+    } else if (kind === 'sync-all-new') {
+      Array.prototype.forEach.call(modalRoot.querySelectorAll('[data-sync-new]'), function (c) { c.checked = el.checked; });
     } else if (kind === 'sync-all') {
       Array.prototype.forEach.call(modalRoot.querySelectorAll('[data-sync-change]'), function (c) { c.checked = el.checked; });
     }
