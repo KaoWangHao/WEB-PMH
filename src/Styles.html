@@ -393,9 +393,48 @@ tr.inactive td { color: var(--muted); }
 .sub-chip.none { opacity: .45; }
 tr.group-row td { background: #F7F8FA; padding: 8px 12px; }
 
+/* ---------- Dashboard Trưởng phòng gọn: TỔNG QUAN + tab ---------- */
+.kstrip { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; }
+.kchip {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 112px; flex: 1 1 112px; max-width: 170px;
+  background: #fff; border: 1px solid var(--line); border-left: 5px solid var(--c); border-radius: 8px; padding: 9px 12px; text-align: left;
+}
+.kchip b { font-size: 22px; line-height: 1.1; color: var(--ink); }
+.kchip span { font-size: 13px; color: var(--ink-2); font-weight: 600; line-height: 1.25; }
+.kchip:hover { box-shadow: 0 4px 12px rgba(20, 28, 60, .1); }
+.kchip.on { background: #F3F6FD; box-shadow: 0 0 0 2px var(--c) inset; }
+.ksep { width: 1px; background: var(--line); margin: 2px 4px; }
+.kmini { display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 6px 12px; background: #F4F5F8; border-radius: 8px; min-width: 120px; }
+.kmini b { font-size: 18px; color: var(--navy-900); }
+.kmini span { font-size: 12.5px; color: var(--ink-2); font-weight: 600; }
+.kfoot { margin-top: 10px; font-size: 13.5px; }
+.mgr-tabs {
+  position: sticky; top: var(--topbar-h); z-index: 15; display: flex; gap: 8px; overflow-x: auto; scrollbar-width: thin;
+  background: var(--page); padding: 8px 0 12px; margin: -8px 0 10px;
+}
+.mgr-tabs button {
+  flex: none; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+  border: 1px solid var(--line); background: #fff; color: var(--navy-900); border-radius: 22px; padding: 9px 16px; font-size: 15px; font-weight: 700;
+}
+.mgr-tabs button:hover { border-color: var(--navy-600); }
+.mgr-tabs button.on { background: var(--navy-900); border-color: var(--navy-900); color: #fff; }
+.card-title .filter-count { font-size: 13px; vertical-align: middle; margin-left: 8px; text-transform: none; letter-spacing: 0; }
+.tab-count { background: var(--accent-soft); color: var(--accent-dark); border-radius: 11px; padding: 0 8px; font-size: 12.5px; font-weight: 800; }
+.mgr-tabs button.on .tab-count { background: var(--accent); color: #fff; }
+@media (max-width: 640px) {
+  .kstrip { gap: 6px; }
+  .kchip { min-width: 0; flex: 1 1 calc(33.3% - 6px); max-width: none; padding: 6px 8px; border-left-width: 4px; }
+  .kchip b { font-size: 18px; }
+  .kchip span { font-size: 11.5px; }
+  .ksep { display: none; }
+  .kmini { flex: 1 1 calc(33.3% - 6px); min-width: 0; padding: 5px 8px; }
+  .kmini b { font-size: 15px; }
+  .kmini span { font-size: 11px; }
+  .kfoot { margin-top: 6px; font-size: 12px; }
+  .mgr-tabs button { padding: 8px 13px; font-size: 14px; }
+}
+
 /* ---------- Đồng bộ thư mục ---------- */
-.sync-row { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
-.sync-text { flex: 1 1 380px; display: flex; flex-direction: column; gap: 6px; line-height: 1.5; }
 .sync-sec { border: 1px solid var(--line); border-radius: 8px; margin-top: 12px; }
 .sync-sec > summary { cursor: pointer; padding: 12px 14px; font-weight: 800; list-style-position: inside; }
 .sync-sec[open] > summary { border-bottom: 1px solid var(--line-soft); }
@@ -482,7 +521,13 @@ tr.group-row td { background: #F7F8FA; padding: 8px 12px; }
   .tiles { grid-template-columns: repeat(2, 1fr); gap: 12px; padding: 0; }
   .tile .circle { width: 72px; height: 72px; font-size: 20px; }
   .tile .tlabel { font-size: 15px; }
-  .field, .field.sm { flex: 1 1 100%; }
+  .field, .field.sm { flex: 1 1 calc(50% - 6px); }
+  .field:has(input[data-input="filter-q"]) { flex-basis: 100%; }
+  .field .fvalue, .field input { font-size: 15.5px; }
+  .card-head { flex-wrap: wrap; row-gap: 8px; }
+  .card-head .card-title { flex: 1 1 auto; }
+  .card-head .grow { display: none; }
+  .card-head .secondary-btn { padding: 7px 12px; font-size: 14px; }
   .primary-btn { width: 100%; }
   .login h1 { font-size: 52px; margin-top: 64px; }
   .login .welcome { font-size: 18px; }
