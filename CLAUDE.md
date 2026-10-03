@@ -45,6 +45,7 @@ Quy ước code:
 - Backend viết kiểu ES5 (`var`, `function`), hàm nội bộ **kết thúc bằng `_`** để không gọi được từ trình duyệt. Thêm action mới → khai báo trong `API_ACTIONS_` ở `Code.gs` và **kiểm tra quyền ở server**.
 - Lỗi nghiệp vụ dùng `appError_(message, code)`; code `AUTH` → client về trang đăng nhập.
 - Client: event delegation qua `data-act` / `data-change` / `data-input`; `render()` vẽ lại toàn bộ, giữ focus & scroll. Luôn `esc()` dữ liệu người dùng.
+- Ô ngày lọc (`dateField`): **ô text `dd/mm/yyyy`** (tự chèn `/`, nhận `1/9/2026`, `01-09-2026`, `01092026`; `parseDmy`) + **input date gốc trong suốt phủ lên nút lịch** (`showPicker()`), vì `<input type=date>` hiển thị theo locale máy (hay ra mm/dd/yyyy). Bộ lọc vẫn lưu ISO `yyyy-mm-dd`.
 - Đổi cấu trúc sheet (thêm cột…) phải tính đến dữ liệu thật đang có trong `HoSo_DB`; thêm cột vào **cuối** `SHEET_HEADERS` và chạy lại `setup()` để ghi header.
 
 ## Chạy thử local

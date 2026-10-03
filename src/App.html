@@ -352,12 +352,35 @@
       '</div><div class="card-body">' + body + '</div></section>';
   }
 
+  /** Ô ngày: nhập tay dd/mm/yyyy (tự chèn "/") hoặc chọn trên lịch (input date gốc phủ lên nút lịch). Bộ lọc lưu ISO yyyy-mm-dd. */
   function dateField(view, field, label) {
     var f = getFilter(view);
     var id = 'f-' + view + '-' + field;
-    return '<div class="field sm"><div class="fbody"><label for="' + id + '">' + label + '</label>' +
-      '<input type="date" id="' + id + '" data-change="filter" data-view="' + view + '" data-field="' + field + '" value="' + esc(f[field]) + '"></div>' +
-      '<button class="faddon" data-act="pick-date" data-target="' + id + '" aria-label="Chọn ngày">' + ic('calendar') + '</button></div>';
+    var attrs = ' data-view="' + view + '" data-field="' + field + '"';
+    return '<div class="field sm date-field"><div class="fbody"><label for="' + id + '">' + label + '</label>' +
+      '<input type="text" id="' + id + '" class="date-text" inputmode="numeric" autocomplete="off" maxlength="10" placeholder="dd/mm/yyyy"' +
+        ' data-input="date-text" data-change="date-text"' + attrs + ' value="' + esc(f[field] ? fmtDate(f[field]) : '') + '"></div>' +
+      '<span class="faddon date-addon" title="Chọn trên lịch">' + ic('calendar') +
+        '<input type="date" id="' + id + '-pick" class="date-native" tabindex="-1" aria-label="' + label + ' – chọn trên lịch"' +
+        ' data-act="pick-date" data-change="date-pick"' + attrs + ' value="' + esc(f[field]) + '"></span></div>';
+  }
+  /** "1/9/2026", "01-09-2026", "01.09.2026", "01092026" → "2026-09-01"; '' nếu rỗng; null nếu sai. */
+  function parseDmy(v) {
+    v = String(v || '').trim();
+    if (!v) return '';
+    var m = v.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/) || v.match(/^(\d{2})(\d{2})(\d{4})$/);
+    if (!m) return null;
+    var d = +m[1], mo = +m[2], y = +m[3];
+    var dt = new Date(Date.UTC(y, mo - 1, d));
+    if (y < 1900 || dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null;
+    return y + '-' + ('0' + mo).slice(-2) + '-' + ('0' + d).slice(-2);
+  }
+  function setDateFilter(view, field, iso) {
+    var f = getFilter(view);
+    if (f[field] === iso) return;
+    f[field] = iso;
+    if (f.from && f.to && f.from > f.to) toast('"Từ ngày" đang sau "Đến ngày" nên sẽ không có hồ sơ nào.', 'err');
+    resetPage(view); render();
   }
 
   function multiField(view, field, label, options) {
@@ -1505,9 +1528,8 @@
     'logout': function () { closeModal(); logout(); },
     'change-password': function () { S.open = null; render(); openChangePassword(); },
     'pick-date': function (el) {
-      var input = document.getElementById(el.dataset.target);
-      if (!input) return;
-      try { input.showPicker(); } catch (e) { input.focus(); }
+      // Bấm vào nút lịch = bấm vào input date gốc phủ lên nút; Chrome/Edge cần showPicker(), Safari/điện thoại tự mở.
+      try { if (el.showPicker) el.showPicker(); } catch (e) {}
     },
     'reset-filter': function (el) {
       S.filters[el.dataset.view] = defaultFilter(el.dataset.view);
@@ -1676,6 +1698,16 @@
     if (kind === 'filter') {
       getFilter(view)[el.dataset.field] = el.value;
       resetPage(view); render();
+    } else if (kind === 'date-pick') {
+      setDateFilter(view, el.dataset.field, el.value || '');
+    } else if (kind === 'date-text') {
+      var iso = parseDmy(el.value);
+      if (iso === null) {
+        el.closest('.field').classList.add('invalid');
+        toast('Ngày không hợp lệ. Nhập theo dạng dd/mm/yyyy, ví dụ 05/09/2026.', 'err');
+        return;
+      }
+      setDateFilter(view, el.dataset.field, iso);
     } else if (kind === 'ms') {
       var arr = getFilter(view)[el.dataset.field];
       var i = arr.indexOf(el.value);
@@ -1693,7 +1725,16 @@
   var qTimer = null;
   document.addEventListener('input', function (e) {
     var el = e.target;
-    if (el.dataset && el.dataset.input === 'filter-q') {
+    if (el.dataset && el.dataset.input === 'date-text') {
+      var fieldBox = el.closest('.field');
+      fieldBox.classList.remove('invalid');
+      // Tự chèn "/" khi gõ số: 05 → 05/, 05/09 → 05/09/
+      if (e.inputType && e.inputType.indexOf('insert') === 0 && /^\d{2}$|^\d{2}\/\d{2}$/.test(el.value)) el.value += '/';
+      if (/[\/\-.]{2}/.test(el.value)) el.value = el.value.replace(/([\/\-.])[\/\-.]+/g, '$1'); // người dùng gõ thêm "/" sau dấu tự chèn
+      var iso = parseDmy(el.value);
+      if (iso && /\d{4}$/.test(el.value)) setDateFilter(el.dataset.view, el.dataset.field, iso);
+      else if (iso === '') setDateFilter(el.dataset.view, el.dataset.field, '');
+    } else if (el.dataset && el.dataset.input === 'filter-q') {
       clearTimeout(qTimer);
       qTimer = setTimeout(function () { getFilter(el.dataset.view).q = el.value; resetPage(el.dataset.view); render(); }, 250);
     } else if (el.id === 'side-q') {
