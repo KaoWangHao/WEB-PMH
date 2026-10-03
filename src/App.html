@@ -143,8 +143,16 @@
   }
   /** Số dự án ở đầu tên hồ sơ: "231_TDTower…" → ['231'], "267&285_EBV…" → ['267','285'], "273. Vin…" → ['273']. */
   function projectCodesOf(title) {
-    var m = String(title || '').match(/^\s*(\d{1,6}(?:\s*[&+,]\s*\d{1,6})*)(?=[\s_.\-]|$)/);
-    if (!m) return [];
+    var t = String(title || '').trim();
+    var m = t.match(/^(\d{1,6}(?:\s*[&+,]\s*\d{1,6})*)(?=[\s_.\-]|$)/);
+    if (!m) {
+      var up = t.toUpperCase();
+      var codes = S.letterCodes || [];
+      for (var i = 0; i < codes.length; i++) {
+        if (up.indexOf(codes[i]) === 0 && /^([\s_.\-]|$)/.test(up.charAt(codes[i].length))) return [codes[i]];
+      }
+      return [];
+    }
     var out = [];
     m[1].split(/\s*[&+,]\s*/).forEach(function (c) { c = String(parseInt(c, 10)); if (out.indexOf(c) < 0) out.push(c); });
     return out;
@@ -154,7 +162,13 @@
     if (!s._projects.length) return list.indexOf('-') >= 0;
     return s._projects.some(function (c) { return list.indexOf(c) >= 0; });
   }
-  function projectSort(a, b) { return a === '-' ? 1 : b === '-' ? -1 : Number(a) - Number(b); }
+  function projectSort(a, b) {
+    if (a === '-' || b === '-') return a === b ? 0 : a === '-' ? 1 : -1;
+    var na = /^\d+$/.test(a), nb = /^\d+$/.test(b);
+    if (na && nb) return Number(a) - Number(b);
+    if (na !== nb) return na ? -1 : 1;
+    return a < b ? -1 : a > b ? 1 : 0;
+  }
   function projectLabel(code) {
     if (code === '-') return 'Chưa gắn dự án';
     var p = S.projMap[code];
@@ -209,6 +223,9 @@
     S.users.forEach(function (u) { S.userMap[u.username] = u; });
     S.projMap = {};
     (S.projects || []).forEach(function (p) { S.projMap[p.code] = p; });
+    // Mã chữ (vd "D&B"): khớp đầu tên hồ sơ, không phân biệt hoa/thường; mã dài khớp trước.
+    S.letterCodes = (S.projects || []).map(function (p) { return p.code; })
+      .filter(function (c) { return !/^\d+$/.test(c); }).sort(function (a, b) { return b.length - a.length; });
     S.typeMap = {};
     (S.cfg.docTypes || []).forEach(function (t, i) { t.order = i; S.typeMap[t.code] = t; });
     var bySub = {};
@@ -1326,7 +1343,7 @@
     var unassigned = (groups['-'] || []).length;
     body += '<p class="muted" style="margin:10px 0 0"><b>' + keys.filter(function (k) { return k !== '-'; }).length + '</b> dự án có hồ sơ' +
       (unassigned ? ' · <b>' + unassigned + '</b> hồ sơ chưa gắn dự án (tên không bắt đầu bằng số dự án)' : '') +
-      '. Dự án lấy theo số đầu tên hồ sơ, vd "231_TDTower_…" → 231_Truong Dinh. Bấm vào số để lọc bảng tổng hợp bên dưới.</p>';
+      '. Dự án lấy theo số/mã đầu tên hồ sơ, vd "231_TDTower_…" → 231_Truong Dinh, "D&amp;B_…" → Phòng D&amp;B. Bấm vào số để lọc bảng tổng hợp bên dưới.</p>';
     return card('manager-projects', 'Hồ sơ theo dự án', body, { collapsible: true });
   }
 
@@ -1519,8 +1536,8 @@
   function openProjectForm(code) {
     var p = code ? (S.projects || []).filter(function (x) { return x.code === code; })[0] : null;
     openModal(modalHead(p ? 'Sửa dự án' : 'Thêm dự án') + '<div class="modal-body"><div id="m-err"></div>' +
-      '<div class="form-row"><label for="m-pcode">STT dự án</label><input type="text" id="m-pcode" inputmode="numeric" value="' + esc(p ? p.code : '') + '"' + (p ? ' readonly' : '') + ' placeholder="vd 296">' +
-      '<div class="help">Là số ở đầu tên thư mục dự án và đầu tên hồ sơ.</div></div>' +
+      '<div class="form-row"><label for="m-pcode">STT / mã dự án</label><input type="text" id="m-pcode" maxlength="12" value="' + esc(p ? p.code : '') + '"' + (p ? ' readonly' : '') + ' placeholder="vd 296 hoặc D&amp;B">' +
+      '<div class="help">Là số (hoặc mã chữ như D&amp;B) ở đầu tên thư mục dự án và đầu tên hồ sơ.</div></div>' +
       '<div class="form-row"><label for="m-pname">Tên dự án</label><input type="text" id="m-pname" maxlength="150" value="' + esc(p ? p.name : '') + '" placeholder="vd ChungCu_DaiNhat_PhanThan"></div>' +
       '<div class="form-row"><label class="check"><input type="checkbox" id="m-pactive"' + (!p || p.active ? ' checked' : '') + '>Đang dùng</label></div></div>' +
       '<div class="modal-foot"><button class="secondary-btn" data-act="close-modal">Hủy</button>' +
