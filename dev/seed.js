@@ -59,6 +59,7 @@
     var returned = false;
     while (step < stopAt) {
       var next = flow[step + 1];
+      if (!next) break; // đã duyệt (sau khi bị trả lại, step quay về 1 nên có thể vượt cuối flow)
       var actor = step === 0 ? owner : approver[flow[step]];
       var nt = t + (1 + rand(step === 0 ? 4 : 8)) * DAY;
       if (nt > today) break;
