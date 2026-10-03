@@ -252,7 +252,7 @@
       '<div class="dd-head"><b>' + esc(me.displayName) + '</b><small>' + esc(me.username) + ' · ' + esc(posLabel(me.position)) +
       (me.isAdmin ? ' · Quản trị viên' : '') + '</small></div>' +
       '<button class="dd-item" data-act="change-password">' + ic('key') + 'Đổi mật khẩu</button>' +
-      (S.cfg.installUrl ? '<a class="dd-item" href="' + esc(S.cfg.installUrl) + '" target="_blank" rel="noopener">' + ic('download') + 'Cài ứng dụng (điện thoại, máy tính)</a>' : '') +
+      (S.cfg.installUrl ? '<a class="dd-item" href="' + esc(S.cfg.installUrl) + '" target="_blank" rel="noopener">' + ic('download') + 'Cài icon lên điện thoại</a>' : '') +
       '<button class="dd-item" data-act="logout">' + ic('logout') + 'Đăng xuất</button></div>' : '';
 
     return '<div class="app' + (S.collapsed ? ' collapsed' : '') + '">' +
@@ -1108,8 +1108,8 @@
       '<li>Ô "Số ngày ở TT hiện tại" chuyển màu cam khi ≥ 7 ngày, đỏ khi ≥ 14 ngày.</li>' +
       '<li>Trưởng phòng dùng <b>Đồng bộ từ thư mục</b> (Dashboard Trưởng phòng) để cập nhật tình trạng theo thư mục hồ sơ trên ổ chia sẻ: ' +
       'tên hồ sơ trên web phải trùng tên file (không cần đuôi file, không phân biệt chữ hoa/thường); file không có trên web được bỏ qua.</li>' +
-      (S.cfg.installUrl ? '<li>Cài ứng dụng <b>CENTRAL PMH</b> lên điện thoại hoặc máy tính: mở <a href="' + esc(S.cfg.installUrl) + '" target="_blank" rel="noopener">' +
-        esc(S.cfg.installUrl) + '</a> và làm theo hướng dẫn.</li>' : '') + '</ul></div>' +
+      (S.cfg.installUrl ? '<li>Cài icon <b>CENTRAL PMH</b> lên màn hình điện thoại: mở <a href="' + esc(S.cfg.installUrl) + '" target="_blank" rel="noopener">' +
+        esc(S.cfg.installUrl) + '</a> trên điện thoại và làm theo hướng dẫn.</li>' : '') + '</ul></div>' +
       '<div class="modal-foot"><button class="secondary-btn" data-act="close-modal">Đóng</button></div>');
   }
 
