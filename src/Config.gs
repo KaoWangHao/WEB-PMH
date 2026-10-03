@@ -81,7 +81,9 @@ var SHEET_HEADERS = {
   Users: ['username', 'displayName', 'position', 'isAdmin', 'passwordHash', 'salt',
           'mustChangePassword', 'active', 'failedAttempts', 'lockedUntil', 'createdAt'],
   Submissions: ['id', 'title', 'owner', 'status', 'createdAt', 'submittedAt', 'updatedAt', 'approvedAt'],
-  History: ['submissionId', 'fromStatus', 'toStatus', 'actor', 'note', 'date']
+  History: ['submissionId', 'fromStatus', 'toStatus', 'actor', 'note', 'date'],
+  // Danh mục dự án (STT_TÊN). Sheet tự tạo + nạp danh sách ban đầu khi chưa có (xem Projects.gs).
+  Projects: ['code', 'name', 'active', 'createdAt']
 };
 
 function isValidStatus_(code) {
