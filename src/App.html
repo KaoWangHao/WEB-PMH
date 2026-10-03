@@ -525,8 +525,15 @@
         '<input type="text" id="' + qId + '" data-input="filter-q" data-view="' + view + '" placeholder="Nhập để tìm…" value="' + esc(f.q) + '"></div></div>' +
       '<button class="primary-btn" data-act="run-report">' + ic('report') + 'Chạy báo cáo</button>' +
       '</div>';
-    var tools = '<button class="secondary-btn" data-act="reset-filter" data-view="' + view + '">Xóa lọc</button>';
-    return card(view + '-params', 'Tham số', body, { tools: tools });
+    var tools = (opts.tools || '') + '<button class="secondary-btn" data-act="reset-filter" data-view="' + view + '">Xóa lọc</button>';
+    // Điện thoại: THAM SỐ mặc định thu gọn để không chiếm cả màn hình; tiêu đề cho biết số bộ lọc đang dùng.
+    var key = view + '-params';
+    if (!S.cardState[key] && window.innerWidth <= 640) S.cardState[key] = { collapsed: true };
+    var def = defaultFilter(view);
+    var active = ['owners', 'statuses', 'types', 'projects'].filter(function (k) { return f[k] && f[k].length; }).length +
+      (f.q ? 1 : 0) + (f.to ? 1 : 0) + (f.from !== def.from ? 1 : 0);
+    var title = 'Tham số' + (active ? ' <span class="tab-count filter-count">' + active + ' bộ lọc</span>' : '');
+    return card(key, title, body, { tools: tools, collapsible: true });
   }
 
   function overviewCard(view, scope, opts) {
@@ -831,19 +838,95 @@
       detailCard('all', applyFilter(S.subs, f), { title: 'Tất cả hồ sơ', showOwner: true, create: true });
   }
 
+  /**
+   * Dashboard Trưởng phòng gọn: THAM SỐ + TỔNG QUAN (1 hàng ô nhỏ) + thanh tab cố định; mỗi lần chỉ hiện 1 phần.
+   * Bấm số trong các bảng thống kê → lọc và chuyển sang tab "Danh sách hồ sơ".
+   */
+  function mgrTabs() {
+    var tabs = [];
+    if (isManagerPos()) {
+      var cnt = S.subs.filter(function (s) { return s.status === S.me.position; }).length;
+      tabs.push({ key: 'pending', label: 'Đang trình ' + posLabel(S.me.position), count: cnt });
+    }
+    tabs.push({ key: 'owners', label: 'Chuyên viên' }, { key: 'projects', label: 'Dự án' }, { key: 'types', label: 'Trình duyệt & Báo cáo' },
+      { key: 'submit', label: 'Đệ trình theo thời gian' }, { key: 'charts', label: 'Biểu đồ' }, { key: 'list', label: 'Danh sách hồ sơ' });
+    return tabs;
+  }
   function viewManager() {
     var f = getFilter('manager');
     var scope = applyFilter(S.subs, f, true);
     var rows = applyFilter(S.subs, f);
-    return syncCard() + (isManagerPos() ? pendingCard() : '') +
-      paramsCard('manager', { owners: true }) +
-      overviewCard('manager', scope) +
-      typeCard(applyFilter(S.subs, f, { status: true, type: true })) +
-      projectCard(applyFilter(S.subs, f, { status: true, type: true, project: true })) +
-      matrixCard(scope) +
-      submitReportCard() +
-      chartsCard('manager', rows, { byOwner: true }) +
-      detailCard('manager', rows, { title: 'Bảng tổng hợp hồ sơ của chuyên viên', showOwner: true });
+    var tabs = mgrTabs();
+    if (!S.mgrTab) S.mgrTab = store.get('hs_mgr_tab') || tabs[0].key;
+    if (!tabs.some(function (t) { return t.key === S.mgrTab; })) S.mgrTab = tabs[0].key;
+    var tab = S.mgrTab;
+
+    var syncBtn = S.cfg.folderSync ? '<button class="secondary-btn" data-act="folder-sync" title="' + esc(syncTitle()) + '">' + ic('refresh') + 'Đồng bộ thư mục</button>' : '';
+    var bar = '<nav class="mgr-tabs" id="mgr-tabs" role="tablist">' + tabs.map(function (t) {
+      var n = t.key === 'list' ? rows.length : t.count;
+      return '<button role="tab" aria-selected="' + (t.key === tab) + '" class="' + (t.key === tab ? 'on' : '') + '" data-act="mgr-tab" data-tab="' + t.key + '">' +
+        esc(t.label) + (n != null ? '<span class="tab-count">' + fmtNum(n) + '</span>' : '') + '</button>';
+    }).join('') + '</nav>';
+
+    var content;
+    switch (tab) {
+      case 'pending': content = pendingCard(); break;
+      case 'projects': content = projectCard(applyFilter(S.subs, f, { status: true, type: true, project: true })); break;
+      case 'types': content = typeCard(applyFilter(S.subs, f, { status: true, type: true })); break;
+      case 'submit': content = submitReportCard(); break;
+      case 'charts': content = chartsCard('manager', rows, { byOwner: true }); break;
+      case 'list': content = detailCard('manager', rows, { title: 'Danh sách hồ sơ', showOwner: true }); break;
+      default: content = matrixCard(scope);
+    }
+    return paramsCard('manager', { owners: true, tools: syncBtn }) + mgrOverview(scope) + bar + content;
+  }
+  function syncTitle() {
+    var last = S.folderSync;
+    return (last ? 'Lần đồng bộ gần nhất: ' + last.at + ' bởi ' + userName(last.by) + ' (' + last.changed + ' hồ sơ đổi tình trạng). '
+                 : 'Chưa đồng bộ lần nào. ') +
+      'Kết nối VPN, bấm nút rồi chọn thư mục ' + S.cfg.folderSync.rootName + ' trên ổ chia sẻ; web chỉ đọc tên file và cho xem trước trước khi cập nhật.';
+  }
+  /** TỔNG QUAN gọn: tình trạng + loại hồ sơ + chỉ số nhanh trên 1–2 hàng; bấm ô để lọc. */
+  function mgrOverview(scope) {
+    var f = getFilter('manager');
+    var counts = {}, tcounts = {};
+    scope.forEach(function (s) { counts[s.status] = (counts[s.status] || 0) + 1; });
+    var all = applyFilter(S.subs, f, { status: true, type: true });
+    all.forEach(function (s) { tcounts[s._type] = (tcounts[s._type] || 0) + 1; });
+    var selS = f.statuses.length === 1 ? f.statuses[0] : null;
+    var selT = f.types.length === 1 ? f.types[0] : null;
+    var chip = function (attrs, color, n, label, on) {
+      return '<button class="kchip' + (on ? ' on' : '') + '" style="--c:' + color + '" ' + attrs + '><b>' + fmtNum(n) + '</b><span>' + esc(label) + '</span></button>';
+    };
+    var stat = chip('data-act="tile" data-view="manager" data-status=""', '#1E2B59', scope.length, 'Tổng hồ sơ', !f.statuses.length) +
+      S.cfg.statuses.map(function (st) {
+        return chip('data-act="tile" data-view="manager" data-status="' + st.code + '"', st.color, counts[st.code] || 0, st.short, selS === st.code);
+      }).join('');
+    var types = (S.cfg.docTypes || []).map(function (t) {
+      return chip('data-act="type-filter" data-type="' + (selT === t.code ? '' : t.code) + '"', t.color, tcounts[t.code] || 0, t.label, selT === t.code);
+    }).join('');
+    var approved = scope.filter(function (s) { return s.status === S.cfg.approvedStatus && s.approvedAt; });
+    var avg = approved.length ? approved.reduce(function (a, s) { return a + diffDays(s.createdAt, s.approvedAt); }, 0) / approved.length : null;
+    var submitting = scope.filter(function (s) { return S.cfg.submittingStatuses.indexOf(s.status) >= 0; });
+    var longest = submitting.reduce(function (m, s) { return Math.max(m, s._days); }, 0);
+    var mini = function (v, l) { return '<div class="kmini"><b>' + v + '</b><span>' + esc(l) + '</span></div>'; };
+    var kpis = mini(scope.length ? Math.round(approved.length * 100 / scope.length) + '%' : '—', 'Tỉ lệ đã duyệt') +
+      mini(avg == null ? '—' : fmt1(avg) + ' ngày', 'TB tạo → duyệt') +
+      mini(submitting.length ? longest + ' ngày' : '—', 'Đang trình lâu nhất');
+    var rangeText = (f.from ? fmtDate(f.from) : 'Từ đầu') + ' – ' + (f.to ? fmtDate(f.to) : fmtDate(S.today));
+    var body = '<div class="kstrip">' + stat + '<span class="ksep"></span>' + types + '<span class="ksep"></span>' + kpis + '</div>' +
+      '<div class="kfoot muted">Theo ngày tạo: ' + rangeText + ' · Bấm vào ô để lọc</div>';
+    return card('manager-overview', 'Tổng quan', body);
+  }
+  function jumpToTab(tab) {
+    S.mgrTab = tab; store.set('hs_mgr_tab', tab);
+    render();
+    var t = document.getElementById('mgr-tabs');
+    if (t) {
+      var topbar = document.querySelector('.topbar');
+      var y = t.getBoundingClientRect().top + window.scrollY - (topbar ? topbar.offsetHeight : 0) - 8;
+      if (window.scrollY > y) window.scrollTo({ top: y, behavior: 'smooth' });
+    }
   }
 
   function pendingCard() {
@@ -869,22 +952,6 @@
   /* =====================================================================
    * Đồng bộ tình trạng từ thư mục chia sẻ
    * ===================================================================== */
-  function syncCard() {
-    var fs = S.cfg.folderSync;
-    if (!fs) return '';
-    var last = S.folderSync;
-    var info = last ? 'Lần đồng bộ gần nhất: <b>' + esc(last.at) + '</b> bởi <b>' + esc(userName(last.by)) + '</b>' +
-        ' (' + last.changed + ' hồ sơ đổi tình trạng)'
-      : 'Chưa đồng bộ lần nào.';
-    var body = '<div class="sync-row"><div class="sync-text">' +
-      '<div>' + info + '</div>' +
-      '<div class="muted">Kết nối VPN, bấm nút rồi chọn thư mục <b>' + esc(fs.rootName) + '</b> trên ổ chia sẻ. ' +
-      'Trình duyệt chỉ đọc <b>tên file</b>, không tải nội dung file lên. Tên hồ sơ trên web phải <b>trùng tên file</b> ' +
-      '(không cần đuôi .xlsx, .pdf…, không phân biệt chữ hoa/thường); file không có trên web được bỏ qua. Bạn được xem trước trước khi cập nhật.</div>' +
-      '</div><button class="primary-btn" data-act="folder-sync">' + ic('refresh') + 'Đồng bộ từ thư mục</button></div>';
-    return card('manager-sync', 'Đồng bộ thư mục hồ sơ', body, { collapsible: true });
-  }
-
   /** Khóa so khớp tên: không phân biệt hoa/thường, khoảng trắng thừa (web tự gộp khi lưu tên), cách mã hóa dấu tiếng Việt (NFC). */
   function syncKey(s) {
     s = String(s || '');
@@ -1615,7 +1682,7 @@
   }
 
   function clearSession() {
-    S.token = null; S.me = null; S.adminUsers = null; S.filters = {};
+    S.token = null; S.me = null; S.adminUsers = null; S.filters = {}; S.viewInit = false;
     store.del('hs_token');
   }
 
@@ -1624,6 +1691,8 @@
       S.me = d.me; S.cfg = d.config; S.today = d.today;
       S.users = d.users; S.subs = d.submissions; S.hist = d.history; S.projects = d.projects || [];
       S.folderSync = d.folderSync || null;
+      // Mở lại trang (F5): Trưởng phòng vào thẳng Dashboard Trưởng phòng như lúc đăng nhập.
+      if (!S.viewInit) { S.viewInit = true; if (d.me.isManager && d.me.position !== 'CV' && S.view === 'home') S.view = 'manager'; }
       derive();
       render();
       if (!silent) document.title = S.cfg.appName;
@@ -1642,6 +1711,7 @@
       store.set('hs_token', r.token);
       if (remember) store.set('hs_remember', u); else store.del('hs_remember');
       S.view = r.me.isManager && r.me.position !== 'CV' ? 'manager' : 'home';
+      S.viewInit = true;
       if (r.me.mustChangePassword) renderForceChange();
       else return loadAll().then(function () { window.scrollTo(0, 0); });
     }).catch(function (err) {
@@ -1755,9 +1825,7 @@
       f.projects = [el.dataset.project];
       f.types = el.dataset.type ? [el.dataset.type] : [];
       f.statuses = el.dataset.statuses ? el.dataset.statuses.split(',') : [];
-      resetPage('manager'); render();
-      var target = document.getElementById('card-manager-detail');
-      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      resetPage('manager'); jumpToTab('list');
     },
     'type-filter': function (el) {
       var f = getFilter('manager');
@@ -1765,18 +1833,14 @@
       f.types = t ? [t] : [];
       if (el.dataset.status !== undefined) f.statuses = el.dataset.status ? [el.dataset.status] : [];
       if (el.dataset.owner !== undefined) f.owners = [el.dataset.owner];
-      resetPage('manager'); render();
-      if (el.tagName === 'TD') {
-        var target = document.getElementById('card-manager-detail');
-        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
+      resetPage('manager');
+      if (el.tagName === 'TD') jumpToTab('list'); else render();
     },
+    'mgr-tab': function (el) { jumpToTab(el.dataset.tab); },
     'matrix-cell': function (el) {
       var f = getFilter('manager');
       f.owners = [el.dataset.owner]; f.statuses = [el.dataset.status];
-      resetPage('manager'); render();
-      var target = document.getElementById('card-manager-detail');
-      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      resetPage('manager'); jumpToTab('list');
     },
     'sort': function (el) {
       var v = el.dataset.view, k = el.dataset.key;
