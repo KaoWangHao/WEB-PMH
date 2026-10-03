@@ -434,6 +434,51 @@ tr.group-row td { background: #F7F8FA; padding: 8px 12px; }
   .mgr-tabs button { padding: 8px 13px; font-size: 14px; }
 }
 
+/* ---------- Báo cáo tổng hợp theo kỳ ---------- */
+.period-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 0 0 14px; margin-bottom: 14px; border-bottom: 1px solid var(--line-soft, #EEF0F4); }
+.period-bar .seg button { padding: 7px 16px; font-size: 14.5px; }
+.period-bar .seg button.on { background: var(--navy-900); color: #fff; }
+.period-bar .grow { flex: 1; }
+.per-nav { display: inline-flex; align-items: center; gap: 4px; background: #F4F5F8; border-radius: 8px; padding: 2px 4px; }
+.per-nav .ghost-btn { width: 34px; height: 34px; }
+.per-nav .ghost-btn:disabled { opacity: .3; cursor: default; background: none; }
+.per-name { font-size: 15px; white-space: nowrap; padding: 0 4px; }
+.ov-title { font-size: 14.5px; margin: 0 0 8px; }
+.ov-title .muted { font-weight: 600; font-size: 13px; }
+.rep-kpis + .ov-title { margin-top: 16px; }
+.rep-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.rep-kpi {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; cursor: pointer;
+  background: #fff; border: 1px solid var(--line); border-left: 5px solid var(--c); border-radius: 8px; padding: 10px 14px;
+}
+.rep-kpi:hover { box-shadow: 0 4px 12px rgba(20, 28, 60, .1); }
+.rep-kpi.on { background: #F3F6FD; box-shadow: 0 0 0 2px var(--c) inset; }
+.rep-kpi .rk-l { font-size: 13.5px; font-weight: 700; color: var(--ink-2); }
+.rep-kpi b { font-size: 28px; line-height: 1.15; color: var(--navy-900); font-variant-numeric: tabular-nums; }
+.rep-kpi .rk-n { font-size: 12.5px; color: var(--muted); }
+.rep-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 22px; }
+.rep-grid > .rep-span { grid-column: 1 / -1; }
+.rep-grid > div > .card { height: calc(100% - 22px); }
+.rep-grid .card-title { font-size: 19px; }
+.rep-note { margin: -8px 0 12px; color: var(--muted); font-size: 13.5px; }
+.rep-mode button { white-space: nowrap; display: inline-flex; align-items: center; }
+.rep-mode .ic { width: 15px; height: 15px; margin-right: 5px; vertical-align: -3px; }
+.matrix td.cell.on { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
+.matrix tr.cur td { background: #F3F6FD; }
+.link-btn { border: 0; background: none; padding: 0; color: var(--navy-700, #2B4396); font-weight: 700; cursor: pointer; text-align: left; }
+.link-btn:hover { text-decoration: underline; }
+.rep-grid > div { min-width: 0; }
+@media (max-width: 1100px) { .rep-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) {
+  .period-bar { gap: 8px; }
+  .period-bar .seg button { padding: 6px 11px; font-size: 13.5px; }
+  .per-name { font-size: 13.5px; white-space: normal; }
+  .rep-kpis { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .rep-kpi { padding: 8px 10px; }
+  .rep-kpi b { font-size: 22px; }
+  .rep-grid .card-title { font-size: 17px; }
+}
+
 /* ---------- Đồng bộ thư mục ---------- */
 .sync-sec { border: 1px solid var(--line); border-radius: 8px; margin-top: 12px; }
 .sync-sec > summary { cursor: pointer; padding: 12px 14px; font-weight: 800; list-style-position: inside; }
