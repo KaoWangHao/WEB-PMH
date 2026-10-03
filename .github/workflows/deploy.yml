@@ -1,0 +1,56 @@
+name: Deploy Apps Script
+
+# Mỗi lần push lên main (có thay đổi trong src/), tự đẩy code lên Apps Script
+# và cập nhật đúng deployment đang dùng nên link web app không đổi.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - '.clasp.json'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-apps-script
+  cancel-in-progress: false
+
+env:
+  DEPLOYMENT_ID: AKfycbzvKv467-ZX34kCYKkMZPRqIgeP1jVzEJB7qK2FWqB7eIznVwrSxnVLKwn3djB_JBSW8Q
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Cài clasp
+        run: npm install -g @google/clasp@3
+
+      - name: Ghi thông tin đăng nhập clasp
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+        run: |
+          if [ -z "$CLASPRC_JSON" ]; then
+            echo "::error::Thiếu secret CLASPRC_JSON (xem CLAUDE.md, mục Deploy)."
+            exit 1
+          fi
+          printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+          chmod 600 "$HOME/.clasprc.json"
+
+      - name: Đẩy code lên Apps Script
+        run: clasp push --force
+
+      - name: Cập nhật deployment web app
+        run: clasp update-deployment "$DEPLOYMENT_ID" --description "GitHub ${GITHUB_SHA::7}"
+
+      - name: Xóa thông tin đăng nhập
+        if: always()
+        run: rm -f "$HOME/.clasprc.json"
