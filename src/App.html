@@ -257,7 +257,8 @@
     return '<div class="app' + (S.collapsed ? ' collapsed' : '') + '">' +
       '<header class="topbar">' +
         '<button class="icon-btn" data-act="toggle-side" aria-label="Ẩn/hiện menu">' + ic(S.collapsed ? 'menu' : 'x') + '</button>' +
-        '<div class="brand">' + esc(S.cfg.appName) + '</div><div class="spacer"></div>' +
+        '<div class="brand"><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">' + esc(S.cfg.appName) + '</span></div>' +
+        '<div class="spacer"></div>' +
         '<button class="pill-btn" data-act="go-dashboard">Dashboard</button>' +
         '<button class="icon-btn" data-act="reload" title="Tải lại dữ liệu" aria-label="Tải lại dữ liệu">' + ic('refresh') + '</button>' +
         '<button class="icon-btn" data-act="help" title="Hướng dẫn" aria-label="Hướng dẫn">' + ic('help') + '</button>' +
@@ -928,13 +929,12 @@
   function logoHtml() {
     var cfg = S.cfg || {};
     if (cfg.logoUrl) return '<img src="' + esc(cfg.logoUrl) + '" alt="Logo">';
-    return '<div class="text-logo"><div class="mark"></div><div><div class="name">' + esc(cfg.shortName || 'HỒ SƠ') + '</div>' +
-      '<div class="tag">THEO DÕI · TRÌNH DUYỆT</div></div></div>';
+    return '<div class="brand-logo" role="img" aria-label="' + esc(cfg.shortName || 'CENTRAL') + '"></div>';
   }
   function loginLayout(inner, msg) {
     var cfg = S.cfg || {};
     return '<div class="login"><div class="logo-tab">' + logoHtml() + '</div>' +
-      '<h1>Hello!</h1><p class="welcome">Chào mừng bạn đến với ' + esc(cfg.appName || 'hệ thống theo dõi hồ sơ') + '</p>' + inner.replace('%MSG%',
+      '<h1>Hello!</h1><p class="welcome">Chào mừng bạn đến với<br><b>' + esc(cfg.appName || 'CENTRAL PROCUREMENT DEPARTMENT') + '</b></p>' + inner.replace('%MSG%',
         msg ? '<div class="login-msg ' + (msg.type === 'err' ? 'err' : 'info') + '" role="alert">' + esc(msg.text) + '</div>' : '') + '</div>';
   }
   function renderLogin(msg) {

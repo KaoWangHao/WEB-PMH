@@ -19,6 +19,7 @@ Web app nội bộ theo dõi tình trạng trình duyệt hồ sơ của một t
   - Chuyên viên (`CV`): xem **tất cả** hồ sơ, chỉ sửa hồ sơ của mình; có dashboard cá nhân.
   - `TP_MH`, `TP_CC`, `GDTM`: xem và sửa mọi hồ sơ; có **Dashboard Trưởng phòng** (khối "Đang trình <chức danh của tôi>", lọc/sort theo chuyên viên & tình trạng, ma trận Chuyên viên × Tình trạng, biểu đồ, xuất CSV).
   - `isAdmin` (cờ riêng): quản lý tài khoản, xóa hồ sơ.
+- Thương hiệu: tên app **CENTRAL PROCUREMENT DEPARTMENT**, logo CENTRAL, màu navy `#1E2B59` + cam `#F16314` (biến `--navy-900`, `--accent` trong `Styles.html`).
 - Giao diện theo **style ERP của công ty người dùng**: trang đăng nhập nền navy "Hello!", topbar trắng có nút pill "Dashboard", sidebar xanh navy, thẻ "THAM SỐ" (ô lọc có nhãn nhỏ), "TỔNG QUAN" (ô tròn màu + nhãn), bảng chi tiết có thanh phân trang xám.
 
 ## Kiến trúc
@@ -32,6 +33,8 @@ Web app nội bộ theo dõi tình trạng trình duyệt hồ sơ của một t
 | `src/Admin.gs` | CRUD tài khoản, đặt lại mật khẩu |
 | `src/Setup.gs` | `setup()`, `resetAdminPassword()` — chỉ chủ sở hữu chạy từ editor (`requireOwner_`) |
 | `src/Index.html` / `Styles.html` / `App.html` | SPA vanilla JS; dashboard & thống kê **tính ở client**; Chart.js 4 từ cdnjs |
+| `src/Brand.html` | Logo CENTRAL nhúng base64 (`.brand-logo`, `.brand-mark`) — **file sinh tự động** từ `assets/` bằng `node dev/build-brand.js`, không sửa tay |
+| `assets/` | Ảnh logo gốc + `favicon.png` (favicon dùng link raw GitHub nhánh `main`, xem `FAVICON_URL`) |
 | `dev/` | Chạy thử local: `serve.js` ghép HTML như HtmlService, `mock.js` giả lập SpreadsheetApp/Cache/Lock/Utilities, `seed.js` dữ liệu mẫu |
 
 Quy ước code:
