@@ -1,7 +1,7 @@
 /**
  * Đồng bộ tình trạng hồ sơ từ thư mục chia sẻ.
- * Trình duyệt của Trưởng phòng đọc tên file trong thư mục (xem FOLDER_SYNC ở Config.gs), so khớp CHÍNH XÁC
- * với tên hồ sơ trên web và cho xem trước; file không có trên web bị bỏ qua (không tạo mới).
+ * Trình duyệt của Trưởng phòng đọc tên file trong thư mục (xem FOLDER_SYNC ở Config.gs), so khớp tên file
+ * (bỏ đuôi, không phân biệt hoa/thường) với tên hồ sơ trên web và cho xem trước; file không có trên web bị bỏ qua (không tạo mới).
  * Server chỉ nhận danh sách đổi tình trạng đã được xác nhận và kiểm tra lại trước khi ghi.
  */
 
