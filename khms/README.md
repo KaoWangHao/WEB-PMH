@@ -12,7 +12,7 @@ Thư mục này chứa **toàn bộ code và các trao đổi về chức năng 
 
 | File | Vai trò |
 |---|---|
-| `src/Procurement.gs` | Server: `KHMS_HEADERS_` (cột 2 sheet), `KHMS_ACTIONS_` (`importPlan`, `importPlans` (nhiều dự án), `updatePackage`, `updatePackages`, `linkPackages`, `deletePlan`), `mergePlan_`, `khmsBootstrap_`, `unlinkSubmissionPackages_` |
+| `src/Procurement.gs` | Server: `KHMS_HEADERS_` (sheet `Packages`, `PlanUploads`, `KhmsAssign`), `KHMS_ACTIONS_` (`importPlan`, `importPlans` (nhiều dự án), `updatePackage`, `updatePackages`, `linkPackages`, `deletePlan`, `assignProjects`, `updateProjectInfo`), `mergePlan_`, `khmsBootstrap_`, `unlinkSubmissionPackages_` |
 | `src/Khms.html` | Client: trang "Kế hoạch mua sắm" (`viewKhms`), đọc file Excel (`parseKhmsSheet`), xem trước + tải lên (1 dự án `openKhmsImport`; file tổng hợp nhiều dự án `openKhmsBatch`), bảng gói thầu, "Cập nhật bảng", form 1 gói, gợi ý gắn hồ sơ, xuất Excel |
 | `src/KhmsStyles.html` | CSS của trang KHMS |
 | `samples/` | File KHMS **mẫu tự tạo** để thử (bố cục như form của người dùng): 231 Rev00, 231 Rev01 (1 cột KH mỗi mốc), 240 (cột KH Rev00 + KH Rev01). File thật `267_The_Emerald_Boulevard_KHMSGT_2026.09.30.xlsx` **không đưa lên git** (repo công khai). |
@@ -94,6 +94,25 @@ Phần lõi không chứa code KHMS, chỉ có các "điểm gắn" — không c
    vs thực tế + lũy kế, trục phải), tình trạng theo dự án; bảng **Tổng hợp theo dự án** (thanh tiến độ, dòng tổng; bấm → KHMS chi tiết đã lọc);
    **Danh sách gói thầu**: trễ chọn thầu / sắp đến hạn / đã chọn thầu – chưa ký HĐ / tất cả. Phần lõi chỉ thêm hỗ trợ chung: mục menu có
    `children` (`App.html` `navGroupOpen`, action `nav-group`, CSS `.nav-sub`) và `chartBox` / `emptyBox` / `barConfig` trong `window.APP`.
+
+12. **Mã phụ "STT.n" là dự án riêng** (theo người dùng: "các sheet có đánh dấu thêm số ".1" ở STT như 260.1 thì phần đó tách riêng ra thêm 1 dự án
+   khác trên web"): danh mục dự án nhận mã `260.1` (`normalizeProjectCode_`, `parseProjectLine_`, `compareProjectCode_` ở `src/Projects.gs`;
+   `projectSort`, `projectCodesOf` ở `App.html` — hồ sơ "260.1_…" thuộc 260.1 nếu danh mục có mã này, không thì 260). Tải file tổng hợp: sheet
+   "76.1_La Pura MEP" → dự án 76.1 (chưa có thì tự tạo "76.1_La Pura MEP"). **Tải lại sau khi đổi** (câu hỏi "có cần upload lại file excel không"):
+   cần tải lại 1 lần; web tự nhận dự án gốc đang giữ gói của sheet .n (gộp ở lần trước) → tự tích **Ghi đè** cho dự án gốc, và dự án gốc
+   không có sheet riêng (vd 172, 232) → mục "KHMS cũ đã gộp từ sheet mã phụ" (xóa KHMS cũ, mặc định tích khi ≥ 90% gói trùng tên).
+13. **Chuyên viên phụ trách dự án** (theo người dùng: "gán thêm trong KHMS là chuyên viên nào phụ trách dự án nào để tiện cho công tác thống kê";
+   "có thể tham khảo data trong sheet Dự án trong file excel tổng hợp"; "mở thêm chế độ gán chuyên viên thủ công"): sheet `KhmsAssign`
+   (`projectCode`, `owners` = username cách nhau dấu phẩy, …). **Thủ công**: nút **Phân công chuyên viên** (Trưởng phòng / admin; KHMS chi tiết,
+   Dashboard) → bảng tích dự án × chuyên viên (action `assignProjects`). **Theo file**: tải file tổng hợp → đọc sheet có cột "Dự án" + "NS phụ trách"
+   (`DuAn`; `parseAssignSheet`), khớp tên dự án với tên sheet / danh mục ("(gom MEP)" → cả sheet MEP), khớp tên người ("Hảo", "Chi Trang" → bỏ
+   "chị/anh", so tên gọi = chữ cuối họ tên, username, ký hiệu; trùng nhiều người hoặc không có → "chưa khớp tài khoản") → mục xem trước, mặc định
+   tích dự án chưa phân công. Thống kê: ô lọc **Chuyên viên phụ trách** + bảng **Tổng hợp theo chuyên viên phụ trách** trên Dashboard, cột
+   Chuyên viên ở các bảng theo dự án, file "Xuất tất cả dự án".
+14. **Giám đốc dự án / BOM phụ trách** (theo người dùng: "tạo thêm 2 vùng là Giám đốc dự án và BOM phụ trách dự án để chuyên viên tự cập nhật sau,
+   cập nhật bằng cách nhập liệu"): cột `director`, `bom` của `KhmsAssign`, chữ tự do ≤ 150 ký tự, **mọi tài khoản** nhập ở cửa sổ **Thông tin dự án**
+   (nút ở KHMS chi tiết, hoặc "Cập nhật GĐ dự án / BOM" ở dòng thông tin dự án; gợi ý tên đã nhập; action `updateProjectInfo`). Hiện ở KHMS chi tiết,
+   bảng theo dự án (KHMS chi tiết, Dashboard), file "Xuất tất cả dự án".
 
 ## Chi tiết hoạt động
 - **Đọc file** (`parseKhmsSheet`, ExcelJS ở trình duyệt, chỉ .xlsx/.xlsm): tìm dòng tiêu đề có cột tên gói ("Tên vật tư/ gói thầu" ưu tiên hơn "Hạng mục"…),

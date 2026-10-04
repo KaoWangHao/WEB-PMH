@@ -150,6 +150,9 @@
   /** Số dự án ở đầu tên hồ sơ: "231_TDTower…" → ['231'], "267&285_EBV…" → ['267','285'], "273. Vin…" → ['273']. */
   function projectCodesOf(title) {
     var t = String(title || '').trim();
+    // Mã phụ "260.1_…" (dự án riêng trong danh mục, vd 260.1 Sky M MEP); chưa có trong danh mục → theo số chính 260.
+    var dm = t.match(/^0*(\d{1,6})\.(\d{1,3})(?=[\s_\-]|$)/);
+    if (dm && S.projMap && S.projMap[dm[1] + '.' + dm[2]]) return [dm[1] + '.' + dm[2]];
     var m = t.match(/^(\d{1,6}(?:\s*[&+,]\s*\d{1,6})*)(?=[\s_.\-]|$)/);
     if (!m) {
       var up = t.toUpperCase();
@@ -170,8 +173,11 @@
   }
   function projectSort(a, b) {
     if (a === '-' || b === '-') return a === b ? 0 : a === '-' ? 1 : -1;
-    var na = /^\d+$/.test(a), nb = /^\d+$/.test(b);
-    if (na && nb) return Number(a) - Number(b);
+    var na = /^\d+(\.\d+)?$/.test(a), nb = /^\d+(\.\d+)?$/.test(b);
+    if (na && nb) {
+      var pa = a.split('.'), pb = b.split('.'); // 260 < 260.1 < 260.2 < 261
+      return (Number(pa[0]) - Number(pb[0])) || (Number(pa[1] || -1) - Number(pb[1] || -1));
+    }
     if (na !== nb) return na ? -1 : 1;
     return a < b ? -1 : a > b ? 1 : 0;
   }
@@ -231,7 +237,7 @@
     (S.projects || []).forEach(function (p) { S.projMap[p.code] = p; });
     // Mã chữ (vd "D&B"): khớp đầu tên hồ sơ, không phân biệt hoa/thường; mã dài khớp trước.
     S.letterCodes = (S.projects || []).map(function (p) { return p.code; })
-      .filter(function (c) { return !/^\d+$/.test(c); }).sort(function (a, b) { return b.length - a.length; });
+      .filter(function (c) { return !/^\d+(\.\d+)?$/.test(c); }).sort(function (a, b) { return b.length - a.length; });
     S.typeMap = {};
     (S.cfg.docTypes || []).forEach(function (t, i) { t.order = i; S.typeMap[t.code] = t; });
     var bySub = {};

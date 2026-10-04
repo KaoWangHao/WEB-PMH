@@ -19,7 +19,11 @@ var KHMS_HEADERS_ = {
              'submissionId', 'note', 'active', 'sortOrder', 'rev', 'createdAt', 'updatedAt', 'updatedBy',
              'rev0'], // nhãn bản kế hoạch gốc (vd Rev00)
   // Lịch sử tải file KHMS.
-  PlanUploads: ['projectCode', 'fileName', 'rev', 'actor', 'date', 'added', 'updated', 'removed', 'total']
+  PlanUploads: ['projectCode', 'fileName', 'rev', 'actor', 'date', 'added', 'updated', 'removed', 'total'],
+  // Chuyên viên phụ trách dự án (theo người dùng: "gán thêm trong KHMS là chuyên viên nào phụ trách dự án nào để tiện cho công tác thống kê").
+  // owners: các username cách nhau bởi dấu phẩy (1 dự án có thể nhiều chuyên viên).
+  // director / bom: Giám đốc dự án, BOM phụ trách dự án — chuyên viên tự nhập (updateProjectInfo).
+  KhmsAssign: ['projectCode', 'owners', 'updatedAt', 'updatedBy', 'director', 'bom']
 };
 
 /** Action của KHMS — Code.gs tra thêm bảng này khi action không có trong API_ACTIONS_. Mỗi hàm tự kiểm tra quyền. */
@@ -29,7 +33,9 @@ var KHMS_ACTIONS_ = {
   updatePackage:  function (user, p) { return updatePackage_(user, p); },
   updatePackages: function (user, p) { return updatePackages_(user, p); },
   linkPackages:   function (user, p) { return linkPackages_(user, p); },
-  deletePlan:     function (user, p) { return deletePlan_(user, p); }
+  deletePlan:     function (user, p) { return deletePlan_(user, p); },
+  assignProjects: function (user, p) { return assignProjects_(user, p); },
+  updateProjectInfo: function (user, p) { return updateProjectInfo_(user, p); }
 };
 
 /**
@@ -41,8 +47,94 @@ var KHMS_EXPORT_ALL_USERS_ = ['haocq', 'thuync', 'thoaiht'];
 /** Dữ liệu KHMS gửi kèm bootstrap_ (Submissions.gs gọi nếu có hàm này). */
 function khmsBootstrap_(user) {
   var me = user ? normalizeUsername_(user.username) : '';
-  return { packages: listPackages_(), planUploads: listPlanUploads_(),
+  return { packages: listPackages_(), planUploads: listPlanUploads_(), khmsAssign: listAssign_(),
            khmsExportAll: KHMS_EXPORT_ALL_USERS_.indexOf(me) >= 0 };
+}
+
+/** Phân công chuyên viên phụ trách: [{ project, owners: [username] }]. */
+function listAssign_() {
+  ensureSheet_('KhmsAssign');
+  return readTable_('KhmsAssign').map(function (r) {
+    return { project: normalizeProjectCode_(r.projectCode),
+             owners: String(r.owners || '').split(',').map(normalizeUsername_).filter(Boolean),
+             director: String(r.director || ''), bom: String(r.bom || ''),
+             updatedAt: dmyToIso_(r.updatedAt), updatedBy: normalizeUsername_(r.updatedBy || '') };
+  }).filter(function (a) { return a.project; });
+}
+
+/**
+ * Lưu phân công chuyên viên phụ trách dự án (Trưởng phòng / admin). payload: { items: [{ projectCode, owners: [username] }] }
+ * — chỉ các dự án gửi lên được thay; owners rỗng = bỏ phân công. Chuyên viên phải là tài khoản đang hoạt động.
+ */
+function assignProjects_(user, payload) {
+  requireManager_(user);
+  var items = (payload && payload.items) || [];
+  if (!items.length) throw appError_('Không có thay đổi nào để lưu.');
+  if (items.length > 500) throw appError_('Quá nhiều dự án trong một lần lưu.');
+  var projects = {}, users = {};
+  listProjects_().forEach(function (p) { projects[p.code] = true; });
+  readTable_('Users').forEach(function (u) { if (toBool_(u.active)) users[normalizeUsername_(u.username)] = true; });
+  var clean = items.map(function (it) {
+    var code = normalizeProjectCode_(it && it.projectCode);
+    if (!code || !projects[code]) throw appError_('Dự án "' + (it && it.projectCode) + '" không có trong danh mục.');
+    var owners = [];
+    ((it && it.owners) || []).forEach(function (u) {
+      u = normalizeUsername_(u);
+      if (!users[u]) throw appError_('Tài khoản "' + u + '" không tồn tại hoặc đã khóa.');
+      if (owners.indexOf(u) < 0) owners.push(u);
+    });
+    if (owners.length > 20) throw appError_('Tối đa 20 chuyên viên mỗi dự án.');
+    return { code: code, owners: owners };
+  });
+  ensureSheet_('KhmsAssign');
+  return withLock_(function () {
+    var rows = readTable_('KhmsAssign'), byCode = {}, date = today_();
+    rows.forEach(function (r) { byCode[normalizeProjectCode_(r.projectCode)] = r; });
+    clean.forEach(function (c) {
+      var r = byCode[c.code] || (byCode[c.code] = { projectCode: c.code });
+      if (String(r.owners || '') === c.owners.join(',') && r._row) return;
+      r.owners = c.owners.join(','); r.updatedAt = date; r.updatedBy = user.username; r._dirty = true;
+    });
+    rewriteTable_('KhmsAssign', keepAssignRows_(byCode));
+    return { assign: listAssign_() };
+  });
+}
+
+/** Dòng KhmsAssign còn dữ liệu (chuyên viên, GĐ dự án hoặc BOM). */
+function keepAssignRows_(byCode) {
+  return Object.keys(byCode).map(function (k) { return byCode[k]; })
+    .filter(function (r) { return String(r.owners || '') || String(r.director || '') || String(r.bom || ''); });
+}
+
+/**
+ * Giám đốc dự án / BOM phụ trách dự án (theo người dùng: "để chuyên viên tự cập nhật sau, cập nhật bằng cách nhập liệu") — mọi tài khoản.
+ * payload: { items: [{ projectCode, director, bom }] } — chữ tự do, tối đa 150 ký tự; trống = xóa.
+ */
+function updateProjectInfo_(user, payload) {
+  var items = (payload && payload.items) || [];
+  if (!items.length) throw appError_('Không có thay đổi nào để lưu.');
+  if (items.length > 500) throw appError_('Quá nhiều dự án trong một lần lưu.');
+  var projects = {};
+  listProjects_().forEach(function (p) { projects[p.code] = true; });
+  var clip = function (v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, 150); };
+  var clean = items.map(function (it) {
+    var code = normalizeProjectCode_(it && it.projectCode);
+    if (!code || !projects[code]) throw appError_('Dự án "' + (it && it.projectCode) + '" không có trong danh mục.');
+    return { code: code, director: it.director === undefined ? null : clip(it.director), bom: it.bom === undefined ? null : clip(it.bom) };
+  });
+  ensureSheet_('KhmsAssign');
+  return withLock_(function () {
+    var byCode = {}, date = today_();
+    readTable_('KhmsAssign').forEach(function (r) { byCode[normalizeProjectCode_(r.projectCode)] = r; });
+    clean.forEach(function (c) {
+      var r = byCode[c.code] || (byCode[c.code] = { projectCode: c.code, owners: '' });
+      if (c.director !== null) r.director = c.director;
+      if (c.bom !== null) r.bom = c.bom;
+      r.updatedAt = date; r.updatedBy = user.username;
+    });
+    rewriteTable_('KhmsAssign', keepAssignRows_(byCode));
+    return { assign: listAssign_() };
+  });
 }
 
 var PLAN_MILESTONES_ = ['invite', 'select', 'contract', 'start'];
@@ -277,7 +369,7 @@ function importPlans_(user, payload) {
     var name = String((p && p.createName) || '').replace(/\s+/g, ' ').trim().slice(0, 150);
     if (!code || !name || projects.some(function (x) { return x.code === code; })) return;
     requireManager_(user);
-    if (!/^\d+$/.test(code)) throw appError_('Chỉ tự tạo được dự án có mã số (STT), không tạo "' + code + '".');
+    if (!/^\d+(\.\d+)?$/.test(code)) throw appError_('Chỉ tự tạo được dự án có mã số (STT hoặc STT.n), không tạo "' + code + '".');
     if (!create.some(function (c) { return c.code === code; })) create.push({ code: code, name: name });
   });
   var known = projects.concat(create);

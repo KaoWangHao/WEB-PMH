@@ -95,9 +95,9 @@ function applyProjectAdditions_() {
   });
 }
 
-/** "231_Truong Dinh" / "231 Truong Dinh" / "273. Vin…" / "D&B_Phòng D&B" → { code, name } hoặc null. */
+/** "231_Truong Dinh" / "231 Truong Dinh" / "273. Vin…" / "260.1_Sky M MEP" / "D&B_Phòng D&B" → { code, name } hoặc null. */
 function parseProjectLine_(line) {
-  var m = String(line || '').trim().match(/^(\d{1,6}|[A-Za-z][A-Za-z0-9&]{0,11})\s*[_.\-\s]\s*(.+)$/);
+  var m = String(line || '').trim().match(/^(\d{1,6}\.\d{1,3}(?=[_\-\s])|\d{1,6}|[A-Za-z][A-Za-z0-9&]{0,11})\s*[_.\-\s]\s*(.+)$/);
   if (!m) return null;
   var code = normalizeProjectCode_(m[1]);
   var name = m[2].replace(/\s+/g, ' ').replace(/[\s…]+$/, '').trim();
@@ -105,18 +105,24 @@ function parseProjectLine_(line) {
   return { code: code, name: name.slice(0, 150) };
 }
 
-/** Mã số bỏ số 0 đầu ("076" → "76"); mã chữ viết hoa ("d&b" → "D&B"); sai dạng → ''. */
+/**
+ * Mã số bỏ số 0 đầu ("076" → "76"); mã phụ "STT.n" (theo người dùng: sheet KHMS "260.1_…" là dự án riêng, vd 260.1 = Sky M MEP);
+ * mã chữ viết hoa ("d&b" → "D&B"); sai dạng → ''.
+ */
 function normalizeProjectCode_(code) {
   var s = String(code == null ? '' : code).trim();
-  var m = s.match(/^0*(\d{1,6})$/);
-  if (m) return m[1] === '' ? '0' : m[1];
+  var m = s.match(/^0*(\d{1,6})(?:\.(\d{1,3}))?$/);
+  if (m) return (m[1] === '' ? '0' : m[1]) + (m[2] ? '.' + m[2] : '');
   return /^[A-Za-z][A-Za-z0-9&]{0,11}$/.test(s) ? s.toUpperCase() : '';
 }
 
-/** Mã số trước (theo số), mã chữ sau (theo ABC). */
+/** Mã số trước (theo số; 260 < 260.1 < 260.2 < 261), mã chữ sau (theo ABC). */
 function compareProjectCode_(a, b) {
-  var na = /^\d+$/.test(a), nb = /^\d+$/.test(b);
-  if (na && nb) return Number(a) - Number(b);
+  var na = /^\d+(\.\d+)?$/.test(a), nb = /^\d+(\.\d+)?$/.test(b);
+  if (na && nb) {
+    var pa = a.split('.'), pb = b.split('.');
+    return (Number(pa[0]) - Number(pb[0])) || (Number(pa[1] || -1) - Number(pb[1] || -1));
+  }
   if (na !== nb) return na ? -1 : 1;
   return a < b ? -1 : a > b ? 1 : 0;
 }
@@ -161,7 +167,7 @@ function listProjects_() {
 function saveProject_(user, payload) {
   requireAdmin_(user);
   var code = normalizeProjectCode_(payload && payload.code);
-  if (!code) throw appError_('Mã dự án là số (vd 231) hoặc chữ không dấu, có thể có & (vd D&B).');
+  if (!code) throw appError_('Mã dự án là số (vd 231, mã phụ 260.1) hoặc chữ không dấu, có thể có & (vd D&B).');
   var name = String((payload && payload.name) || '').replace(/\s+/g, ' ').trim();
   if (!name) throw appError_('Vui lòng nhập tên dự án.');
   if (name.length > 150) throw appError_('Tên dự án quá dài (tối đa 150 ký tự).');
