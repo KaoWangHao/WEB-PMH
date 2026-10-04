@@ -66,7 +66,7 @@ Mở http://localhost:5173 (`?reset` để tạo lại dữ liệu mẫu). Tài 
 - Nếu Action báo lỗi đăng nhập (token hết hạn/bị thu hồi): trên máy có clasp chạy `clasp login`, rồi `gh secret set CLASPRC_JSON -R KaoWangHao/WEB-PMH < ~/.clasprc.json`.
 - **Thủ công** (máy có clasp): `clasp push --force` rồi `clasp update-deployment AKfycbzvKv467-ZX34kCYKkMZPRqIgeP1jVzEJB7qK2FWqB7eIznVwrSxnVLKwn3djB_JBSW8Q`.
 - `clasp push` chỉ cập nhật bản nháp (HEAD); người dùng chỉ thấy thay đổi sau `update-deployment`.
-- **Bản thử**: chạy tay workflow với `test_only` = true → `clasp push` lên HEAD; bước "In link bản thử (/dev)" in link `https://script.google.com/macros/s/<HEAD id>/dev` (chỉ chủ sở hữu mở được, đăng nhập Google bằng tài khoản chủ).
+- **Bản thử**: chạy tay workflow với `test_only` = true → `clasp push` lên HEAD; bước "In link bản thử (/dev)" in link — hiện là https://script.google.com/macros/s/AKfycbzKFtsxCRvR1hUYjOmI1yH5VPGDq3MNtC0NMfWJQoqJ/dev (chỉ chủ sở hữu mở được, đăng nhập Google bằng tài khoản chủ).
 
 ## Lưu ý quan trọng
 - `clasp create` / `clasp pull` có thể **ghi đè `src/appsscript.json`** bằng bản mặc định — phải giữ `timeZone: Asia/Ho_Chi_Minh`, `webapp.executeAs: USER_DEPLOYING`, `webapp.access: ANYONE_ANONYMOUS`.
