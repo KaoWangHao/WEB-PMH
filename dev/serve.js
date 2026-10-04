@@ -9,19 +9,29 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
 const SRC = path.join(ROOT, 'src');
+// Chức năng chạy thử (Kế hoạch mua sắm) ở khms/src — giống bản /dev. Chạy giống bản chính: KHMS=0 node dev/serve.js
+const DIRS = [SRC].concat(process.env.KHMS === '0' ? [] : [path.join(ROOT, 'khms', 'src')]);
 const PORT = Number(process.env.PORT) || 5173;
+
+function findFile(name) {
+  for (const d of DIRS) if (fs.existsSync(path.join(d, name))) return path.join(d, name);
+  return null;
+}
 
 function buildIndex() {
   let html = fs.readFileSync(path.join(SRC, 'Index.html'), 'utf8');
-  html = html.replace(/<\?!=\s*include\('([^']+)'\);?\s*\?>/g, (_, name) =>
-    fs.readFileSync(path.join(SRC, name + '.html'), 'utf8'));
+  html = html.replace(/<\?!=\s*(include|includeIf)\('([^']+)'\);?\s*\?>/g, (_, fn, name) => {
+    const f = findFile(name + '.html');
+    if (!f && fn === 'include') throw new Error('Không có file ' + name + '.html');
+    return f ? fs.readFileSync(f, 'utf8') : '';
+  });
   const devScripts = '<script src="/dev/mock.js"></script><script src="/backend.js"></script><script src="/dev/seed.js"></script>';
   return html.replace('</head>', devScripts + '\n</head>');
 }
 
 function buildBackend() {
-  return fs.readdirSync(SRC).filter((f) => f.endsWith('.gs')).sort()
-    .map((f) => '// ---- ' + f + '\n' + fs.readFileSync(path.join(SRC, f), 'utf8')).join('\n');
+  return DIRS.map((d) => fs.readdirSync(d).filter((f) => f.endsWith('.gs')).sort()
+    .map((f) => '// ---- ' + f + '\n' + fs.readFileSync(path.join(d, f), 'utf8')).join('\n')).join('\n');
 }
 
 http.createServer((req, res) => {

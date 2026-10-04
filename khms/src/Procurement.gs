@@ -10,6 +10,32 @@
  * Mọi tài khoản được tải KHMS và cập nhật gói thầu; Trưởng phòng/admin được xóa KHMS của một dự án.
  */
 
+/** Bảng của KHMS (thay cho SHEET_HEADERS — sheet tự tạo bởi ensureSheet_; thêm cột mới vào CUỐI, header tự bổ sung). */
+var KHMS_HEADERS_ = {
+  // Mỗi dòng 1 gói thầu. …Plan0 = kế hoạch gốc (Rev00 / lần tải đầu), …Plan = kế hoạch hiện hành.
+  Packages: ['id', 'projectCode', 'stt', 'name', 'value',
+             'invitePlan0', 'invitePlan', 'inviteActual', 'selectPlan0', 'selectPlan', 'selectActual',
+             'contractPlan0', 'contractPlan', 'contractActual', 'startPlan0', 'startPlan', 'startActual',
+             'submissionId', 'note', 'active', 'sortOrder', 'rev', 'createdAt', 'updatedAt', 'updatedBy',
+             'rev0'], // nhãn bản kế hoạch gốc (vd Rev00)
+  // Lịch sử tải file KHMS.
+  PlanUploads: ['projectCode', 'fileName', 'rev', 'actor', 'date', 'added', 'updated', 'removed', 'total']
+};
+
+/** Action của KHMS — Code.gs tra thêm bảng này khi action không có trong API_ACTIONS_. Mỗi hàm tự kiểm tra quyền. */
+var KHMS_ACTIONS_ = {
+  importPlan:     function (user, p) { return importPlan_(user, p); },
+  updatePackage:  function (user, p) { return updatePackage_(user, p); },
+  updatePackages: function (user, p) { return updatePackages_(user, p); },
+  linkPackages:   function (user, p) { return linkPackages_(user, p); },
+  deletePlan:     function (user, p) { return deletePlan_(user, p); }
+};
+
+/** Dữ liệu KHMS gửi kèm bootstrap_ (Submissions.gs gọi nếu có hàm này). */
+function khmsBootstrap_() {
+  return { packages: listPackages_(), planUploads: listPlanUploads_() };
+}
+
 var PLAN_MILESTONES_ = ['invite', 'select', 'contract', 'start'];
 var PLAN_MAX_ROWS_ = 1500;
 
@@ -187,7 +213,7 @@ function mostCommon_(arr) {
 
 /** Nội dung gói để đếm "cập nhật": bỏ các cột rev, rev0, sortOrder, updatedAt, updatedBy. */
 function planRowCore_(rec) {
-  var h = SHEET_HEADERS.Packages;
+  var h = KHMS_HEADERS_.Packages;
   return JSON.stringify(toRowValues_('Packages', rec).filter(function (v, i) {
     return ['rev', 'rev0', 'sortOrder', 'updatedAt', 'updatedBy'].indexOf(h[i]) < 0;
   }));

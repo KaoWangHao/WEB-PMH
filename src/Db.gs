@@ -20,9 +20,14 @@ function sheet_(name) {
   return sh;
 }
 
+/** Cột của bảng: SHEET_HEADERS, hoặc bảng của chức năng chạy thử (KHMS_HEADERS_ trong khms/src/Procurement.gs). */
+function headersOf_(name) {
+  return SHEET_HEADERS[name] || (typeof KHMS_HEADERS_ !== 'undefined' && KHMS_HEADERS_[name]);
+}
+
 /** Đọc toàn bộ bảng thành mảng object; mỗi object có thêm _row (số dòng thực trong sheet). */
 function readTable_(name) {
-  var headers = SHEET_HEADERS[name];
+  var headers = headersOf_(name);
   var sh = sheet_(name);
   var last = sh.getLastRow();
   if (last < 2) return [];
@@ -39,7 +44,7 @@ function readTable_(name) {
 }
 
 function toRowValues_(name, obj) {
-  return SHEET_HEADERS[name].map(function (h) {
+  return headersOf_(name).map(function (h) {
     var v = obj[h];
     if (v === undefined || v === null) return '';
     if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
@@ -95,7 +100,7 @@ function writeObjs_(name, objs) {
 /** Ghi lại toàn bộ bảng (xóa nội dung cũ, ghi objs từ dòng 2) — dùng khi xóa nhiều dòng một lúc. */
 function rewriteTable_(name, objs) {
   var sh = sheet_(name);
-  var n = SHEET_HEADERS[name].length;
+  var n = headersOf_(name).length;
   var last = sh.getLastRow();
   if (last >= 2) sh.getRange(2, 1, last - 1, n).clearContent();
   if (!objs.length) return;
@@ -110,9 +115,9 @@ function ensureSheet_(name) {
   var ss = db_();
   var have = ss.getSheetByName(name);
   if (have) {
-    var n = SHEET_HEADERS[name].length;
+    var n = headersOf_(name).length;
     if (have.getLastColumn() < n) {
-      have.getRange(1, 1, 1, n).setValues([SHEET_HEADERS[name]]).setFontWeight('bold');
+      have.getRange(1, 1, 1, n).setValues([headersOf_(name)]).setFontWeight('bold');
       have.getRange(1, 1, have.getMaxRows(), n).setNumberFormat('@');
     }
     return;
@@ -120,7 +125,7 @@ function ensureSheet_(name) {
   withLock_(function () {
     if (ss.getSheetByName(name)) return;
     var sh = ss.insertSheet(name);
-    var headers = SHEET_HEADERS[name];
+    var headers = headersOf_(name);
     sh.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
     sh.getRange(1, 1, sh.getMaxRows(), headers.length).setNumberFormat('@');
     sh.setFrozenRows(1);

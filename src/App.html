@@ -35,9 +35,6 @@
     download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
     eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
     table: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/>',
-    box: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
-    upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/>',
-    link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
     inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>'
   };
   function ic(name, cls) {
@@ -49,12 +46,16 @@
    * ===================================================================== */
   var S = {
     token: null, me: null, cfg: null, today: '',
-    users: [], subs: [], hist: [], packages: [], planUploads: [],
-    khms: { project: '', state: '', q: '', inactive: false }, khEdit: null,
+    users: [], subs: [], hist: [],
     view: 'home', collapsed: window.innerWidth <= 1000, open: null,
     filters: {}, sorts: {}, groupBy: {}, cardState: {}, lastRows: {},
     adminUsers: null, charts: []
   };
+  /**
+   * Điểm gắn chức năng mở rộng (vd Kế hoạch mua sắm ở thư mục khms/, chỉ có trên bản chạy thử /dev): file mở rộng nạp sau App.html,
+   * dùng window.APP (khai báo cuối file) để thêm menu, trang, action, xử lý sự kiện, dữ liệu. Không có file mở rộng thì các danh sách rỗng.
+   */
+  var EXT = { nav: [], views: {}, change: {}, input: {}, derive: [], data: [], subInfo: [], help: [], busy: [] };
   var root = document.getElementById('root');
   var modalRoot = document.getElementById('modal-root');
 
@@ -256,7 +257,7 @@
       s._subAt = s.submittedAt || (out ? out.date : '');
       s._days = Math.max(0, diffDays(s._since, S.today));
     });
-    khmsDerive();
+    EXT.derive.forEach(function (fn) { fn(); });
   }
 
   function defaultFilter(view) {
@@ -379,11 +380,11 @@
       { view: 'home', icon: 'gauge', label: 'Tổng quan của tôi' },
       { view: 'mine', icon: 'folder', label: 'Hồ sơ của tôi' },
       { view: 'report', icon: 'chart', label: 'Báo cáo tổng hợp' },
-      { view: 'all', icon: 'clipboard', label: 'Tất cả hồ sơ' },
-      { view: 'khms', icon: 'box', label: 'Kế hoạch mua sắm' }
+      { view: 'all', icon: 'clipboard', label: 'Tất cả hồ sơ' }
     ];
     // Trưởng phòng xem báo cáo tổng hợp ngay trong Dashboard Trưởng phòng.
     if (S.me.isManager) items.splice(2, 1);
+    EXT.nav.forEach(function (fn) { var it = fn(); if (it) items.push(it); });
     if (S.me.isManager) {
       var cnt = isManagerPos() ? S.subs.filter(function (s) { return s.status === S.me.position; }).length : 0;
       items.push({ view: 'manager', icon: 'chart', label: 'Dashboard Trưởng phòng', count: cnt });
@@ -445,9 +446,8 @@
       case 'all': return viewAll();
       case 'manager': return viewManager();
       case 'report': return viewReport();
-      case 'khms': return viewKhms();
       case 'admin': return viewAdmin();
-      default: return viewHome();
+      default: return EXT.views[S.view] ? EXT.views[S.view]() : viewHome();
     }
   }
 
@@ -2456,899 +2456,6 @@
     downloadCsv(lines, 'bao-cao-' + (D.f.period ? D.k : S.today) + '.csv');
   }
 
-  /* =====================================================================
-   * Kế hoạch mua sắm (KHMS): gói thầu theo dự án. Ngày kế hoạch lấy từ file Excel KHMS (đọc ở trình duyệt);
-   * ngày chọn thầu thực tế = ngày duyệt của hồ sơ gắn với gói; mời thầu / ký HĐ / khởi công thực tế do chuyên viên cập nhật.
-   * ===================================================================== */
-  var MILESTONES = [
-    { key: 'invite', label: 'Mời thầu', head: 'Ngày mời thầu' },
-    { key: 'select', label: 'Chọn thầu', head: 'Ngày chọn thầu' },
-    { key: 'contract', label: 'Ký hợp đồng', head: 'Ngày ký kết hợp đồng' },
-    { key: 'start', label: 'Khởi công', head: 'Ngày bắt đầu thi công' }
-  ];
-  var KHMS_SOON_DAYS = 14;
-  var MS_COLORS = { done: '#7CB342', lateDone: '#E9A23B', late: '#DD5A4C', soon: '#F16314', todo: '#4A90D9', none: '#9AA0AE' };
-  var KH_STATES = [
-    ['', 'Tất cả'], ['late', 'Trễ hạn chọn thầu'], ['soon', 'Sắp đến hạn chọn thầu (≤ ' + KHMS_SOON_DAYS + ' ngày)'],
-    ['todo', 'Chưa đến hạn chọn thầu'], ['done', 'Đã chọn thầu'], ['wait-contract', 'Đã chọn thầu – chưa ký HĐ'],
-    ['contract', 'Đã ký hợp đồng'], ['nolink', 'Chưa gắn hồ sơ']
-  ];
-
-  function khKey(s) { return norm(s).replace(/[^a-z0-9]+/g, ' ').trim(); }
-  function fmtShort(iso) { return iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(2, 4) : ''; }
-  function fmtMoney(v) { return v == null ? '' : Number(v).toLocaleString('vi-VN'); }
-  function fmtBil(v) { return (Math.round(v / 1e7) / 100).toLocaleString('vi-VN') + ' tỷ'; }
-
-  /** Tình trạng 1 mốc: hoàn thành (đúng/trễ hạn), trễ hạn, sắp đến hạn, chưa đến hạn, chưa có kế hoạch. */
-  function msState(plan, actual) {
-    if (actual) {
-      var late = plan ? diffDays(plan, actual) : 0;
-      return late > 0 ? { code: 'lateDone', days: late } : { code: 'done', days: 0 };
-    }
-    if (!plan) return { code: 'none', days: 0 };
-    var left = diffDays(S.today, plan);
-    if (left < 0) return { code: 'late', days: -left };
-    return { code: left <= KHMS_SOON_DAYS ? 'soon' : 'todo', days: left };
-  }
-  function msText(st) {
-    return st.code === 'done' ? 'Hoàn thành' : st.code === 'lateDone' ? 'Hoàn thành, trễ ' + st.days + ' ngày'
-      : st.code === 'late' ? 'Trễ ' + st.days + ' ngày' : st.code === 'soon' ? 'Còn ' + st.days + ' ngày'
-      : st.code === 'todo' ? 'Chưa đến hạn' : '';
-  }
-  function msBadge(st) {
-    if (st.code === 'none') return '<span class="muted">—</span>';
-    return '<span class="ms-badge" style="--c:' + MS_COLORS[st.code] + '">' + esc(msText(st)) + '</span>';
-  }
-
-  function khmsDerive() {
-    S.subMap = {};
-    S.subs.forEach(function (s) { S.subMap[s.id] = s; });
-    S.pkgBySub = {};
-    S.packages.forEach(function (p) {
-      var sub = p.submissionId ? S.subMap[p.submissionId] || null : null;
-      p._sub = sub;
-      if (sub) S.pkgBySub[sub.id] = p;
-      var approved = sub && sub.status === S.cfg.approvedStatus && sub.approvedAt;
-      p._actual = { invite: p.inviteActual, select: approved ? sub.approvedAt : p.selectActual, contract: p.contractActual, start: p.startActual };
-      p._selectSrc = approved ? 'sub' : p.selectActual ? 'manual' : '';
-      p._ms = {};
-      MILESTONES.forEach(function (m) { p._ms[m.key] = msState(p[m.key + 'Plan'], p._actual[m.key]); });
-      p._key = khKey(p.name);
-    });
-    S.planLast = {};
-    (S.planUploads || []).forEach(function (u) {
-      var cur = S.planLast[u.project];
-      if (!cur || u.date >= cur.date) S.planLast[u.project] = u;
-    });
-    S.khSugg = khmsSuggestions();
-  }
-
-  /**
-   * Gợi ý hồ sơ cho gói chưa gắn: hồ sơ Trình duyệt cùng dự án (số đầu tên), chưa gắn gói khác, tên chứa tên hạng mục
-   * (không dấu) hoặc chứa ≥ 80% các từ của tên hạng mục. Ưu tiên hồ sơ đã duyệt; gói có 2 hồ sơ ngang điểm thì không gợi ý.
-   * Mỗi hồ sơ chỉ gợi ý cho 1 gói (gói có tên dài hơn, cụ thể hơn được ưu tiên).
-   */
-  function khmsSuggestions() {
-    var byProject = {};
-    S.subs.forEach(function (s) {
-      if (S.pkgBySub[s.id] || s._type === 'BC') return;
-      s._projects.forEach(function (c) { (byProject[c] = byProject[c] || []).push(s); });
-    });
-    var cands = [];
-    S.packages.forEach(function (p) {
-      if (p.submissionId || !p.active || !p._key) return;
-      var words = p._key.split(' ').filter(function (w) { return w.length > 1; });
-      var list = [];
-      (byProject[p.project] || []).forEach(function (s) {
-        var t = ' ' + khKey(s.title) + ' ';
-        var score = 0;
-        if (t.indexOf(' ' + p._key + ' ') >= 0) score = 2;
-        else if (words.length >= 2) {
-          var hit = words.filter(function (w) { return t.indexOf(' ' + w + ' ') >= 0; }).length / words.length;
-          if (hit >= 0.8) score = hit;
-        }
-        if (!score) return;
-        if (s.status === S.cfg.approvedStatus) score += 0.5;
-        list.push({ p: p, s: s, score: score + p._key.length / 10000 });
-      });
-      list.sort(function (a, b) { return b.score - a.score; });
-      if (list.length && !(list[1] && list[1].score === list[0].score)) cands.push(list[0]);
-    });
-    cands.sort(function (a, b) { return b.score - a.score; });
-    var out = {}, taken = {};
-    cands.forEach(function (c) {
-      if (taken[c.s.id]) return;
-      taken[c.s.id] = true;
-      out[c.p.id] = c.s;
-    });
-    return out;
-  }
-
-  function khmsProjectSelect(id, sel, mode) {
-    var have = {};
-    S.packages.forEach(function (p) { if (p.active) have[p.project] = (have[p.project] || 0) + 1; });
-    var list = (S.projects || []).slice();
-    Object.keys(have).forEach(function (c) { if (!S.projMap[c]) list.push({ code: c, name: '', active: true }); });
-    var opt = function (p) {
-      return '<option value="' + esc(p.code) + '"' + (p.code === sel ? ' selected' : '') + '>' + esc(projectLabel(p.code)) +
-        (have[p.code] ? ' · ' + have[p.code] + ' gói' : '') + '</option>';
-    };
-    var withPlan = list.filter(function (p) { return have[p.code]; });
-    var others = list.filter(function (p) { return !have[p.code] && (p.active || p.code === sel); });
-    return '<select id="' + id + '" data-change="' + (mode === 'import' ? 'kh-imp-project' : 'kh-project') + '">' +
-      (mode === 'import' ? '<option value="">— Chọn dự án —</option>' : '<option value="">Tất cả dự án có KHMS (' + withPlan.length + ')</option>') +
-      (withPlan.length ? '<optgroup label="Đã có KHMS">' + withPlan.map(opt).join('') + '</optgroup>' : '') +
-      (others.length ? '<optgroup label="Chưa có KHMS">' + others.map(opt).join('') + '</optgroup>' : '') + '</select>';
-  }
-
-  function khmsMatchState(p, st) {
-    var sel = p._ms.select.code;
-    switch (st) {
-      case 'late': case 'soon': case 'todo': return sel === st;
-      case 'done': return sel === 'done' || sel === 'lateDone';
-      case 'wait-contract': return (sel === 'done' || sel === 'lateDone') && !p._actual.contract;
-      case 'contract': return !!p._actual.contract;
-      case 'nolink': return !p.submissionId;
-      default: return true;
-    }
-  }
-  function khmsRows() {
-    var k = S.khms, q = norm(k.q).trim();
-    return S.packages.filter(function (p) {
-      if (k.project && p.project !== k.project) return false;
-      if (!k.inactive && !p.active) return false;
-      if (!khmsMatchState(p, k.state)) return false;
-      if (q && norm(p.stt + ' ' + p.name + ' ' + p.project + ' ' + (p._sub ? p._sub.id + ' ' + p._sub.title : '')).indexOf(q) < 0) return false;
-      return true;
-    }).sort(function (a, b) { return projectSort(a.project, b.project) || (b.active - a.active) || a.order - b.order; });
-  }
-  function khmsStats(list) {
-    var st = { n: list.length, value: 0, done: 0, late: 0, soon: 0, contract: 0, waitContract: 0, nolink: 0 };
-    list.forEach(function (p) {
-      st.value += p.value || 0;
-      var sel = p._ms.select.code;
-      if (sel === 'done' || sel === 'lateDone') { st.done++; if (!p._actual.contract) st.waitContract++; }
-      if (sel === 'late') st.late++;
-      if (sel === 'soon') st.soon++;
-      if (p._actual.contract) st.contract++;
-      if (!p.submissionId) st.nolink++;
-    });
-    return st;
-  }
-
-  function viewKhms() {
-    var k = S.khms;
-    var scope = S.packages.filter(function (p) { return p.active && (!k.project || p.project === k.project); });
-    return khmsParamsCard() + khmsOverviewCard(scope) + (k.project ? '' : khmsProjectsCard()) + khmsDetailCard();
-  }
-
-  function khmsParamsCard() {
-    var k = S.khms;
-    var last = k.project ? S.planLast[k.project] : null;
-    var info = k.project ? '<div class="kh-info">' + (last
-      ? ic('report') + '<span>KHMS cập nhật <b>' + fmtDate(last.date) + '</b>' + (last.rev ? ' · <b>' + esc(last.rev) + '</b>' : '') +
-        ' · ' + esc(userName(last.actor)) + (last.fileName ? ' · <span class="muted">' + esc(last.fileName) + '</span>' : '') + '</span>' +
-        (S.me.isManager ? '<button class="link-btn danger" data-act="kh-delete-plan" data-code="' + esc(k.project) + '">Xóa KHMS dự án này</button>' : '')
-      : ic('report') + '<span>Dự án này chưa có KHMS — bấm <b>Tải KHMS (Excel)</b> để tải lên.</span>') + '</div>' : '';
-    var body = '<div class="params">' +
-      '<div class="field kh-proj"><div class="fbody"><label for="kh-project">Dự án</label>' + khmsProjectSelect('kh-project', k.project) + '</div></div>' +
-      '<div class="field"><div class="fbody"><label for="kh-state">Tình trạng</label><select id="kh-state" data-change="kh-state">' +
-        KH_STATES.map(function (s) { return '<option value="' + s[0] + '"' + (s[0] === k.state ? ' selected' : '') + '>' + esc(s[1]) + '</option>'; }).join('') + '</select></div></div>' +
-      '<div class="field"><div class="fbody"><label for="kh-q">Gói thầu / hồ sơ</label>' +
-        '<input type="text" id="kh-q" data-input="kh-q" placeholder="Nhập để tìm…" value="' + esc(k.q) + '"></div></div></div>' + info;
-    var tools = '<button class="secondary-btn" data-act="kh-export">' + ic('download') + 'Xuất Excel</button>' +
-      '<button class="primary-btn kh-upload" data-act="kh-upload">' + ic('upload') + 'Tải KHMS (Excel)</button>';
-    return card('khms-params', 'Kế hoạch mua sắm', body, { tools: tools, collapsible: true });
-  }
-
-  function khmsOverviewCard(scope) {
-    var st = khmsStats(scope), k = S.khms;
-    var tile = function (state, color, label, n, note) {
-      return '<button class="rep-kpi' + (k.state === state && (state || !k.q) ? ' on' : '') + '" style="--c:' + color + '" data-act="kh-state" data-state="' + state + '">' +
-        '<span class="rk-l">' + esc(label) + '</span><b>' + fmtNum(n) + '</b><span class="rk-n">' + esc(note) + '</span></button>';
-    };
-    var pct = function (n) { return st.n ? Math.round(n * 100 / st.n) + '% số gói' : '—'; };
-    var body = '<div class="rep-kpis">' +
-      tile('', '#1E2B59', 'Gói thầu', st.n, st.value ? 'Tổng giá trị ' + fmtBil(st.value) : 'đang theo dõi') +
-      tile('done', MS_COLORS.done, 'Đã chọn thầu', st.done, pct(st.done)) +
-      tile('late', MS_COLORS.late, 'Trễ chọn thầu', st.late, 'quá ngày kế hoạch') +
-      tile('soon', MS_COLORS.soon, 'Sắp đến hạn', st.soon, 'chọn thầu trong ' + KHMS_SOON_DAYS + ' ngày tới') +
-      tile('contract', '#2B4396', 'Đã ký hợp đồng', st.contract, st.waitContract ? st.waitContract + ' gói chờ ký' : pct(st.contract)) +
-      '</div><p class="muted kh-note">Ngày chọn thầu thực tế = ngày duyệt của hồ sơ gắn với gói thầu. Bấm ô để lọc danh sách.</p>';
-    return card('khms-overview', 'Tổng quan' + (k.project ? ' <span class="ov-period">' + esc(projectLabel(k.project)) + '</span>' : ''), body, { collapsible: true });
-  }
-
-  function khmsProjectsCard() {
-    var by = {};
-    S.packages.forEach(function (p) { if (p.active) (by[p.project] = by[p.project] || []).push(p); });
-    var codes = Object.keys(by).sort(projectSort);
-    if (!codes.length) return '';
-    var num = function (code, state, n, cls) {
-      return n ? '<button class="link-btn' + (cls ? ' ' + cls : '') + '" data-act="kh-pick-project" data-code="' + esc(code) + '" data-state="' + state + '">' + fmtNum(n) + '</button>'
-        : '<span class="muted">0</span>';
-    };
-    var rows = codes.map(function (c) {
-      var st = khmsStats(by[c]), last = S.planLast[c];
-      return '<tr><td><button class="link-btn" data-act="kh-pick-project" data-code="' + esc(c) + '" data-state="">' + projectCell(c) + '</button></td>' +
-        '<td class="nowrap">' + (last ? fmtDate(last.date) + (last.rev ? ' <span class="proj-code">' + esc(last.rev) + '</span>' : '') : '—') + '</td>' +
-        '<td class="num">' + num(c, '', st.n) + '</td><td class="num">' + (st.value ? fmtBil(st.value) : '—') + '</td>' +
-        '<td class="num">' + num(c, 'done', st.done) + '</td><td class="num">' + num(c, 'late', st.late, 'bad') + '</td>' +
-        '<td class="num">' + num(c, 'soon', st.soon, 'warn') + '</td><td class="num">' + num(c, 'contract', st.contract) + '</td>' +
-        '<td class="num">' + num(c, 'nolink', st.nolink) + '</td></tr>';
-    }).join('');
-    return card('khms-projects', 'Theo dự án', '<div class="table-wrap"><table class="grid kh-sum"><thead><tr><th>Dự án</th><th>KHMS cập nhật</th>' +
-      '<th class="num">Gói thầu</th><th class="num">Giá trị</th><th class="num">Đã chọn thầu</th><th class="num">Trễ chọn thầu</th>' +
-      '<th class="num">Sắp đến hạn</th><th class="num">Đã ký HĐ</th><th class="num">Chưa gắn hồ sơ</th></tr></thead><tbody>' + rows + '</tbody></table></div>',
-      { collapsible: true });
-  }
-
-  /**
-   * Cột kế hoạch của bảng gói thầu: 1 cột khi chỉ có 1 bản kế hoạch; 2 cột "KH Rev00" (gốc) + "KH Rev01" (hiện hành) khi file KHMS
-   * có cả 2 bản hoặc kế hoạch đã đổi qua các lần tải. Nhãn Rev lấy theo dữ liệu (khác nhau giữa các dự án → "KH gốc" / "KH hiện hành").
-   */
-  function khPlanCols(rows) {
-    var two = rows.some(function (p) {
-      return (p.rev0 && p.rev && p.rev0 !== p.rev) ||
-        MILESTONES.some(function (m) { var a = p[m.key + 'Plan0']; return a && a !== p[m.key + 'Plan']; });
-    });
-    var only = function (arr) {
-      var u = arr.filter(function (v, i) { return v && arr.indexOf(v) === i; });
-      return u.length === 1 && arr.every(Boolean) ? u[0] : '';
-    };
-    var cur = only(rows.map(function (p) { return p.rev; })), base = only(rows.map(function (p) { return p.rev0; }));
-    if (!two) return { two: false, cur: cur ? 'Kế hoạch ' + cur : 'Kế hoạch' };
-    if (!base || !cur || base === cur) return { two: true, base: 'KH gốc', cur: 'KH hiện hành' };
-    return { two: true, base: 'KH ' + base, cur: 'KH ' + cur };
-  }
-  function khPlanCell(p, m, pc) {
-    var plan = p[m + 'Plan'], plan0 = p[m + 'Plan0'];
-    var d = function (iso) { return iso ? fmtShort(iso) : '<span class="muted">—</span>'; };
-    if (!pc.two) return '<td class="kh-d">' + d(plan) + '</td>';
-    var moved = plan0 && plan && plan0 !== plan;
-    return '<td class="kh-d kh-base">' + d(plan0) + '</td>' +
-      '<td class="kh-d' + (moved ? ' kh-chgd' : '') + '"' +
-      (moved ? ' title="Đổi so với kế hoạch gốc: ' + (diffDays(plan0, plan) > 0 ? '+' : '') + diffDays(plan0, plan) + ' ngày"' : '') + '>' + d(plan) + '</td>';
-  }
-  function khActualCell(p, m) {
-    var a = p._actual[m];
-    var fromSub = m === 'select' && p._selectSrc === 'sub';
-    if (S.khEdit && !fromSub) return '<td class="kh-d kh-act">' + khEditInput(p, m + 'Actual') + '</td>';
-    return '<td class="kh-d kh-act">' + (a ? fmtShort(a) : '<span class="muted">—</span>') +
-      (fromSub ? '<small class="kh-src" title="Ngày duyệt hồ sơ ' + esc(p._sub.id) + '">theo HS</small>' : '') + '</td>';
-  }
-
-  /* ---------- Cập nhật cả bảng (nút "Cập nhật bảng"): ô nhập ngay trong bảng, lưu 1 lần ---------- */
-  /** Giá trị gốc của ô sửa được, dạng hiển thị trong ô nhập. */
-  function khEditOrig(p, f) {
-    if (f === 'note' || f === 'submissionId') return p[f] || '';
-    return p[f] ? fmtDate(p[f]) : '';
-  }
-  function khEditVal(p, f) {
-    var d = S.khEdit.d[p.id];
-    return d && d[f] !== undefined ? d[f] : khEditOrig(p, f);
-  }
-  function khEditCls(p, f) {
-    var bad = S.khEdit.bad[p.id + '|' + f];
-    return (khEditVal(p, f) !== khEditOrig(p, f) ? ' dirty' : '') + (bad ? ' invalid' : '');
-  }
-  function khEditInput(p, f) {
-    return '<input type="text" class="kh-in' + khEditCls(p, f) + '" id="khe-' + esc(p.id) + '-' + f + '" data-input="kh-cell" data-id="' + esc(p.id) + '" data-f="' + f + '"' +
-      ' inputmode="numeric" autocomplete="off" maxlength="10" placeholder="dd/mm/yyyy" value="' + esc(khEditVal(p, f)) + '">';
-  }
-  function khEditSelect(p) {
-    var cur = khEditVal(p, 'submissionId'), sugg = S.khSugg[p.id];
-    var opt = function (s, pre) {
-      return '<option value="' + esc(s.id) + '"' + (s.id === cur ? ' selected' : '') + '>' + esc((pre || '') + s.id + ' · ' + statusOf(s.status).short + ' · ' + s.title) + '</option>';
-    };
-    var list = S.subs.filter(function (s) {
-      return s._projects.indexOf(p.project) >= 0 && (!S.pkgBySub[s.id] || S.pkgBySub[s.id] === p) && (!sugg || s.id !== sugg.id);
-    }).sort(function (a, b) { return a.id < b.id ? 1 : -1; });
-    var curSub = cur && S.subMap[cur];
-    var extra = curSub && list.indexOf(curSub) < 0 && (!sugg || curSub !== sugg) ? opt(curSub) : '';
-    return '<select class="kh-sel' + khEditCls(p, 'submissionId') + '" id="khe-' + esc(p.id) + '-submissionId" data-change="kh-cell" data-id="' + esc(p.id) + '" data-f="submissionId">' +
-      '<option value="">— Chưa gắn hồ sơ —</option>' + extra + (sugg ? opt(sugg, 'Gợi ý: ') : '') + list.map(function (s) { return opt(s); }).join('') + '</select>';
-  }
-  /** Gom thay đổi đang nhập: items gửi server, bad = ô ngày sai. */
-  function khEditCollect() {
-    var items = [], bad = {};
-    Object.keys(S.khEdit.d).forEach(function (id) {
-      var p = S.packages.filter(function (x) { return x.id === id; })[0];
-      if (!p) return;
-      var d = S.khEdit.d[id], it = { id: id }, n = 0;
-      Object.keys(d).forEach(function (f) {
-        var raw = d[f];
-        if (raw === khEditOrig(p, f)) return;
-        if (f === 'note') { if (raw.trim() !== (p.note || '')) { it.note = raw.trim(); n++; } return; }
-        if (f === 'submissionId') { it.submissionId = raw; n++; return; }
-        var iso = parseDmy(raw);
-        if (iso === null || iso > S.today) { bad[id + '|' + f] = iso === null ? 'sai' : 'sau hôm nay'; return; }
-        if (iso !== (p[f] || '')) { it[f] = iso; n++; }
-      });
-      if (n) items.push(it);
-    });
-    return { items: items, bad: bad };
-  }
-  function khEditCountText() {
-    var c = khEditCollect();
-    return 'Lưu thay đổi (' + c.items.length + ' gói)';
-  }
-  function khEditSave(btn) {
-    var c = khEditCollect();
-    S.khEdit.bad = c.bad;
-    var nBad = Object.keys(c.bad).length;
-    if (nBad) { render(); toast(nBad + ' ô ngày không hợp lệ hoặc sau hôm nay (tô đỏ). Nhập dạng dd/mm/yyyy.', 'err'); return; }
-    if (!c.items.length) { S.khEdit = null; render(); toast('Không có thay đổi nào.'); return; }
-    busy(btn, true);
-    call('updatePackages', { items: c.items }).then(function (r) {
-      S.khEdit = null;
-      applyPackages(r.packages);
-      toast('Đã lưu ' + r.packages.length + ' gói thầu.');
-    }).catch(function (err) { busy(btn, false); handleErr(err); });
-  }
-
-  /** Lưu giá trị ô đang nhập vào bản nháp (không vẽ lại bảng), cập nhật màu ô và số gói trên nút Lưu. */
-  function khEditStore(el) {
-    if (!S.khEdit) return;
-    var id = el.dataset.id, f = el.dataset.f;
-    var p = S.packages.filter(function (x) { return x.id === id; })[0];
-    if (!p) return;
-    (S.khEdit.d[id] = S.khEdit.d[id] || {})[f] = el.value;
-    delete S.khEdit.bad[id + '|' + f];
-    el.classList.toggle('dirty', el.value !== khEditOrig(p, f));
-    el.classList.remove('invalid');
-    var btn = document.getElementById('kh-save-all');
-    if (btn) btn.lastChild.textContent = khEditCountText();
-  }
-  /** Nút cần bấm 2 lần để xác nhận (lần đầu chỉ nhắc). */
-  function el_confirmed(key) {
-    var now = Date.now();
-    if (S.confirmKey === key && now - S.confirmAt < 6000) { S.confirmKey = null; return true; }
-    S.confirmKey = key; S.confirmAt = now;
-    return false;
-  }
-
-  function khLinkCell(p) {
-    if (S.khEdit) return khEditSelect(p);
-    if (p.submissionId) {
-      if (!p._sub) return '<span class="muted">' + esc(p.submissionId) + ' (đã xóa)</span>';
-      return '<button class="link-btn code" data-act="open-history" data-id="' + esc(p._sub.id) + '" title="' + esc(p._sub.title) + '">' + esc(p._sub.id) + '</button>' +
-        '<div>' + statusBadge(p._sub.status) + '</div>';
-    }
-    var s = S.khSugg[p.id];
-    if (s) {
-      return '<div class="kh-sugg"><span class="muted">Gợi ý:</span> <button class="link-btn code" data-act="open-history" data-id="' + esc(s.id) + '" title="' + esc(s.title) + '">' + esc(s.id) + '</button>' +
-        '<div class="kh-sugg-t" title="' + esc(s.title) + '">' + esc(s.title) + '</div>' +
-        '<div class="kh-sugg-a"><button class="mini-btn ok" data-act="kh-confirm" data-id="' + esc(p.id) + '" data-sub="' + esc(s.id) + '">' + ic('check') + 'Xác nhận</button>' +
-        '<button class="mini-btn" data-act="kh-edit" data-id="' + esc(p.id) + '">Chọn khác</button></div></div>';
-    }
-    return '<button class="mini-btn" data-act="kh-edit" data-id="' + esc(p.id) + '">' + ic('link') + 'Gắn hồ sơ</button>';
-  }
-
-  function khmsDetailCard() {
-    var k = S.khms;
-    var rows = khmsRows();
-    S.lastKhRows = rows;
-    var showProj = !k.project;
-    var inactive = S.packages.filter(function (p) { return !p.active && (!k.project || p.project === k.project); }).length;
-    var sugg = rows.filter(function (p) { return S.khSugg[p.id]; }).length;
-    var pc = khPlanCols(rows), np = pc.two ? 2 : 1;
-    var groups = MILESTONES.map(function (m) {
-      return '<th class="kh-g kh-g-' + m.key + '" colspan="' + (np + (m.key === 'start' ? 1 : 2)) + '">' + esc(m.head) + '</th>';
-    }).join('');
-    var subs = MILESTONES.map(function (m) {
-      var g = ' class="kh-g-' + m.key + '"';
-      return (pc.two ? '<th' + g + '>' + esc(pc.base) + '</th><th' + g + '>' + esc(pc.cur) + '</th>' : '<th' + g + '>' + esc(pc.cur) + '</th>') +
-        '<th' + g + '>Thực tế</th>' + (m.key === 'start' ? '' : '<th' + g + '>Tình trạng</th>');
-    }).join('');
-    var head = '<tr><th rowspan="2" class="center">STT</th><th rowspan="2">Hạng mục</th>' + (showProj ? '<th rowspan="2">Dự án</th>' : '') +
-      '<th rowspan="2" class="num">Giá trị gói thầu</th>' + groups + '<th rowspan="2">Hồ sơ phê duyệt</th></tr><tr>' + subs + '</tr>';
-    var body = rows.map(function (p) {
-      var cells = MILESTONES.map(function (m) {
-        return khPlanCell(p, m.key, pc) + khActualCell(p, m.key) + (m.key === 'start' ? '' : '<td>' + msBadge(p._ms[m.key]) + '</td>');
-      }).join('');
-      var nameCell = S.khEdit
-        ? '<b>' + esc(p.name) + '</b>' + (p.active ? '' : ' <span class="kh-tag">Không còn trong KHMS mới</span>') +
-          '<input type="text" class="kh-in kh-note-in' + khEditCls(p, 'note') + '" id="khe-' + esc(p.id) + '-note" data-input="kh-cell" data-id="' + esc(p.id) + '" data-f="note"' +
-          ' maxlength="500" placeholder="Ghi chú…" value="' + esc(khEditVal(p, 'note')) + '">'
-        : '<button class="link-btn kh-open" data-act="kh-edit" data-id="' + esc(p.id) + '" title="Xem chi tiết / cập nhật gói này">' + esc(p.name) + '</button>' +
-          (p.active ? '' : ' <span class="kh-tag">Không còn trong KHMS mới</span>') + (p.note ? '<div class="kh-pnote">' + esc(p.note) + '</div>' : '');
-      return '<tr' + (p.active ? '' : ' class="inactive"') + '><td class="center code">' + esc(p.stt) + '</td>' +
-        '<td class="kh-name">' + nameCell + '</td>' +
-        (showProj ? '<td class="nowrap"><span class="proj-code">' + esc(p.project) + '</span></td>' : '') +
-        '<td class="num nowrap">' + (p.value != null ? fmtMoney(p.value) : '<span class="muted">—</span>') + '</td>' + cells +
-        '<td class="kh-link">' + khLinkCell(p) + '</td></tr>';
-    }).join('');
-    var cols = 15 + (showProj ? 1 : 0) + (pc.two ? 4 : 0);
-    if (!rows.length) {
-      body = '<tr><td colspan="' + cols + '" class="empty">' + (S.packages.length ? 'Không có gói thầu nào phù hợp.'
-        : 'Chưa có KHMS nào. Bấm <b>Tải KHMS (Excel)</b> và chọn file kế hoạch mua sắm của dự án (bố cục: cột STT, Hạng mục, Giá trị gói thầu và các nhóm cột ' +
-          'Ngày mời thầu / Ngày chọn thầu / Ngày ký kết hợp đồng / Ngày bắt đầu thi công, mỗi nhóm có cột Kế hoạch – Thực tế – Tình trạng).') + '</td></tr>';
-    }
-    var editing = !!S.khEdit;
-    var fill = editing ? rows.filter(function (p) { return S.khSugg[p.id] && !khEditVal(p, 'submissionId'); }).length : 0;
-    var tools = '<div class="table-tools"><span class="muted"><b>' + fmtNum(rows.length) + '</b> gói thầu</span><div class="grow"></div>' +
-      (inactive ? '<label class="check kh-inact"><input type="checkbox" data-change="kh-inactive"' + (k.inactive ? ' checked' : '') + '>Hiện gói không còn trong KHMS mới (' + inactive + ')</label>' : '') +
-      (editing
-        ? (fill ? '<button class="secondary-btn" data-act="kh-fill-sugg">' + ic('link') + 'Điền hồ sơ gợi ý (' + fill + ')</button>' : '') +
-          '<button class="secondary-btn" data-act="kh-edit-cancel">Hủy</button>' +
-          '<button class="primary-btn kh-save-all" id="kh-save-all" data-act="kh-edit-save">' + ic('check') + esc(khEditCountText()) + '</button>'
-        : (sugg ? '<button class="secondary-btn" data-act="kh-confirm-all">' + ic('check') + 'Xác nhận tất cả gợi ý (' + sugg + ')</button>' : '') +
-          (rows.length ? '<button class="primary-btn kh-save-all" data-act="kh-edit-start">' + ic('edit') + 'Cập nhật bảng</button>' : '')) + '</div>' +
-      (editing ? '<div class="kh-edit-bar">' + ic('edit') + '<span><b>Đang cập nhật bảng</b>: nhập ngày <b>thực tế</b> (dd/mm/yyyy, để trống = xóa), chọn <b>hồ sơ phê duyệt</b>, ghi chú cho từng gói; ' +
-        'ô đã sửa tô cam. Bấm <b>Lưu thay đổi</b> để ghi tất cả một lần. Ngày kế hoạch lấy từ file KHMS nên không sửa ở đây; ngày chọn thầu "theo HS" lấy theo ngày duyệt hồ sơ.</span></div>' : '');
-    return card('khms-detail', 'Danh sách gói thầu', tools +
-      '<div class="table-wrap table-scroll kh-scroll' + (editing ? ' kh-editing' : '') + '" id="scroll-khms"><table class="grid kh-table"><thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>' +
-      '<div class="pager"><span>Tình trạng: hoàn thành / trễ N ngày so với kế hoạch ' + (pc.two ? 'hiện hành (' + esc(pc.cur) + '; chữ cam = đã đổi so với ' + esc(pc.base) + ')' : 'hiện hành') +
-      '; "Còn N ngày" khi còn ≤ ' + KHMS_SOON_DAYS + ' ngày tới hạn.</span></div>');
-  }
-
-  /* ---------- Cập nhật 1 gói thầu ---------- */
-  function khSubOptions(p) {
-    var sel = p.submissionId;
-    var sugg = S.khSugg[p.id];
-    var free = S.subs.filter(function (s) { return !S.pkgBySub[s.id] || s.id === sel; });
-    var opt = function (s) {
-      return '<option value="' + esc(s.id) + '"' + (s.id === sel ? ' selected' : '') + '>' + esc(s.id + ' · ' + statusOf(s.status).short + ' · ' + s.title) + '</option>';
-    };
-    var byDate = function (a, b) { return a.id < b.id ? 1 : -1; };
-    var mine = free.filter(function (s) { return s._projects.indexOf(p.project) >= 0; }).sort(byDate);
-    var other = free.filter(function (s) { return s._projects.indexOf(p.project) < 0; }).sort(byDate);
-    return '<option value="">— Chưa gắn hồ sơ —</option>' +
-      (sugg && sugg.id !== sel ? '<optgroup label="Gợi ý">' + opt(sugg) + '</optgroup>' : '') +
-      (mine.length ? '<optgroup label="Hồ sơ dự án ' + esc(p.project) + '">' + mine.map(opt).join('') + '</optgroup>' : '') +
-      (other.length ? '<optgroup label="Hồ sơ khác">' + other.map(opt).join('') + '</optgroup>' : '');
-  }
-  function khDateInput(id, iso) {
-    return '<input type="text" id="' + id + '" class="kh-date" inputmode="numeric" autocomplete="off" maxlength="10" placeholder="dd/mm/yyyy" data-input="date-mask" value="' + esc(iso ? fmtDate(iso) : '') + '">';
-  }
-  function openPackage(id) {
-    var p = S.packages.filter(function (x) { return x.id === id; })[0];
-    if (!p) return;
-    var rows = MILESTONES.map(function (m) {
-      var plan = p[m.key + 'Plan'], plan0 = p[m.key + 'Plan0'];
-      var actual = m.key === 'select' && p._selectSrc === 'sub'
-        ? '<b>' + fmtDate(p._actual.select) + '</b><div class="help">Theo ngày duyệt hồ sơ ' + esc(p._sub.id) + '</div>'
-        : khDateInput('m-ka-' + m.key, m.key === 'select' ? p.selectActual : p[m.key + 'Actual']) +
-          (m.key === 'select' ? '<div class="help">Gắn hồ sơ: khi hồ sơ được duyệt, ngày duyệt tự ghi nhận vào đây.</div>' : '');
-      return '<tr><td><b>' + esc(m.label) + '</b></td><td class="nowrap">' + (plan ? fmtDate(plan) : '—') + (p.rev ? ' <small class="muted">' + esc(p.rev) + '</small>' : '') +
-        (plan0 && plan0 !== plan ? '<div class="help">' + esc(p.rev0 && p.rev0 !== p.rev ? p.rev0 : 'Gốc') + ': ' + fmtDate(plan0) + '</div>' : '') + '</td><td>' + actual + '</td><td>' + msBadge(p._ms[m.key]) + '</td></tr>';
-    }).join('');
-    openModal(modalHead('Cập nhật gói thầu') + '<div class="modal-body"><div id="m-err"></div>' +
-      '<h3 style="margin:0 0 10px">' + esc(p.name) + (p.active ? '' : ' <span class="kh-tag">Không còn trong KHMS mới</span>') + '</h3>' +
-      '<div class="meta-grid"><div><small>Dự án</small>' + esc(projectLabel(p.project)) + '</div><div><small>STT</small>' + esc(p.stt || '—') + '</div>' +
-      '<div><small>Giá trị gói thầu</small>' + (p.value != null ? fmtMoney(p.value) : '—') + '</div><div><small>KHMS</small>' + esc((p.rev0 && p.rev0 !== p.rev ? p.rev0 + ' → ' : '') + (p.rev || '—')) + '</div>' +
-      '<div><small>Cập nhật</small>' + fmtDate(p.updatedAt) + (p.updatedBy ? ' · ' + esc(userName(p.updatedBy)) : '') + '</div></div>' +
-      '<div class="table-wrap" style="margin-bottom:16px"><table class="grid kh-ms"><thead><tr><th>Mốc</th><th>Kế hoạch</th><th>Thực tế</th><th>Tình trạng</th></tr></thead><tbody>' +
-      rows + '</tbody></table></div>' +
-      '<div class="form-row"><label for="m-ksub">Hồ sơ phê duyệt gói thầu</label><select id="m-ksub">' + khSubOptions(p) + '</select>' +
-      '<div class="help">Mỗi hồ sơ chỉ gắn với 1 gói. Hồ sơ gắn được duyệt → ngày duyệt là ngày chọn thầu thực tế.</div></div>' +
-      '<div class="form-row"><label for="m-knote">Ghi chú</label><textarea id="m-knote" maxlength="500">' + esc(p.note) + '</textarea></div></div>' +
-      '<div class="modal-foot"><button class="secondary-btn" data-act="close-modal">Hủy</button>' +
-      '<button class="primary-btn" style="min-height:42px;font-size:16px" data-act="kh-save" data-id="' + esc(p.id) + '">' + ic('check') + 'Lưu</button></div>', true);
-  }
-  function linkSuggestions(links, btn) {
-    if (!links.length) return;
-    busy(btn, true);
-    call('linkPackages', { links: links }).then(function (r) {
-      applyPackages(r.packages);
-      toast('Đã gắn ' + r.packages.length + ' gói thầu với hồ sơ.' + (r.skipped.length ? ' Bỏ qua ' + r.skipped.length + ': ' + r.skipped[0].reason : ''),
-        r.skipped.length ? 'err' : '');
-    }).catch(function (err) { busy(btn, false); handleErr(err); });
-  }
-  function applyPackages(list) {
-    list.forEach(function (n) {
-      var i = S.packages.findIndex(function (x) { return x.id === n.id; });
-      if (i >= 0) S.packages[i] = n; else S.packages.push(n);
-    });
-    derive(); render();
-  }
-
-  /* ---------- Đọc file Excel KHMS ---------- */
-  var KH_GROUPS = [
-    { key: 'invite', test: /moi thau/ },
-    { key: 'select', test: /chon thau|lua chon nha thau/, not: /hinh thuc|phuong thuc/ }, // bỏ "Hình thức chọn thầu"
-    { key: 'contract', test: /hop dong|ky ket/, not: /gia tri/ },
-    { key: 'start', test: /thi cong|khoi cong/, not: /\bmau\b|thoi gian/ } // bỏ "Ngày bắt đầu thi công mẫu"
-  ];
-  /** Ô tiêu đề cột tên gói: "Hạng mục", "Tên vật tư/ gói thầu", "Tên gói thầu", "Nội dung". */
-  function khNameHead(t) {
-    return t.length <= 40 && /hang muc|goi thau|ten vat tu|noi dung/.test(t) && !/gia tri|hinh thuc|ngay|ty trong|trach nhiem|^goi thau \w+ \w+ \w+/.test(t);
-  }
-  function xlValue(v) {
-    if (v && typeof v === 'object' && !(v instanceof Date)) {
-      if (v.richText) return v.richText.map(function (t) { return t.text; }).join('');
-      if ('result' in v) return xlValue(v.result);
-      if (v.text != null) return String(v.text);
-      return null;
-    }
-    return v;
-  }
-  function xlText(v) {
-    v = xlValue(v);
-    return v == null || v instanceof Date ? '' : String(v).trim();
-  }
-  /** Ô ngày Excel → ISO: kiểu Date (ExcelJS đọc theo UTC), số serial, hoặc chữ "15-1-26", "15/01/2026". */
-  function xlDate(v) {
-    v = xlValue(v);
-    var d = null;
-    if (v instanceof Date) d = v;
-    else if (typeof v === 'number' && v > 20000 && v < 80000) d = new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000);
-    else if (typeof v === 'string') {
-      var m = v.trim().match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2}|\d{4})$/);
-      if (m) return parseDmy(m[1] + '/' + m[2] + '/' + (m[3].length === 2 ? '20' + m[3] : m[3])) || '';
-      m = v.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
-      if (m) return parseDmy(m[3] + '/' + m[2] + '/' + m[1]) || '';
-      return '';
-    }
-    if (!d || isNaN(d.getTime())) return '';
-    // ExcelJS đổi số serial sang Date theo UTC; ô có cả giờ → lấy phần ngày (cho phép sai số làm tròn 1 phút).
-    d = new Date(Math.floor((d.getTime() + 60000) / 86400000) * 86400000);
-    var y = d.getUTCFullYear();
-    return y < 1990 || y > 2100 ? '' : d.toISOString().slice(0, 10);
-  }
-  function xlMoney(v) {
-    v = xlValue(v);
-    if (typeof v === 'number') return isFinite(v) && v >= 0 ? Math.round(v) : null;
-    var s = String(v == null ? '' : v).replace(/\s|đ|vnd/gi, '');
-    if (/^\d{1,3}([.,]\d{3})+$/.test(s)) return Number(s.replace(/[.,]/g, ''));
-    if (/^\d+([.,]\d+)?$/.test(s)) return Math.round(Number(s.replace(',', '.')));
-    return null;
-  }
-
-  /** Tìm bảng KHMS trong 1 sheet: dòng tiêu đề có "Hạng mục", nhóm cột ngày, dòng dưới có "Kế hoạch (Rev..)" / "Thực tế". */
-  function parseKhmsSheet(ws) {
-    var maxR = Math.min(ws.rowCount, 40), maxC = Math.min(ws.columnCount, 150);
-    var cell = function (r, c) { return ws.getCell(r, c); };
-    var isSlave = function (cl) { return cl.isMerged && cl.master && cl.master.address !== cl.address; };
-    var hr = 0, nameCol = 0;
-    for (var r = 1; r <= maxR && !hr; r++) {
-      for (var c = 1; c <= maxC; c++) {
-        var t = khKey(xlText(cell(r, c).value));
-        if (t && khNameHead(t)) { hr = r; nameCol = c; break; }
-      }
-    }
-    if (!hr) return null;
-    var sttCol = 0, valueCol = 0, starts = [], heads = [];
-    for (c = 1; c <= maxC; c++) {
-      var cl = cell(hr, c);
-      if (isSlave(cl)) continue;
-      t = khKey(xlText(cl.value));
-      if (!t) continue;
-      heads.push(c);
-      if (!sttCol && c < nameCol && /^(s )?tt$|^stt$|^so tt$/.test(t)) sttCol = c;
-      else if (!valueCol && c > nameCol && /gia tri|gia goi thau|du toan/.test(t)) valueCol = c;
-      else if (c > nameCol) {
-        KH_GROUPS.forEach(function (g) {
-          if (g.test.test(t) && !(g.not && g.not.test(t))) starts.push({ key: g.key, col: c, ngay: /^ngay\b/.test(t) });
-        });
-      }
-    }
-    // Mỗi mốc lấy 1 nhóm cột: ưu tiên tiêu đề bắt đầu bằng "Ngày …", rồi nhóm đứng trước.
-    var seen = {};
-    starts = starts.sort(function (a, b) { return (b.ngay - a.ngay) || (a.col - b.col); })
-      .filter(function (s) { if (seen[s.key]) return false; seen[s.key] = true; return true; });
-    if (!starts.length) return null;
-    // Nhóm cột kéo dài tới trước ô tiêu đề kế tiếp (vd "Ngày mời thầu" W–X, "Ngày BCH gửi SSG" Y–Z là nhóm khác).
-    var nextHead = function (c) { for (var i = 0; i < heads.length; i++) if (heads[i] > c) return heads[i]; return 0; };
-    var hidden = function (c) { return !!ws.getColumn(c).hidden; };
-    var revOf = function (t) { var m = t.match(/rev\s*0*(\d+)/); return m ? +m[1] : -1; };
-    var groups = {}, subRow = 0, maxRev = -1;
-    starts.sort(function (a, b) { return a.col - b.col; });
-    starts.forEach(function (s) {
-      var nh = nextHead(s.col);
-      var end = Math.min(nh ? nh - 1 : s.col + 7, s.col + 7, maxC);
-      var plans = [], actual = 0;
-      for (var rr = hr + 1; rr <= hr + 2; rr++) {
-        for (var cc = s.col; cc <= end; cc++) {
-          var cl = cell(rr, cc);
-          if (isSlave(cl) && cl.master.row <= hr) continue;
-          var t = khKey(xlText(cl.value));
-          if (/ke hoach|^kh\b/.test(t)) { plans.push({ col: cc, rev: revOf(t), hidden: hidden(cc) }); subRow = Math.max(subRow, rr); }
-          else if (!actual && /thuc te|^tt$/.test(t)) { actual = cc; subRow = Math.max(subRow, rr); }
-        }
-      }
-      if (!plans.length) plans.push({ col: s.col, rev: -1, hidden: hidden(s.col) });
-      // Kế hoạch hiện hành = bản Rev lớn nhất (cùng Rev: ưu tiên cột không ẩn); có thêm cột Rev00 → kế hoạch gốc.
-      plans.sort(function (a, b) { return (b.rev - a.rev) || (a.hidden - b.hidden) || (b.col - a.col); });
-      var cur = plans[0], base = plans.filter(function (p) { return p.rev === 0 && p.col !== cur.col; })[0];
-      groups[s.key] = { plan: cur.col, plan0: base ? base.col : 0, actual: actual, rev: cur.rev };
-      maxRev = Math.max(maxRev, cur.rev);
-    });
-    var start = Math.max(hr, subRow) + 1;
-    // Cột tình trạng (có thể không có tiêu đề, vd cột ẩn ghi "Đã ký HĐ" / "Đang ký HĐ" / "Đang chọn thầu").
-    var used = {}, progCol = 0, progMax = 0;
-    Object.keys(groups).forEach(function (k) { var g = groups[k]; used[g.plan] = used[g.plan0] = used[g.actual] = 1; });
-    for (c = nameCol + 1; c <= maxC; c++) {
-      if (used[c]) continue;
-      var hits = 0;
-      for (r = start; r <= Math.min(ws.rowCount, start + 400); r++) if (/^(da|dang) (ky|chon)\b/.test(khKey(xlText(cell(r, c).value)))) hits++;
-      if (hits > progMax) { progMax = hits; progCol = c; }
-    }
-    var rows = [], headKey = khKey(xlText(cell(hr, nameCol).value));
-    for (r = start; r <= ws.rowCount; r++) {
-      var name = xlText(cell(r, nameCol).value).replace(/\s+/g, ' ');
-      var nk = khKey(name);
-      if (!nk || nk === headKey || /^tong cong\b|^(tong|cong)$/.test(nk)) continue;
-      var stt = sttCol ? xlText(cell(r, sttCol).value) : '';
-      var item = { row: r, stt: stt, name: name, value: valueCol ? xlMoney(cell(r, valueCol).value) : null, plan: {}, plan0: {}, actual: {},
-                   hidden: !!ws.getRow(r).hidden, progress: 0, progressText: '' };
-      if (progCol) {
-        item.progressText = xlText(cell(r, progCol).value);
-        var pk = khKey(item.progressText);
-        item.progress = /^da ky\b/.test(pk) ? 2 : /^(dang ky|da chon)\b/.test(pk) ? 1 : 0; // 2: đã ký HĐ, 1: đã chọn thầu
-      }
-      var any = false;
-      MILESTONES.forEach(function (m) {
-        var g = groups[m.key];
-        if (!g) return;
-        item.plan[m.key] = xlDate(cell(r, g.plan).value);
-        item.plan0[m.key] = g.plan0 ? xlDate(cell(r, g.plan0).value) : '';
-        item.actual[m.key] = g.actual ? xlDate(cell(r, g.actual).value) : '';
-        if (item.plan[m.key] || item.actual[m.key]) any = true;
-      });
-      // Dòng nhóm (vd "I. PHẦN MÓNG": STT chữ La Mã/chữ cái, không có ngày) không phải gói thầu.
-      if (!any && !/^\d+([.,]\d+)*$/.test(stt)) continue;
-      rows.push(item);
-    }
-    if (!rows.length) return null;
-    // Không có "Kế hoạch RevNN" ở tiêu đề cột → lấy Rev ở tiêu đề sheet, vd "KẾ HOẠCH MUA SẮM … (REV01)".
-    if (maxRev < 0) {
-      for (r = 1; r < hr && maxRev < 0; r++) {
-        for (c = 1; c <= Math.min(maxC, 40); c++) {
-          var rv = revOf(khKey(xlText(cell(r, c).value)));
-          if (rv >= 0) { maxRev = rv; break; }
-        }
-      }
-    }
-    var hasBase = Object.keys(groups).some(function (k) { return groups[k].plan0; });
-    return { name: ws.name, visible: !ws.state || ws.state === 'visible', headerRow: hr, groups: groups,
-             rev: maxRev >= 0 ? 'Rev' + ('0' + maxRev).slice(-2) : '', rev0: hasBase ? 'Rev00' : '', rows: rows };
-  }
-
-  function khmsUpload() {
-    var input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-    input.style.display = 'none';
-    document.body.appendChild(input);
-    input.addEventListener('change', function () {
-      var file = input.files && input.files[0];
-      input.remove();
-      if (!file) return;
-      if (!/\.(xlsx|xlsm)$/i.test(file.name)) {
-        toast('Chỉ đọc được file Excel .xlsx. File .xls cũ: mở bằng Excel rồi "Save As" thành .xlsx.', 'err');
-        return;
-      }
-      setLoading(1);
-      toast('Đang đọc file ' + file.name + '…');
-      Promise.all([loadExcelJs(), file.arrayBuffer()]).then(function (res) {
-        var wb = new res[0].Workbook();
-        return wb.xlsx.load(res[1]).then(function () { return wb; });
-      }).then(function (wb) {
-        var sheets = [];
-        wb.worksheets.forEach(function (ws) {
-          var p = null;
-          try { p = parseKhmsSheet(ws); } catch (e) { p = null; }
-          if (p) sheets.push(p);
-        });
-        if (!sheets.length) {
-          throw new Error('Không tìm thấy bảng KHMS trong file: cần dòng tiêu đề có cột "Hạng mục" và các nhóm cột ' +
-            '"Ngày mời thầu / Ngày chọn thầu / Ngày ký kết hợp đồng" (dưới mỗi nhóm có cột Kế hoạch, Thực tế).');
-        }
-        var guess = projectCodesOf(file.name).filter(function (c) { return S.projMap[c]; })[0] || S.khms.project || '';
-        // Nhiều sheet có bảng KHMS: ưu tiên sheet đang hiện, rồi bản có số "(n)" lớn nhất — theo người dùng, file KHMSGT
-        // dùng "KHMSGT (2)" (bản mới) thay cho "KHMSGT" — rồi sheet nhiều gói nhất.
-        var copyNo = function (s) { var m = s.name.match(/\((\d+)\)\s*$/); return m ? +m[1] : 0; };
-        var better = function (a, b) {
-          return (a.visible - b.visible) || (copyNo(a) - copyNo(b)) || (a.rows.length - b.rows.length);
-        };
-        var best = 0;
-        sheets.forEach(function (s, i) { if (better(s, sheets[best]) > 0) best = i; });
-        S.khImport = { fileName: file.name, sheets: sheets, sheet: best, project: guess, skip: {}, useProgress: true };
-        sheets[best].rows.forEach(function (r, i) { if (r.hidden) S.khImport.skip[i] = true; });
-        openKhmsImport();
-      }).catch(function (err) {
-        toast((err && err.message) || 'Không đọc được file Excel.', 'err');
-      }).then(function () { setLoading(-1); });
-    });
-    input.click();
-  }
-
-  /**
-   * Ngày thực tế sẽ gửi lên: theo cột Thực tế trong file; nếu bật "theo cột tình trạng": gói "Đã ký HĐ" → mời thầu, chọn thầu,
-   * ký HĐ đã xong; "Đang ký HĐ" → mời thầu, chọn thầu đã xong — ô còn trống lấy ngày kế hoạch. inferred: các mốc được suy ra.
-   */
-  function khImpActual(st, r) {
-    var a = {}, inferred = [];
-    MILESTONES.forEach(function (m) { a[m.key] = r.actual[m.key] || ''; });
-    if (st.useProgress && r.progress) {
-      var done = r.progress >= 2 ? ['invite', 'select', 'contract'] : ['invite', 'select'];
-      done.forEach(function (k) { if (!a[k] && r.plan[k] && r.plan[k] <= S.today) { a[k] = r.plan[k]; inferred.push(k); } });
-    }
-    return { actual: a, inferred: inferred };
-  }
-  /** Ghép dòng file với gói đã có (giống importPlan_ ở server): cùng tên không dấu, ưu tiên cùng STT. */
-  function khmsMatch(rows, existing) {
-    var used = {};
-    return rows.map(function (r) {
-      var key = khKey(r.name);
-      var same = existing.filter(function (p) { return !used[p.id] && khKey(p.name) === key; });
-      var hit = same.filter(function (p) { return p.stt === r.stt; })[0] || same[0] || null;
-      if (hit) used[hit.id] = true;
-      return hit;
-    });
-  }
-  function khmsDiff(st) {
-    var sh = st.sheets[st.sheet];
-    var existing = st.project ? S.packages.filter(function (p) { return p.project === st.project; }) : [];
-    var picked = sh.rows.filter(function (r, i) { return !st.skip[i]; });
-    var hits = khmsMatch(picked, existing), j = 0, matched = {};
-    var out = { add: 0, upd: 0, same: 0, info: [], removed: [] };
-    sh.rows.forEach(function (r, i) {
-      if (st.skip[i]) { out.info.push(null); return; }
-      var p = hits[j++];
-      if (!p) { out.add++; out.info.push({ kind: 'new' }); return; }
-      matched[p.id] = true;
-      var ch = [], eff = khImpActual(st, r);
-      if (p.stt !== r.stt) ch.push('STT');
-      if ((p.value == null ? null : p.value) !== r.value) ch.push('giá trị');
-      MILESTONES.forEach(function (m) {
-        if ((p[m.key + 'Plan'] || '') !== (r.plan[m.key] || '')) ch.push('KH ' + m.label.toLowerCase());
-        if (r.plan0[m.key] && (p[m.key + 'Plan0'] || '') !== r.plan0[m.key]) ch.push('KH Rev00 ' + m.label.toLowerCase());
-        if (eff.actual[m.key] && !p[m.key + 'Actual'] && !(m.key === 'select' && p._selectSrc === 'sub')) ch.push('TT ' + m.label.toLowerCase());
-      });
-      if (!p.active) ch.push('dùng lại');
-      if (ch.length) out.upd++; else out.same++;
-      out.info.push({ kind: ch.length ? 'upd' : 'same', changes: ch });
-    });
-    out.removed = existing.filter(function (p) { return p.active && !matched[p.id]; });
-    return out;
-  }
-
-  function openKhmsImport() {
-    var st = S.khImport, sh = st.sheets[st.sheet];
-    var diff = khmsDiff(st);
-    var gnames = MILESTONES.filter(function (m) { return sh.groups[m.key]; }).map(function (m) {
-      var g = sh.groups[m.key];
-      var rv = g.rev >= 0 ? 'Rev' + ('0' + g.rev).slice(-2) : '';
-      return m.label + ' (Kế hoạch' + (g.plan0 ? ' Rev00 + ' + (rv || 'bản mới') : rv ? ' ' + rv : '') + (g.actual ? ', Thực tế' : '') + ')';
-    });
-    var missing = MILESTONES.filter(function (m) { return !sh.groups[m.key]; }).map(function (m) { return m.head; });
-    var n = sh.rows.length - Object.keys(st.skip).filter(function (k) { return st.skip[k]; }).length;
-    var rows = sh.rows.map(function (r, i) {
-      var inf = diff.info[i];
-      var tag = !inf ? '<span class="muted">Bỏ qua</span>' : inf.kind === 'new' ? '<span class="kh-chg new">Mới</span>'
-        : inf.kind === 'upd' ? '<span class="kh-chg upd">Cập nhật</span><small class="kh-chg-l">' + esc(inf.changes.join(', ')) + '</small>'
-        : '<span class="muted">Không đổi</span>';
-      var eff = khImpActual(st, r);
-      var acts = MILESTONES.filter(function (m) { return eff.actual[m.key]; }).map(function (m) {
-        return m.label + ' ' + fmtShort(eff.actual[m.key]) + (eff.inferred.indexOf(m.key) >= 0 ? '*' : '');
-      });
-      return '<tr' + (st.skip[i] ? ' class="inactive"' : '') + '><td class="center"><input type="checkbox" data-change="kh-imp-row" data-i="' + i + '"' + (st.skip[i] ? '' : ' checked') + '></td>' +
-        '<td class="center code">' + esc(r.stt) + '</td><td class="title-cell">' + esc(r.name) + (r.hidden ? ' <span class="kh-tag">dòng ẩn</span>' : '') + '</td>' +
-        '<td class="num nowrap">' + (r.value != null ? fmtMoney(r.value) : '—') + '</td>' +
-        MILESTONES.map(function (m) {
-          var a = r.plan0[m.key], b = r.plan[m.key];
-          return '<td class="nowrap">' + (sh.rev0 ? '<small class="kh-rev0x">' + (fmtShort(a) || '—') + '</small>' : '') +
-            '<span' + (sh.rev0 && a !== b ? ' class="kh-chgd"' : '') + '>' + (fmtShort(b) || '—') + '</span></td>';
-        }).join('') +
-        '<td class="kh-acts">' + (r.progressText ? '<b>' + esc(r.progressText) + '</b><br>' : '') +
-          (acts.length ? esc(acts.join(' · ')) : '<span class="muted">—</span>') + '</td><td>' + tag + '</td></tr>';
-    }).join('');
-    var removed = diff.removed.length ? syncSection('Gói không có trong file (sẽ đánh dấu "Không còn trong KHMS mới")', diff.removed.length,
-      '<ul class="sync-list">' + diff.removed.map(function (p) { return '<li>' + esc((p.stt ? p.stt + '. ' : '') + p.name) + (p.submissionId ? ' <span class="muted">(' + esc(p.submissionId) + ')</span>' : '') + '</li>'; }).join('') + '</ul>',
-      false, 'Gói vẫn được giữ cùng ngày thực tế và hồ sơ đã gắn, chỉ ẩn khỏi danh sách; tải lại file có gói này thì dùng lại.') : '';
-    var sheetSel = st.sheets.length > 1 ? '<div class="form-row"><label for="m-ksheet">Sheet</label><select id="m-ksheet" data-change="kh-imp-sheet">' +
-      st.sheets.map(function (s, i) { return '<option value="' + i + '"' + (i === st.sheet ? ' selected' : '') + '>' + esc(s.name) + (s.visible ? '' : ' – sheet ẩn') + ' (' + s.rows.length + ' gói)</option>'; }).join('') + '</select></div>' : '';
-    var first = st.project && !S.packages.some(function (p) { return p.project === st.project; });
-    var prog = { done: 0, sel: 0 };
-    sh.rows.forEach(function (r, i) { if (!st.skip[i]) { if (r.progress === 2) prog.done++; else if (r.progress === 1) prog.sel++; } });
-    openModal(modalHead('Tải KHMS: ' + esc(st.fileName)) + '<div class="modal-body"><div id="m-err"></div>' +
-      '<div class="form-row"><label for="m-kproject">Dự án của KHMS</label>' + khmsProjectSelect('m-kproject', st.project, 'import') +
-      '<div class="help">Tự chọn theo số đầu tên file (vd "231_KHMS….xlsx"); kiểm tra lại trước khi tải lên.</div></div>' + sheetSel +
-      '<div class="info-box">Sheet <b>' + esc(sh.name) + '</b> · dòng tiêu đề ' + sh.headerRow + (sh.rev ? ' · kế hoạch <b>' + esc(sh.rev) + '</b>' : '') +
-        ' · đọc được: ' + esc(gnames.join('; ')) + (missing.length ? '<br><span class="kh-warn">Không thấy nhóm cột: ' + esc(missing.join(', ')) + '</span>' : '') + '</div>' +
-      '<div class="meta-grid" style="margin-top:12px"><div><small>Gói thầu trong file</small>' + sh.rows.length + '</div>' +
-        '<div><small>Thêm mới</small>' + diff.add + '</div><div><small>Cập nhật</small>' + diff.upd + '</div><div><small>Không đổi</small>' + diff.same + '</div>' +
-        '<div><small>Không còn trong file</small>' + diff.removed.length + '</div></div>' +
-      syncSection('Gói thầu đọc được', sh.rows.length, '<div class="table-wrap"><table class="grid kh-imp"><thead><tr>' +
-        '<th class="center"><input type="checkbox" data-change="kh-imp-all" checked aria-label="Chọn tất cả"></th><th>STT</th><th>Hạng mục</th><th class="num">Giá trị</th>' +
-        MILESTONES.map(function (m) { return '<th>KH ' + esc(m.label.toLowerCase()) + (sh.rev0 ? '<small class="kh-th-rev">Rev00 / ' + esc(sh.rev || 'mới') + '</small>' : '') + '</th>'; }).join('') +
-        '<th>Tình trạng / thực tế trong file</th><th>Thay đổi</th></tr></thead><tbody>' +
-        rows + '</tbody></table></div>', true) + removed +
-      (prog.done || prog.sel ? '<label class="check sync-date-opt"><input type="checkbox" data-change="kh-imp-progress"' + (st.useProgress ? ' checked' : '') + '><span>' +
-        'Theo cột tình trạng trong file: <b>' + prog.done + '</b> gói "Đã ký HĐ" (đã mời thầu, chọn thầu, ký HĐ), <b>' + prog.sel + '</b> gói "Đang ký HĐ" (đã mời thầu, chọn thầu) ' +
-        '→ ghi nhận ngày thực tế = ngày kế hoạch cho các mốc đã xong (chỉ điền ô còn trống, dấu *). Bỏ tích nếu không muốn.</span></label>' : '') +
-      '<div class="info-box" style="margin-top:14px">' + (first
-        ? 'Lần tải đầu của dự án: ngày kế hoạch được lưu làm <b>kế hoạch gốc</b> để so sánh khi có bản KHMS mới.'
-        : 'Tải lại: cập nhật <b>kế hoạch hiện hành</b> theo file, giữ kế hoạch gốc, ngày thực tế và hồ sơ đã gắn trên web.') +
-        ' Ngày thực tế trong file chỉ điền vào ô còn trống trên web; ngày chọn thầu thực tế lấy theo ngày duyệt hồ sơ khi đã gắn hồ sơ.</div></div>' +
-      '<div class="modal-foot"><button class="secondary-btn" data-act="close-modal">Hủy</button>' +
-      '<button class="primary-btn" id="m-kimp-btn" style="min-height:42px;font-size:16px" data-act="kh-submit-import">' + ic('check') + 'Tải lên ' + n + ' gói thầu</button></div>', true);
-  }
-
-  function submitKhmsImport(btn) {
-    var st = S.khImport, sh = st.sheets[st.sheet];
-    if (!st.project) { modalError('Vui lòng chọn dự án của KHMS.'); return; }
-    var rows = sh.rows.filter(function (r, i) { return !st.skip[i]; }).map(function (r) {
-      return { stt: r.stt, name: r.name, value: r.value, plan: r.plan, plan0: r.plan0, actual: khImpActual(st, r).actual };
-    });
-    if (!rows.length) { modalError('Chưa chọn gói thầu nào.'); return; }
-    busy(btn, true);
-    call('importPlan', { projectCode: st.project, fileName: st.fileName, rev: sh.rev, rev0: sh.rev0, rows: rows }).then(function (r) {
-      closeModal();
-      S.packages = r.packages; S.planUploads = r.uploads;
-      S.khms.project = st.project; S.khms.state = ''; S.khImport = null;
-      derive(); render();
-      toast('Đã tải KHMS dự án ' + st.project + ': ' + r.added + ' gói mới, ' + r.updated + ' cập nhật, ' + r.unchanged + ' không đổi' +
-        (r.removed ? ', ' + r.removed + ' không còn trong KHMS mới' : '') + '.');
-    }).catch(function (err) { busy(btn, false); if (err.code === 'AUTH') handleErr(err); else modalError(err.message); });
-  }
-
-  /* ---------- Xuất Excel danh sách gói thầu đang xem ---------- */
-  function khmsExport(btn) {
-    var rows = S.lastKhRows || [];
-    if (!rows.length) { toast('Không có gói thầu để xuất.', 'err'); return; }
-    busy(btn, true); setLoading(1);
-    loadExcelJs().then(function (ExcelJS) {
-      var wb = new ExcelJS.Workbook();
-      var ws = wb.addWorksheet('KHMS', { views: [{ state: 'frozen', xSplit: 3, ySplit: 4 }] });
-      var pc = khPlanCols(rows);
-      var head1 = ['STT', 'Hạng mục', 'Dự án', 'Giá trị gói thầu'], head2 = ['', '', '', ''], spans = [];
-      MILESTONES.forEach(function (m) {
-        var sub = (pc.two ? [pc.base, pc.cur] : [pc.cur]).concat(['Thực tế'], m.key === 'start' ? [] : ['Tình trạng']);
-        spans.push(sub.length);
-        sub.forEach(function (t, i) { head1.push(i ? '' : m.head); head2.push(t); });
-      });
-      head1.push('Hồ sơ phê duyệt', 'Tình trạng hồ sơ', 'Tên hồ sơ', 'Ghi chú');
-      head2.push('', '', '', '');
-      ws.addRow(['KẾ HOẠCH MUA SẮM' + (S.khms.project ? ' – DỰ ÁN ' + projectLabel(S.khms.project).toUpperCase() : ' – TẤT CẢ DỰ ÁN')]);
-      ws.addRow(['Xuất ngày ' + fmtDate(S.today) + ' bởi ' + S.me.displayName + ' · ' + rows.length + ' gói thầu']);
-      ws.addRow(head1); ws.addRow(head2);
-      var col = 5;
-      spans.forEach(function (w) { ws.mergeCells(3, col, 3, col + w - 1); col += w; });
-      for (var c = 1; c <= head1.length; c++) if (!head2[c - 1]) ws.mergeCells(3, c, 4, c);
-      var xd = function (iso) { return iso ? new Date(iso + 'T00:00:00Z') : null; };
-      rows.forEach(function (p) {
-        var line = [p.stt, p.name, projectLabel(p.project), p.value];
-        MILESTONES.forEach(function (m) {
-          if (pc.two) line.push(xd(p[m.key + 'Plan0']));
-          line.push(xd(p[m.key + 'Plan']), xd(p._actual[m.key]));
-          if (m.key !== 'start') line.push(p._ms[m.key].code === 'none' ? '' : msText(p._ms[m.key]));
-        });
-        line.push(p._sub ? p._sub.id : p.submissionId, p._sub ? statusOf(p._sub.status).label : '', p._sub ? p._sub.title : '',
-          (p.active ? '' : '[Không còn trong KHMS mới] ') + p.note);
-        var row = ws.addRow(line);
-        row.eachCell(function (cl) { if (cl.value instanceof Date) cl.numFmt = 'dd/mm/yyyy'; });
-        row.getCell(4).numFmt = '#,##0';
-      });
-      ws.getRow(1).font = { bold: true, size: 14, color: { argb: 'FF1E2B59' } };
-      [3, 4].forEach(function (r) {
-        var row = ws.getRow(r);
-        for (var c = 1; c <= head1.length; c++) {
-          var cl = row.getCell(c);
-          cl.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-          cl.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E2B59' } };
-          cl.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-          cl.border = { top: { style: 'thin', color: { argb: 'FFB0B8CC' } }, bottom: { style: 'thin', color: { argb: 'FFB0B8CC' } },
-                        left: { style: 'thin', color: { argb: 'FFB0B8CC' } }, right: { style: 'thin', color: { argb: 'FFB0B8CC' } } };
-        }
-      });
-      var widths = [7, 42, 26, 18];
-      head2.slice(4, head2.length - 4).forEach(function (t) { widths.push(t === 'Tình trạng' ? 18 : 12); });
-      widths.push(14, 18, 50, 30);
-      widths.forEach(function (w, i) { ws.getColumn(i + 1).width = w; });
-      ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4 + rows.length, column: head1.length } };
-      return wb.xlsx.writeBuffer();
-    }).then(function (buf) {
-      downloadBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
-        'KHMS-' + (S.khms.project || 'tat-ca') + '-' + S.today + '.xlsx');
-      toast('Đã xuất file Excel KHMS.');
-    }).catch(function (err) {
-      toast((err && err.message) || 'Không tạo được file Excel.', 'err');
-    }).then(function () { busy(btn, false); setLoading(-1); });
-  }
-
   function activityCard(mine) {
     var ids = {};
     mine.forEach(function (s) { ids[s.id] = s; });
@@ -3464,14 +2571,8 @@
     return '<div class="meta-grid"><div><small>Mã hồ sơ</small>' + esc(s.id) + '</div><div><small>Chuyên viên</small>' + esc(userName(s.owner)) + '</div>' +
       '<div><small>Ngày tạo</small>' + fmtDate(s.createdAt) + '</div><div><small>Ngày trình</small>' + fmtDate(s.submittedAt) + '</div>' +
       '<div><small>Ngày duyệt</small>' + fmtDate(s.approvedAt) + '</div><div><small>Ở tình trạng hiện tại</small>' +
-      (s.status === S.cfg.approvedStatus ? '—' : s._days + ' ngày') + '</div>' + subPackageInfo(s) + '</div>';
-  }
-  /** Gói thầu KHMS gắn với hồ sơ (nếu có). */
-  function subPackageInfo(s) {
-    var p = S.pkgBySub && S.pkgBySub[s.id];
-    if (!p) return '';
-    return '<div class="meta-wide"><small>Gói thầu KHMS</small>' + esc(p.name) + ' <span class="proj-code">' + esc(p.project) + '</span>' +
-      (p.selectPlan ? ' · KH chọn thầu ' + fmtDate(p.selectPlan) : '') + '</div>';
+      (s.status === S.cfg.approvedStatus ? '—' : s._days + ' ngày') + '</div>' +
+      EXT.subInfo.map(function (fn) { return fn(s) || ''; }).join('') + '</div>';
   }
 
   function openCreate() {
@@ -3588,9 +2689,7 @@
       '<li>Chuyên viên xem được mọi hồ sơ nhưng chỉ sửa hồ sơ của mình. TP.MH, TP.C&amp;C, GĐTM sửa được mọi hồ sơ.</li>' +
       '<li><b>Chuông thông báo</b>: chuyên viên được báo khi hồ sơ của mình bị người khác đổi tình trạng (đồng bộ thư mục, Trưởng phòng cập nhật…); ' +
       'TP.MH / TP.C&amp;C / GĐTM được báo khi có hồ sơ mới đệ trình đến mình. Số trên chuông giữ nguyên cho tới khi bạn bấm vào xem (kể cả khi đăng nhập máy khác); web tự cập nhật mỗi 3 phút.</li>' +
-      '<li><b>Kế hoạch mua sắm</b>: bấm <b>Tải KHMS (Excel)</b> và chọn file KHMS của dự án (cột STT, Hạng mục, Giá trị gói thầu, các nhóm Ngày mời thầu / chọn thầu / ký kết hợp đồng / bắt đầu thi công) — web đọc ngày kế hoạch. ' +
-        'Mỗi gói thầu gắn với 1 hồ sơ phê duyệt (web gợi ý theo tên hồ sơ cùng dự án, bấm <b>Xác nhận</b>); hồ sơ được duyệt → ngày duyệt là <b>ngày chọn thầu thực tế</b>. ' +
-        'Ngày mời thầu, ký hợp đồng, khởi công thực tế: bấm <b>Cập nhật</b> ở gói thầu để nhập. Tải lại KHMS (Rev mới): cập nhật kế hoạch, giữ kế hoạch gốc, ngày thực tế và hồ sơ đã gắn.</li>' +
+      EXT.help.join('') +
       '<li>Ô "Số ngày ở TT hiện tại" chuyển màu cam khi ≥ 7 ngày, đỏ khi ≥ 14 ngày.</li>' +
       '<li>Hồ sơ có cụm <b>"xin ý kiến"</b> trong tên (ví dụ "(Trình xin ý kiến)") được tính là <b>Báo cáo</b>, còn lại là <b>Trình duyệt</b>; lọc theo ô "Loại hồ sơ".</li>' +
       '<li>Bấm <b>Đồng bộ thư mục</b> (ở thẻ THAM SỐ) để cập nhật tình trạng theo thư mục hồ sơ trên ổ chia sẻ — chuyên viên chỉ cập nhật hồ sơ của mình: ' +
@@ -3657,7 +2756,7 @@
       var before = sameUser ? notifUnread() : null;
       S.me = d.me; S.cfg = d.config; S.today = d.today;
       S.users = d.users; S.subs = d.submissions; S.hist = d.history; S.projects = d.projects || [];
-      S.packages = d.packages || []; S.planUploads = d.planUploads || [];
+      EXT.data.forEach(function (fn) { fn(d); });
       S.folderSync = d.folderSync || null;
       S.notifSeen = sameUser ? Math.max(S.notifSeen, d.notifSeen || 0) : (d.notifSeen || 0);
       // Mở lại trang (F5): Trưởng phòng vào thẳng Dashboard Trưởng phòng như lúc đăng nhập.
@@ -3885,56 +2984,6 @@
         toast(msg, r.skipped.length ? 'err' : '');
       }).catch(function (err) { busy(el, false); if (err.code === 'AUTH') handleErr(err); else modalError(err.message); });
     },
-    'kh-upload': function () { khmsUpload(); },
-    'kh-export': function (el) { khmsExport(el); },
-    'kh-state': function (el) { S.khms.state = el.dataset.state; S.scrollReset = { 'scroll-khms': true }; render(); },
-    'kh-pick-project': function (el) {
-      S.khms.project = el.dataset.code; S.khms.state = el.dataset.state || '';
-      S.scrollReset = { 'scroll-khms': true }; render(); window.scrollTo(0, 0);
-    },
-    'kh-edit': function (el) { openPackage(el.dataset.id); },
-    'kh-save': function (el) {
-      var payload = { id: el.dataset.id, note: document.getElementById('m-knote').value, submissionId: document.getElementById('m-ksub').value };
-      for (var i = 0; i < MILESTONES.length; i++) {
-        var m = MILESTONES[i], inp = document.getElementById('m-ka-' + m.key);
-        if (!inp) continue;
-        var iso = parseDmy(inp.value);
-        if (iso === null) { modalError('Ngày ' + m.label.toLowerCase() + ' thực tế không hợp lệ. Nhập dạng dd/mm/yyyy.'); inp.focus(); return; }
-        if (iso > S.today) { modalError('Ngày ' + m.label.toLowerCase() + ' thực tế không được sau hôm nay.'); inp.focus(); return; }
-        payload[m.key + 'Actual'] = iso;
-      }
-      busy(el, true);
-      call('updatePackage', payload).then(function (r) { closeModal(); applyPackages(r.packages); toast('Đã cập nhật gói thầu.'); })
-        .catch(function (err) { busy(el, false); if (err.code === 'AUTH') handleErr(err); else modalError(err.message); });
-    },
-    'kh-edit-start': function () { S.khEdit = { d: {}, bad: {} }; render(); },
-    'kh-edit-cancel': function () {
-      var n = khEditCollect().items.length;
-      if (n && !el_confirmed('kh-edit-cancel')) { toast('Còn ' + n + ' gói đã sửa chưa lưu — bấm Hủy lần nữa để bỏ các thay đổi.', 'err'); return; }
-      S.khEdit = null; render();
-    },
-    'kh-edit-save': function (el) { khEditSave(el); },
-    'kh-fill-sugg': function () {
-      (S.lastKhRows || []).forEach(function (p) {
-        var s = S.khSugg[p.id];
-        if (s && !khEditVal(p, 'submissionId')) (S.khEdit.d[p.id] = S.khEdit.d[p.id] || {}).submissionId = s.id;
-      });
-      render();
-    },
-    'kh-confirm': function (el) { linkSuggestions([{ id: el.dataset.id, submissionId: el.dataset.sub }], el); },
-    'kh-confirm-all': function (el) {
-      linkSuggestions((S.lastKhRows || []).filter(function (p) { return S.khSugg[p.id]; })
-        .map(function (p) { return { id: p.id, submissionId: S.khSugg[p.id].id }; }), el);
-    },
-    'kh-delete-plan': function (el) {
-      if (!el.dataset.confirm) { el.dataset.confirm = '1'; el.textContent = 'Bấm lần nữa để xóa toàn bộ KHMS dự án ' + el.dataset.code; return; }
-      busy(el, true);
-      call('deletePlan', { projectCode: el.dataset.code }).then(function (r) {
-        S.packages = r.packages; S.planUploads = r.uploads; S.khms.project = ''; S.khms.state = '';
-        derive(); render(); toast('Đã xóa KHMS dự án ' + el.dataset.code + '.');
-      }).catch(function (err) { busy(el, false); handleErr(err); });
-    },
-    'kh-submit-import': function (el) { submitKhmsImport(el); },
     'modal-bg': function (el, e) { if (e.target === el) closeModal(); },
     'submit-create': function (el) {
       var title = document.getElementById('m-title').value;
@@ -4061,31 +3110,12 @@
       if (el.checked && i < 0) arr.push(el.value);
       if (!el.checked && i >= 0) arr.splice(i, 1);
       resetPage(view); render();
-    } else if (kind === 'kh-cell') {
-      khEditStore(el);
-    } else if (kind === 'kh-project') {
-      S.khms.project = el.value; S.scrollReset = { 'scroll-khms': true }; render();
-    } else if (kind === 'kh-state') {
-      S.khms.state = el.value; S.scrollReset = { 'scroll-khms': true }; render();
-    } else if (kind === 'kh-inactive') {
-      S.khms.inactive = el.checked; render();
-    } else if (kind === 'kh-imp-project') {
-      S.khImport.project = el.value; keepModalScroll(openKhmsImport);
-    } else if (kind === 'kh-imp-sheet') {
-      S.khImport.sheet = +el.value; S.khImport.skip = {};
-      S.khImport.sheets[S.khImport.sheet].rows.forEach(function (r, i) { if (r.hidden) S.khImport.skip[i] = true; });
-      openKhmsImport();
-    } else if (kind === 'kh-imp-progress') {
-      S.khImport.useProgress = el.checked; keepModalScroll(openKhmsImport);
-    } else if (kind === 'kh-imp-row') {
-      S.khImport.skip[el.dataset.i] = !el.checked; keepModalScroll(openKhmsImport);
-    } else if (kind === 'kh-imp-all') {
-      S.khImport.sheets[S.khImport.sheet].rows.forEach(function (r, i) { S.khImport.skip[i] = !el.checked; });
-      keepModalScroll(openKhmsImport);
     } else if (kind === 'sync-all-new') {
       Array.prototype.forEach.call(modalRoot.querySelectorAll('[data-sync-new]'), function (c) { c.checked = el.checked; });
     } else if (kind === 'sync-all') {
       Array.prototype.forEach.call(modalRoot.querySelectorAll('[data-sync-change]'), function (c) { c.checked = el.checked; });
+    } else if (EXT.change[kind]) {
+      EXT.change[kind](el, e);
     }
   });
 
@@ -4104,21 +3134,13 @@
     } else if (el.dataset && el.dataset.input === 'filter-q') {
       clearTimeout(qTimer);
       qTimer = setTimeout(function () { getFilter(el.dataset.view).q = el.value; resetPage(el.dataset.view); render(); }, 250);
-    } else if (el.dataset && el.dataset.input === 'date-mask') {
-      if (e.inputType && e.inputType.indexOf('insert') === 0 && /^\d{2}$|^\d{2}\/\d{2}$/.test(el.value)) el.value += '/';
-      if (/[\/\-.]{2}/.test(el.value)) el.value = el.value.replace(/([\/\-.])[\/\-.]+/g, '$1');
-    } else if (el.dataset && el.dataset.input === 'kh-cell') {
-      if (el.dataset.f !== 'note' && e.inputType && e.inputType.indexOf('insert') === 0 && /^\d{2}$|^\d{2}\/\d{2}$/.test(el.value)) el.value += '/';
-      if (el.dataset.f !== 'note' && /[\/\-.]{2}/.test(el.value)) el.value = el.value.replace(/([\/\-.])[\/\-.]+/g, '$1');
-      khEditStore(el);
-    } else if (el.dataset && el.dataset.input === 'kh-q') {
-      clearTimeout(qTimer);
-      qTimer = setTimeout(function () { S.khms.q = el.value; S.scrollReset = { 'scroll-khms': true }; render(); }, 250);
     } else if (el.dataset && el.dataset.input === 'proj-q') {
       clearTimeout(qTimer);
       qTimer = setTimeout(function () { S.projQ = el.value; render(); }, 200);
     } else if (el.id === 'side-q') {
       S.sideQ = el.value;
+    } else if (el.dataset && EXT.input[el.dataset.input]) {
+      EXT.input[el.dataset.input](el, e);
     }
   });
 
@@ -4204,10 +3226,22 @@
 
   // Tự làm mới dữ liệu mỗi 3 phút khi đang mở trang (bỏ qua khi đang mở hộp thoại).
   setInterval(function () {
-    if (S.me && !S.me.mustChangePassword && document.visibilityState === 'visible' && !modalRoot.innerHTML && !S.open && !S.khEdit) {
+    if (S.me && !S.me.mustChangePassword && document.visibilityState === 'visible' && !modalRoot.innerHTML && !S.open &&
+        !EXT.busy.some(function (fn) { return fn(); })) {
       loadAll(true).catch(function (err) { if (err.code === 'AUTH') handleErr(err); });
     }
   }, 180000);
+
+  // Cho file mở rộng (vd khms/src/Khms.html) dùng lại trạng thái và các hàm dùng chung.
+  window.APP = {
+    S: S, EXT: EXT, ACTIONS: ACTIONS, ICONS: ICONS, store: store,
+    ic: ic, esc: esc, call: call, handleErr: handleErr, toast: toast, render: render, derive: derive, setLoading: setLoading, busy: busy,
+    fmtDate: fmtDate, fmtNum: fmtNum, dayNum: dayNum, diffDays: diffDays, norm: norm, parseDmy: parseDmy,
+    statusOf: statusOf, statusBadge: statusBadge, userName: userName, card: card,
+    projectLabel: projectLabel, projectCell: projectCell, projectSort: projectSort, projectCodesOf: projectCodesOf,
+    openModal: openModal, closeModal: closeModal, modalHead: modalHead, modalError: modalError, keepModalScroll: keepModalScroll,
+    syncSection: syncSection, loadExcelJs: loadExcelJs, downloadBlob: downloadBlob
+  };
 
   boot();
 })();

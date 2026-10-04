@@ -36,7 +36,7 @@ function bootstrap_(user) {
     return { username: p.username, displayName: p.displayName, position: p.position, isAdmin: p.isAdmin, active: p.active,
              initials: p.initials };
   });
-  return {
+  var out = {
     me: user,
     config: publicConfig_(),
     today: dmyToIso_(today_()),
@@ -44,11 +44,15 @@ function bootstrap_(user) {
     submissions: readTable_('Submissions').map(serializeSubmission_),
     history: readTable_('History').map(serializeHistory_),
     projects: listProjects_(),
-    packages: listPackages_(),
-    planUploads: listPlanUploads_(),
     folderSync: lastFolderSync_(),
     notifSeen: notifSeen_(user)
   };
+  // Chức năng chạy thử (Kế hoạch mua sắm, chỉ có trên bản /dev) thêm dữ liệu của nó.
+  if (typeof khmsBootstrap_ === 'function') {
+    var extra = khmsBootstrap_(user);
+    for (var k in extra) out[k] = extra[k];
+  }
+  return out;
 }
 
 function findSubmission_(id) {
@@ -153,7 +157,7 @@ function deleteSubmission_(user, payload) {
     deleteRows_('History', histRows);
     deleteRows_('Submissions', [rec._row]);
     shiftNotifSeen_(histRows);
-    unlinkSubmissionPackages_(id);
+    if (typeof unlinkSubmissionPackages_ === 'function') unlinkSubmissionPackages_(id);
     return { id: id };
   });
 }

@@ -17,6 +17,11 @@ function include(name) {
   return HtmlService.createHtmlOutputFromFile(name).getContent();
 }
 
+/** Nạp file nếu có (chức năng chạy thử như khms/ chỉ có trên bản /dev); không có → chuỗi rỗng. */
+function includeIf(name) {
+  try { return include(name); } catch (e) { return ''; }
+}
+
 var API_ACTIONS_ = {
   bootstrap:      function (user) { return bootstrap_(user); },
   createSub:      function (user, p) { return createSubmission_(user, p); },
@@ -26,11 +31,6 @@ var API_ACTIONS_ = {
   markNotifSeen:  function (user, p) { return markNotifSeen_(user, p); },
   saveProject:    function (user, p) { return saveProject_(user, p); },
   importProjects: function (user, p) { return importProjects_(user, p); },
-  importPlan:     function (user, p) { return importPlan_(user, p); },
-  updatePackage:  function (user, p) { return updatePackage_(user, p); },
-  updatePackages: function (user, p) { return updatePackages_(user, p); },
-  linkPackages:   function (user, p) { return linkPackages_(user, p); },
-  deletePlan:     function (user, p) { return deletePlan_(user, p); },
   changePassword: function (user, p) { return changePassword_(user, p); },
   listUsers:      function (user) { return listUsers_(user); },
   createUser:     function (user, p) { return createUser_(user, p); },
@@ -44,7 +44,9 @@ function api(action, token, payload) {
     if (action === 'login') return { ok: true, data: login_(payload) };
     if (action === 'logout') return { ok: true, data: logout_(token) };
 
-    var handler = API_ACTIONS_[action];
+    var handler = API_ACTIONS_[action] ||
+      // Chức năng chạy thử (Kế hoạch mua sắm, khms/src/Procurement.gs — chỉ có trên bản /dev).
+      (typeof KHMS_ACTIONS_ !== 'undefined' && KHMS_ACTIONS_[action]);
     if (!handler) throw appError_('Chức năng không tồn tại.');
     var user = requireSession_(token);
     if (user.mustChangePassword && action !== 'changePassword') {
