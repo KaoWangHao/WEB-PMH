@@ -640,7 +640,8 @@
       var nk = khKey(name);
       if (!nk || nk === headKey || /^tong cong\b|^(tong|cong)$/.test(nk)) continue;
       var stt = sttCol ? xlText(cell(r, sttCol).value) : '';
-      var item = { row: r, stt: stt, name: name, value: valueCol ? xlMoney(cell(r, valueCol).value) : null, plan: {}, plan0: {}, actual: {},
+      // fileStt: STT trong file — chỉ dùng để nhận dòng nhóm; STT của gói do web tự đánh 1, 2, 3… (khAutoStt).
+      var item = { row: r, fileStt: stt, name: name, value: valueCol ? xlMoney(cell(r, valueCol).value) : null, plan: {}, plan0: {}, actual: {},
                    hidden: !!ws.getRow(r).hidden, progress: 0, progressText: '' };
       if (progCol) {
         item.progressText = xlText(cell(r, progCol).value);
@@ -737,6 +738,11 @@
     }
     return { actual: a, inferred: inferred };
   }
+  /** STT web tự đánh (theo người dùng: không dùng STT trong file): 1, 2, 3… theo thứ tự các gói được tích; gói bỏ tích → ''. */
+  function khAutoStt(st) {
+    var n = 0;
+    return st.sheets[st.sheet].rows.map(function (r, i) { return st.skip[i] ? '' : String(++n); });
+  }
   /** Ghép dòng file với gói đã có (giống importPlan_ ở server): cùng tên không dấu, ưu tiên cùng STT. */
   function khmsMatch(rows, existing) {
     var used = {};
@@ -751,7 +757,8 @@
   function khmsDiff(st) {
     var sh = st.sheets[st.sheet];
     var existing = st.project ? S.packages.filter(function (p) { return p.project === st.project; }) : [];
-    var picked = sh.rows.filter(function (r, i) { return !st.skip[i]; });
+    var auto = khAutoStt(st);
+    var picked = sh.rows.map(function (r, i) { return { name: r.name, stt: auto[i] }; }).filter(function (r, i) { return !st.skip[i]; });
     var hits = khmsMatch(picked, existing), j = 0, matched = {};
     var out = { add: 0, upd: 0, same: 0, info: [], removed: [] };
     sh.rows.forEach(function (r, i) {
@@ -760,7 +767,7 @@
       if (!p) { out.add++; out.info.push({ kind: 'new' }); return; }
       matched[p.id] = true;
       var ch = [], eff = khImpActual(st, r);
-      if (p.stt !== r.stt) ch.push('STT');
+      if (p.stt !== auto[i]) ch.push('STT');
       if ((p.value == null ? null : p.value) !== r.value) ch.push('giá trị');
       MILESTONES.forEach(function (m) {
         if ((p[m.key + 'Plan'] || '') !== (r.plan[m.key] || '')) ch.push('KH ' + m.label.toLowerCase());
@@ -777,7 +784,7 @@
 
   function openKhmsImport() {
     var st = S.khImport, sh = st.sheets[st.sheet];
-    var diff = khmsDiff(st);
+    var diff = khmsDiff(st), auto = khAutoStt(st);
     var gnames = MILESTONES.filter(function (m) { return sh.groups[m.key]; }).map(function (m) {
       var g = sh.groups[m.key];
       var rv = g.rev >= 0 ? 'Rev' + ('0' + g.rev).slice(-2) : '';
@@ -795,7 +802,7 @@
         return m.label + ' ' + fmtShort(eff.actual[m.key]) + (eff.inferred.indexOf(m.key) >= 0 ? '*' : '');
       });
       return '<tr' + (st.skip[i] ? ' class="inactive"' : '') + '><td class="center"><input type="checkbox" data-change="kh-imp-row" data-i="' + i + '"' + (st.skip[i] ? '' : ' checked') + '></td>' +
-        '<td class="center code">' + esc(r.stt) + '</td><td class="title-cell">' + esc(r.name) + (r.hidden ? ' <span class="kh-tag">dòng ẩn</span>' : '') + '</td>' +
+        '<td class="center code">' + (auto[i] ? esc(auto[i]) : '<span class="muted">—</span>') + '</td><td class="title-cell">' + esc(r.name) + (r.hidden ? ' <span class="kh-tag">dòng ẩn</span>' : '') + '</td>' +
         '<td class="num nowrap">' + (r.value != null ? fmtMoney(r.value) : '—') + '</td>' +
         MILESTONES.map(function (m) {
           var a = r.plan0[m.key], b = r.plan[m.key];
@@ -822,7 +829,7 @@
         '<div><small>Thêm mới</small>' + diff.add + '</div><div><small>Cập nhật</small>' + diff.upd + '</div><div><small>Không đổi</small>' + diff.same + '</div>' +
         '<div><small>Không còn trong file</small>' + diff.removed.length + '</div></div>' +
       syncSection('Gói thầu đọc được', sh.rows.length, '<div class="table-wrap"><table class="grid kh-imp"><thead><tr>' +
-        '<th class="center"><input type="checkbox" data-change="kh-imp-all" checked aria-label="Chọn tất cả"></th><th>STT</th><th>Hạng mục</th><th class="num">Giá trị</th>' +
+        '<th class="center"><input type="checkbox" data-change="kh-imp-all" checked aria-label="Chọn tất cả"></th><th title="Web tự đánh số 1, 2, 3… theo thứ tự các gói được tích (không dùng STT trong file)">STT</th><th>Hạng mục</th><th class="num">Giá trị</th>' +
         MILESTONES.map(function (m) { return '<th>KH ' + esc(m.label.toLowerCase()) + (sh.rev0 ? '<small class="kh-th-rev">Rev00 / ' + esc(sh.rev || 'mới') + '</small>' : '') + '</th>'; }).join('') +
         '<th>Tình trạng / thực tế trong file</th><th>Thay đổi</th></tr></thead><tbody>' +
         rows + '</tbody></table></div>', true) + removed +
@@ -840,8 +847,8 @@
   function submitKhmsImport(btn) {
     var st = S.khImport, sh = st.sheets[st.sheet];
     if (!st.project) { modalError('Vui lòng chọn dự án của KHMS.'); return; }
-    var rows = sh.rows.filter(function (r, i) { return !st.skip[i]; }).map(function (r) {
-      return { stt: r.stt, name: r.name, value: r.value, plan: r.plan, plan0: r.plan0, actual: khImpActual(st, r).actual };
+    var rows = sh.rows.filter(function (r, i) { return !st.skip[i]; }).map(function (r, i) {
+      return { stt: String(i + 1), name: r.name, value: r.value, plan: r.plan, plan0: r.plan0, actual: khImpActual(st, r).actual };
     });
     if (!rows.length) { modalError('Chưa chọn gói thầu nào.'); return; }
     busy(btn, true);

@@ -146,6 +146,8 @@ function importPlan_(user, payload) {
   if (raw.length > PLAN_MAX_ROWS_) throw appError_('Tối đa ' + PLAN_MAX_ROWS_ + ' gói thầu mỗi lần tải.');
   var rows = raw.map(cleanPlanRow_).filter(Boolean);
   if (!rows.length) throw appError_('File không có gói thầu nào.');
+  // STT do web tự đánh 1, 2, 3… theo thứ tự gói trong lần tải (theo người dùng: không dùng STT trong file).
+  rows.forEach(function (r, i) { r.stt = String(i + 1); });
   var rev = String(payload.rev || '').replace(/\s+/g, ' ').trim().slice(0, 30);
   // File có cột "Kế hoạch Rev00" riêng (bên cạnh bản mới hơn) → rev0 = 'Rev00': cột đó ghi đè kế hoạch gốc.
   var rev0 = String(payload.rev0 || '').replace(/\s+/g, ' ').trim().slice(0, 30);
