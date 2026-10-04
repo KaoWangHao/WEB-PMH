@@ -25,6 +25,7 @@ var KHMS_HEADERS_ = {
 /** Action của KHMS — Code.gs tra thêm bảng này khi action không có trong API_ACTIONS_. Mỗi hàm tự kiểm tra quyền. */
 var KHMS_ACTIONS_ = {
   importPlan:     function (user, p) { return importPlan_(user, p); },
+  importPlans:    function (user, p) { return importPlans_(user, p); },
   updatePackage:  function (user, p) { return updatePackage_(user, p); },
   updatePackages: function (user, p) { return updatePackages_(user, p); },
   linkPackages:   function (user, p) { return linkPackages_(user, p); },
@@ -132,77 +133,132 @@ function matchPlanRows_(rows, existing) {
 }
 
 /**
- * Tải KHMS của 1 dự án. payload: { projectCode, fileName, rev, rev0, rows: [{ stt, name, value, plan:{invite,select,contract,start},
+ * Kiểm tra KHMS của 1 dự án gửi lên. p: { projectCode, rev, rev0, rows: [{ stt, name, value, plan:{invite,select,contract,start},
  * plan0:{…} (cột Rev00 nếu file có cả Rev00 và bản mới hơn), actual:{…} }] } — ngày dạng ISO yyyy-MM-dd.
  */
-function importPlan_(user, payload) {
-  payload = payload || {};
-  var code = normalizeProjectCode_(payload.projectCode);
+function cleanPlanPayload_(p, projects) {
+  p = p || {};
+  var code = normalizeProjectCode_(p.projectCode);
   if (!code) throw appError_('Vui lòng chọn dự án cho KHMS.');
-  var project = listProjects_().filter(function (p) { return p.code === code; })[0];
-  if (!project) throw appError_('Dự án ' + code + ' chưa có trong danh mục dự án.');
-  var raw = payload.rows;
-  if (!raw || !raw.length) throw appError_('File không có gói thầu nào.');
-  if (raw.length > PLAN_MAX_ROWS_) throw appError_('Tối đa ' + PLAN_MAX_ROWS_ + ' gói thầu mỗi lần tải.');
+  if (!projects.some(function (x) { return x.code === code; })) throw appError_('Dự án ' + code + ' chưa có trong danh mục dự án.');
+  var raw = p.rows;
+  if (!raw || !raw.length) throw appError_('KHMS dự án ' + code + ' không có gói thầu nào.');
+  if (raw.length > PLAN_MAX_ROWS_) throw appError_('Tối đa ' + PLAN_MAX_ROWS_ + ' gói thầu mỗi dự án.');
   var rows = raw.map(cleanPlanRow_).filter(Boolean);
-  if (!rows.length) throw appError_('File không có gói thầu nào.');
+  if (!rows.length) throw appError_('KHMS dự án ' + code + ' không có gói thầu nào.');
   // STT do web tự đánh 1, 2, 3… theo thứ tự gói trong lần tải (theo người dùng: không dùng STT trong file).
   rows.forEach(function (r, i) { r.stt = String(i + 1); });
-  var rev = String(payload.rev || '').replace(/\s+/g, ' ').trim().slice(0, 30);
-  // File có cột "Kế hoạch Rev00" riêng (bên cạnh bản mới hơn) → rev0 = 'Rev00': cột đó ghi đè kế hoạch gốc.
-  var rev0 = String(payload.rev0 || '').replace(/\s+/g, ' ').trim().slice(0, 30);
-  var fileName = String(payload.fileName || '').trim().slice(0, 200);
-  ensurePlanSheets_();
+  return {
+    code: code, rows: rows,
+    rev: String(p.rev || '').replace(/\s+/g, ' ').trim().slice(0, 30),
+    // File có cột "Kế hoạch Rev00" riêng (bên cạnh bản mới hơn) → rev0 = 'Rev00': cột đó ghi đè kế hoạch gốc.
+    rev0: String(p.rev0 || '').replace(/\s+/g, ' ').trim().slice(0, 30)
+  };
+}
 
+/**
+ * Ghép KHMS của 1 dự án vào bảng Packages đang đọc (all) — chưa ghi sheet. ctx: { num (số GT- kế tiếp), date, fileName }.
+ * Trả về { changed: gói đã có (ghi lại), added: gói mới, upload: dòng PlanUploads, stats }.
+ */
+function mergePlan_(user, all, plan, ctx) {
+  var code = plan.code, rows = plan.rows, rev = plan.rev, rev0 = plan.rev0, date = ctx.date;
+  var mine = all.filter(function (p) { return normalizeProjectCode_(p.projectCode) === code; });
+  var hits = matchPlanRows_(rows, mine);
+  var added = [], updated = 0, unchanged = 0, removed = 0, matched = {};
+  // Nhãn bản kế hoạch gốc của dự án (vd Rev00) — cho gói mới xuất hiện ở bản sau (không có trong bản gốc).
+  var baseRev = mostCommon_(mine.map(function (p) { return String(p.rev0 || p.rev || ''); }));
+
+  rows.forEach(function (r, i) {
+    var rec = hits[i];
+    var lateNew = !rec && mine.length > 0 && !rev0;
+    if (!rec) {
+      rec = { id: 'GT-' + ('0000' + ctx.num++).slice(-5), projectCode: code, submissionId: '', note: '', createdAt: date };
+      // Lần tải đầu: kế hoạch trong file là kế hoạch gốc. Gói thêm ở bản sau: không có kế hoạch gốc.
+      PLAN_MILESTONES_.forEach(function (m) { rec[m + 'Plan0'] = r.plan0[m] || (lateNew ? '' : r.plan[m]); rec[m + 'Actual'] = r.actual[m]; });
+      added.push(rec);
+    } else {
+      matched[rec.id] = true;
+    }
+    var before = hits[i] ? planRowCore_(rec) : '';
+    var prevRev = String(rec.rev || '');
+    rec.stt = r.stt; rec.name = r.name; rec.value = r.value; rec.sortOrder = i + 1; rec.active = true; rec.rev = rev;
+    PLAN_MILESTONES_.forEach(function (m) {
+      rec[m + 'Plan'] = r.plan[m];
+      // Kế hoạch gốc: theo cột Rev00 của file nếu có; không thì giữ nguyên (ghi ở lần tải đầu).
+      if (r.plan0[m]) rec[m + 'Plan0'] = r.plan0[m];
+      if (!rec[m + 'Actual'] && r.actual[m]) rec[m + 'Actual'] = r.actual[m]; // ngày thực tế trên web được ưu tiên
+    });
+    rec.rev0 = rev0 || rec.rev0 || (hits[i] ? prevRev : lateNew ? baseRev : rev) || rev;
+    if (hits[i]) {
+      // Chỉ đổi Rev / thứ tự dòng thì không tính là cập nhật nội dung.
+      if (planRowCore_(rec) !== before) { updated++; rec.updatedAt = date; rec.updatedBy = user.username; }
+      else unchanged++;
+    } else {
+      rec.updatedAt = date; rec.updatedBy = user.username;
+    }
+  });
+  mine.forEach(function (p) {
+    if (!matched[p.id] && toBool_(p.active)) { p.active = false; p.updatedAt = date; p.updatedBy = user.username; removed++; }
+  });
+  return {
+    changed: mine, added: added,
+    upload: { projectCode: code, fileName: ctx.fileName, rev: rev, actor: user.username, date: date,
+              added: added.length, updated: updated, removed: removed, total: rows.length },
+    stats: { project: code, added: added.length, updated: updated, unchanged: unchanged, removed: removed }
+  };
+}
+
+/** Tải KHMS của 1 dự án. payload: { projectCode, fileName, rev, rev0, rows } (xem cleanPlanPayload_). */
+function importPlan_(user, payload) {
+  ensurePlanSheets_();
+  var plan = cleanPlanPayload_(payload, listProjects_());
+  var fileName = String((payload && payload.fileName) || '').trim().slice(0, 200);
   return withLock_(function () {
     var all = readTable_('Packages');
-    var mine = all.filter(function (p) { return normalizeProjectCode_(p.projectCode) === code; });
-    var hits = matchPlanRows_(rows, mine);
-    var date = today_();
-    var num = nextPackageNum_(all);
-    var added = [], updated = 0, unchanged = 0, removed = 0, matched = {};
-    // Nhãn bản kế hoạch gốc của dự án (vd Rev00) — cho gói mới xuất hiện ở bản sau (không có trong bản gốc).
-    var baseRev = mostCommon_(mine.map(function (p) { return String(p.rev0 || p.rev || ''); }));
-
-    rows.forEach(function (r, i) {
-      var rec = hits[i];
-      var lateNew = !rec && mine.length > 0 && !rev0;
-      if (!rec) {
-        rec = { id: 'GT-' + ('0000' + num++).slice(-5), projectCode: code, submissionId: '', note: '', createdAt: date };
-        // Lần tải đầu: kế hoạch trong file là kế hoạch gốc. Gói thêm ở bản sau: không có kế hoạch gốc.
-        PLAN_MILESTONES_.forEach(function (m) { rec[m + 'Plan0'] = r.plan0[m] || (lateNew ? '' : r.plan[m]); rec[m + 'Actual'] = r.actual[m]; });
-        added.push(rec);
-      } else {
-        matched[rec.id] = true;
-      }
-      var before = hits[i] ? planRowCore_(rec) : '';
-      var prevRev = String(rec.rev || '');
-      rec.stt = r.stt; rec.name = r.name; rec.value = r.value; rec.sortOrder = i + 1; rec.active = true; rec.rev = rev;
-      PLAN_MILESTONES_.forEach(function (m) {
-        rec[m + 'Plan'] = r.plan[m];
-        // Kế hoạch gốc: theo cột Rev00 của file nếu có; không thì giữ nguyên (ghi ở lần tải đầu).
-        if (r.plan0[m]) rec[m + 'Plan0'] = r.plan0[m];
-        if (!rec[m + 'Actual'] && r.actual[m]) rec[m + 'Actual'] = r.actual[m]; // ngày thực tế trên web được ưu tiên
-      });
-      rec.rev0 = rev0 || rec.rev0 || (hits[i] ? prevRev : lateNew ? baseRev : rev) || rev;
-      if (hits[i]) {
-        // Chỉ đổi Rev / thứ tự dòng thì không tính là cập nhật nội dung.
-        if (planRowCore_(rec) !== before) { updated++; rec.updatedAt = date; rec.updatedBy = user.username; }
-        else unchanged++;
-      } else {
-        rec.updatedAt = date; rec.updatedBy = user.username;
-      }
-    });
-    mine.forEach(function (p) {
-      if (!matched[p.id] && toBool_(p.active)) { p.active = false; p.updatedAt = date; p.updatedBy = user.username; removed++; }
-    });
-
-    writeObjs_('Packages', mine);
-    appendRows_('Packages', added);
-    appendObj_('PlanUploads', { projectCode: code, fileName: fileName, rev: rev, actor: user.username, date: date,
-                                added: added.length, updated: updated, removed: removed, total: rows.length });
-    return { added: added.length, updated: updated, unchanged: unchanged, removed: removed,
+    var res = mergePlan_(user, all, plan, { num: nextPackageNum_(all), date: today_(), fileName: fileName });
+    writeObjs_('Packages', res.changed);
+    appendRows_('Packages', res.added);
+    appendObj_('PlanUploads', res.upload);
+    var st = res.stats;
+    return { added: st.added, updated: st.updated, unchanged: st.unchanged, removed: st.removed,
              packages: listPackages_(), uploads: listPlanUploads_() };
+  });
+}
+
+/**
+ * Tải KHMS nhiều dự án một lần (file tổng hợp: mỗi sheet "STT_Tên dự án" là KHMS của 1 dự án; client gộp các sheet cùng dự án,
+ * vd "76_La Pura" + "76.1_La Pura MEP"). payload: { fileName, plans: [{ projectCode, rev, rev0, rows }] }.
+ * Kiểm tra hết trước khi ghi: lỗi ở bất kỳ dự án nào thì không ghi gì. Đọc / ghi sheet Packages một lần.
+ */
+function importPlans_(user, payload) {
+  var list = (payload && payload.plans) || [];
+  if (!list.length) throw appError_('Chưa chọn dự án nào để tải KHMS.');
+  ensurePlanSheets_();
+  var projects = listProjects_(), seen = {}, total = 0;
+  var plans = list.map(function (p) {
+    var plan = cleanPlanPayload_(p, projects);
+    if (seen[plan.code]) throw appError_('Dự án ' + plan.code + ' có 2 KHMS trong cùng lần tải.');
+    seen[plan.code] = true;
+    total += plan.rows.length;
+    return plan;
+  });
+  if (total > PLAN_MAX_ROWS_ * 2) throw appError_('Quá nhiều gói thầu trong một lần tải (tối đa ' + PLAN_MAX_ROWS_ * 2 + ').');
+  var fileName = String(payload.fileName || '').trim().slice(0, 200);
+  return withLock_(function () {
+    var all = readTable_('Packages');
+    var ctx = { num: nextPackageNum_(all), date: today_(), fileName: fileName };
+    var changed = [], added = [], uploads = [], stats = [];
+    plans.forEach(function (plan) {
+      var res = mergePlan_(user, all, plan, ctx);
+      changed = changed.concat(res.changed);
+      added = added.concat(res.added);
+      uploads.push(res.upload);
+      stats.push(res.stats);
+    });
+    writeObjs_('Packages', changed);
+    appendRows_('Packages', added);
+    appendRows_('PlanUploads', uploads);
+    return { results: stats, packages: listPackages_(), uploads: listPlanUploads_() };
   });
 }
 

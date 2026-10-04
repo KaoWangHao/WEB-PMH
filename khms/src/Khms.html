@@ -134,7 +134,7 @@
     return out;
   }
 
-  function khmsProjectSelect(id, sel, mode) {
+  function khmsProjectSelect(id, sel, mode, attrs) {
     var have = {};
     S.packages.forEach(function (p) { if (p.active) have[p.project] = (have[p.project] || 0) + 1; });
     var list = (S.projects || []).slice();
@@ -145,8 +145,8 @@
     };
     var withPlan = list.filter(function (p) { return have[p.code]; });
     var others = list.filter(function (p) { return !have[p.code] && (p.active || p.code === sel); });
-    return '<select id="' + id + '" data-change="' + (mode === 'import' ? 'kh-imp-project' : 'kh-project') + '">' +
-      (mode === 'import' ? '<option value="">— Chọn dự án —</option>' : '<option value="">Tất cả dự án có KHMS (' + withPlan.length + ')</option>') +
+    return '<select id="' + id + '" data-change="' + (mode === 'import' ? 'kh-imp-project' : mode === 'batch' ? 'kh-bimp-project' : 'kh-project') + '"' + (attrs || '') + '>' +
+      (mode !== 'filter' && mode ? '<option value="">— Chọn dự án —</option>' : '<option value="">Tất cả dự án có KHMS (' + withPlan.length + ')</option>') +
       (withPlan.length ? '<optgroup label="Đã có KHMS">' + withPlan.map(opt).join('') + '</optgroup>' : '') +
       (others.length ? '<optgroup label="Chưa có KHMS">' + others.map(opt).join('') + '</optgroup>' : '') + '</select>';
   }
@@ -522,8 +522,11 @@
   ];
   /** Ô tiêu đề cột tên gói: "Hạng mục", "Tên vật tư/ gói thầu", "Tên gói thầu", "Nội dung". */
   function khNameHead(t) {
-    return t.length <= 40 && /hang muc|goi thau|ten vat tu|noi dung/.test(t) && !/gia tri|hinh thuc|ngay|ty trong|trach nhiem|^goi thau \w+ \w+ \w+/.test(t);
+    return t.length <= 40 && /hang muc|goi thau|ten vat tu|noi dung/.test(t) && !/gia tri|hinh thuc|ngay|ty trong|trach nhiem|tinh trang|^goi thau \w+ \w+ \w+/.test(t);
   }
+  /** Ô "Thực tế" ghi chữ thay cho ngày: đã xong (HT, Hoàn thành, Done, HĐNT…) / không thực hiện (Không làm, CĐT cấp…). */
+  var KH_DONE_RE = /^(ht|hoan thanh|done|xong|hdnt|da (ky|xong|hoan thanh))\b/;
+  var KH_NA_RE = /^(khong (lam|dung|thi cong|thuc hien|mua)|ngung|cdt cap|bao gom)\b/;
   function xlValue(v) {
     if (v && typeof v === 'object' && !(v instanceof Date)) {
       if (v.richText) return v.richText.map(function (t) { return t.text; }).join('');
@@ -537,15 +540,31 @@
     v = xlValue(v);
     return v == null || v instanceof Date ? '' : String(v).trim();
   }
-  /** Ô ngày Excel → ISO: kiểu Date (ExcelJS đọc theo UTC), số serial, hoặc chữ "15-1-26", "15/01/2026". */
-  function xlDate(v) {
+  var XL_TEXT_DATE = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2}|\d{4})$/;
+  /** Ngày dạng chữ "a/b/yyyy": 'dmy' / 'mdy' nếu chỉ hiểu được 1 cách (một số > 12), '' nếu cả hai đều được. */
+  function xlDateOrder(s) {
+    var m = String(s).trim().match(XL_TEXT_DATE);
+    if (!m) return '';
+    var a = +m[1], b = +m[2];
+    return a > 12 && b <= 12 ? 'dmy' : b > 12 && a <= 12 ? 'mdy' : '';
+  }
+  /**
+   * Ô ngày Excel → ISO: kiểu Date (ExcelJS đọc theo UTC), số serial, hoặc chữ "15-1-26", "15/01/2026".
+   * mdy: ngày dạng chữ mơ hồ (vd 05/06/2026) hiểu là tháng/ngày — file ghi "(mm/dd/yy)" hoặc đa số ngày chữ trong sheet là tháng/ngày.
+   */
+  function xlDate(v, mdy) {
     v = xlValue(v);
     var d = null;
     if (v instanceof Date) d = v;
     else if (typeof v === 'number' && v > 20000 && v < 80000) d = new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000);
     else if (typeof v === 'string') {
-      var m = v.trim().match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2}|\d{4})$/);
-      if (m) return parseDmy(m[1] + '/' + m[2] + '/' + (m[3].length === 2 ? '20' + m[3] : m[3])) || '';
+      var m = v.trim().match(XL_TEXT_DATE);
+      if (m) {
+        var ord = xlDateOrder(v) || (mdy ? 'mdy' : 'dmy');
+        var dd = ord === 'mdy' ? m[2] : m[1], mo = ord === 'mdy' ? m[1] : m[2];
+        var iso = parseDmy(dd + '/' + mo + '/' + (m[3].length === 2 ? '20' + m[3] : m[3])) || '';
+        return iso && iso >= '1990' && iso < '2101' ? iso : '';
+      }
       m = v.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
       if (m) return parseDmy(m[3] + '/' + m[2] + '/' + m[1]) || '';
       return '';
@@ -565,19 +584,31 @@
     return null;
   }
 
-  /** Tìm bảng KHMS trong 1 sheet: dòng tiêu đề có "Hạng mục", nhóm cột ngày, dòng dưới có "Kế hoạch (Rev..)" / "Thực tế". */
+  /**
+   * Tìm bảng KHMS trong 1 sheet: dòng tiêu đề có cột tên gói, nhóm cột ngày, dòng dưới có "Kế hoạch (Rev..)" / "Thực tế".
+   * Chỉ lấy các trường có trên web: tên gói, giá trị, ngày kế hoạch (gốc Rev00 + bản mới nhất) và thực tế của 4 mốc.
+   */
   function parseKhmsSheet(ws) {
     var maxR = Math.min(ws.rowCount, 40), maxC = Math.min(ws.columnCount, 150);
     var cell = function (r, c) { return ws.getCell(r, c); };
     var isSlave = function (cl) { return cl.isMerged && cl.master && cl.master.address !== cl.address; };
-    var hr = 0, nameCol = 0;
-    for (var r = 1; r <= maxR && !hr; r++) {
-      for (var c = 1; c <= maxC; c++) {
-        var t = khKey(xlText(cell(r, c).value));
-        if (t && khNameHead(t)) { hr = r; nameCol = c; break; }
+    var hr = 0, nameCol = 0, altCol = 0, r, c, t;
+    for (r = 1; r <= maxR && !hr; r++) {
+      for (c = 1; c <= maxC; c++) {
+        t = khKey(xlText(cell(r, c).value));
+        if (t && khNameHead(t)) { hr = r; break; }
       }
     }
     if (!hr) return null;
+    // Có cả "Hạng mục" và "Tên vật tư/ gói thầu" → tên gói lấy cột "Tên vật tư/ gói thầu" (cột "Hạng mục" chỉ là nhóm vật tư).
+    var names = [];
+    for (c = 1; c <= maxC; c++) {
+      t = khKey(xlText(cell(hr, c).value));
+      if (t && !isSlave(cell(hr, c)) && khNameHead(t)) names.push({ col: c, pri: /ten (vat tu|goi thau)|^goi thau/.test(t) ? 2 : 1 });
+    }
+    names.sort(function (a, b) { return (b.pri - a.pri) || (a.col - b.col); });
+    nameCol = names[0].col; altCol = names[1] ? names[1].col : 0;
+    var firstName = Math.min(nameCol, altCol || nameCol);
     var sttCol = 0, valueCol = 0, starts = [], heads = [];
     for (c = 1; c <= maxC; c++) {
       var cl = cell(hr, c);
@@ -585,9 +616,9 @@
       t = khKey(xlText(cl.value));
       if (!t) continue;
       heads.push(c);
-      if (!sttCol && c < nameCol && /^(s )?tt$|^stt$|^so tt$/.test(t)) sttCol = c;
-      else if (!valueCol && c > nameCol && /gia tri|gia goi thau|du toan/.test(t)) valueCol = c;
-      else if (c > nameCol) {
+      if (!sttCol && c < firstName && /^(s )?tt$|^stt$|^so tt$/.test(t)) sttCol = c;
+      else if (!valueCol && c > firstName && /gia tri|gia goi thau|du toan/.test(t)) valueCol = c;
+      else if (c > firstName) {
         KH_GROUPS.forEach(function (g) {
           if (g.test.test(t) && !(g.not && g.not.test(t))) starts.push({ key: g.key, col: c, ngay: /^ngay\b/.test(t) });
         });
@@ -599,50 +630,69 @@
       .filter(function (s) { if (seen[s.key]) return false; seen[s.key] = true; return true; });
     if (!starts.length) return null;
     // Nhóm cột kéo dài tới trước ô tiêu đề kế tiếp (vd "Ngày mời thầu" W–X, "Ngày BCH gửi SSG" Y–Z là nhóm khác).
-    var nextHead = function (c) { for (var i = 0; i < heads.length; i++) if (heads[i] > c) return heads[i]; return 0; };
-    var hidden = function (c) { return !!ws.getColumn(c).hidden; };
-    var revOf = function (t) { var m = t.match(/rev\s*0*(\d+)/); return m ? +m[1] : -1; };
-    var groups = {}, subRow = 0, maxRev = -1;
+    var nextHead = function (cc) { for (var i = 0; i < heads.length; i++) if (heads[i] > cc) return heads[i]; return 0; };
+    var revOf = function (s) { var m = s.match(/re[vc]\s*0*(\d+)/); return m ? +m[1] : -1; }; // "Rec01" = gõ nhầm Rev01
+    var groups = {}, subRow = 0;
     starts.sort(function (a, b) { return a.col - b.col; });
     starts.forEach(function (s) {
       var nh = nextHead(s.col);
-      var end = Math.min(nh ? nh - 1 : s.col + 7, s.col + 7, maxC);
+      var end = Math.min(nh ? nh - 1 : s.col + 7, s.col + 9, maxC);
       var plans = [], actual = 0;
-      for (var rr = hr + 1; rr <= hr + 2; rr++) {
-        for (var cc = s.col; cc <= end; cc++) {
+      for (var cc = s.col; cc <= end; cc++) {
+        for (var rr = hr + 1; rr <= hr + 2; rr++) {
           var cl = cell(rr, cc);
           if (isSlave(cl) && cl.master.row <= hr) continue;
           var t = khKey(xlText(cl.value));
-          if (/ke hoach|^kh\b/.test(t)) { plans.push({ col: cc, rev: revOf(t), hidden: hidden(cc) }); subRow = Math.max(subRow, rr); }
-          else if (!actual && /thuc te|^tt$/.test(t)) { actual = cc; subRow = Math.max(subRow, rr); }
+          if (/cham tre|so voi|tinh trang/.test(t)) break; // "Chậm trễ so với Thực tế chọn thầu" không phải cột Thực tế
+          if (/ke hoach|^kh\b/.test(t)) { plans.push({ col: cc, rev: revOf(t) }); subRow = Math.max(subRow, rr); break; }
+          if (!actual && /thuc te|^tt$/.test(t)) { actual = cc; subRow = Math.max(subRow, rr); break; }
         }
       }
-      if (!plans.length) plans.push({ col: s.col, rev: -1, hidden: hidden(s.col) });
-      // Kế hoạch hiện hành = bản Rev lớn nhất (cùng Rev: ưu tiên cột không ẩn); có thêm cột Rev00 → kế hoạch gốc.
-      plans.sort(function (a, b) { return (b.rev - a.rev) || (a.hidden - b.hidden) || (b.col - a.col); });
-      var cur = plans[0], base = plans.filter(function (p) { return p.rev === 0 && p.col !== cur.col; })[0];
-      groups[s.key] = { plan: cur.col, plan0: base ? base.col : 0, actual: actual, rev: cur.rev };
-      maxRev = Math.max(maxRev, cur.rev);
+      if (!plans.length) plans.push({ col: s.col, rev: -1 });
+      // Nhiều cột kế hoạch (Rev00, Rev01, "Kế hoạch 03/09/2026", "Kế hoạch tuần 11"…): cột Rev00 là kế hoạch gốc;
+      // kế hoạch hiện hành của từng gói = cột kế hoạch có ngày nằm bên phải nhất (bản cập nhật sau cùng của gói đó).
+      var base = plans.length > 1 ? plans.filter(function (p) { return p.rev === 0; })[0] : null;
+      groups[s.key] = { plans: plans, plan: plans[plans.length - 1].col, plan0: base ? base.col : 0, actual: actual,
+                        rev: Math.max.apply(null, plans.map(function (p) { return p.rev; })) };
     });
     var start = Math.max(hr, subRow) + 1;
+    var used = {};
+    Object.keys(groups).forEach(function (k) {
+      var g = groups[k];
+      g.plans.forEach(function (p) { used[p.col] = 1; });
+      used[g.actual] = 1;
+    });
+    // Ngày dạng chữ: tháng/ngày hay ngày/tháng — theo đa số ngày chữ không mơ hồ trong sheet, không rõ thì theo ghi chú "(mm/dd/yy)" ở đầu sheet.
+    var ord = { dmy: 0, mdy: 0 }, hint = false;
+    for (r = 1; r < hr; r++) for (c = 1; c <= Math.min(maxC, 40); c++) if (/mm\W?dd/i.test(xlText(cell(r, c).value))) hint = true;
+    for (r = start; r <= ws.rowCount; r++) {
+      Object.keys(used).forEach(function (cc) {
+        if (!+cc) return;
+        var v = xlValue(cell(r, +cc).value);
+        if (typeof v === 'string') { var o = xlDateOrder(v); if (o) ord[o]++; }
+      });
+    }
+    var mdy = ord.mdy > ord.dmy || (ord.mdy === ord.dmy && hint);
     // Cột tình trạng (có thể không có tiêu đề, vd cột ẩn ghi "Đã ký HĐ" / "Đang ký HĐ" / "Đang chọn thầu").
-    var used = {}, progCol = 0, progMax = 0;
-    Object.keys(groups).forEach(function (k) { var g = groups[k]; used[g.plan] = used[g.plan0] = used[g.actual] = 1; });
-    for (c = nameCol + 1; c <= maxC; c++) {
+    var progCol = 0, progMax = 0;
+    for (c = firstName + 1; c <= maxC; c++) {
       if (used[c]) continue;
       var hits = 0;
       for (r = start; r <= Math.min(ws.rowCount, start + 400); r++) if (/^(da|dang) (ky|chon)\b/.test(khKey(xlText(cell(r, c).value)))) hits++;
       if (hits > progMax) { progMax = hits; progCol = c; }
     }
-    var rows = [], headKey = khKey(xlText(cell(hr, nameCol).value));
+    var rows = [], headKey = khKey(xlText(cell(hr, nameCol).value)), maxUsed = -1, newer = false, hasBase = false;
     for (r = start; r <= ws.rowCount; r++) {
       var name = xlText(cell(r, nameCol).value).replace(/\s+/g, ' ');
+      if (!name && altCol) name = xlText(cell(r, altCol).value).replace(/\s+/g, ' ');
       var nk = khKey(name);
-      if (!nk || nk === headKey || /^tong cong\b|^(tong|cong)$/.test(nk)) continue;
+      // Bỏ dòng tiêu đề lặp lại, "Tổng cộng" và dòng đánh số cột (1, 2, 7, 8…).
+      if (!nk || nk === headKey || /^tong cong\b|^(tong|cong)$/.test(nk) || /^\d+$/.test(nk)) continue;
       var stt = sttCol ? xlText(cell(r, sttCol).value) : '';
       // fileStt: STT trong file — chỉ dùng để nhận dòng nhóm; STT của gói do web tự đánh 1, 2, 3… (khAutoStt).
-      var item = { row: r, fileStt: stt, name: name, value: valueCol ? xlMoney(cell(r, valueCol).value) : null, plan: {}, plan0: {}, actual: {},
-                   hidden: !!ws.getRow(r).hidden, progress: 0, progressText: '' };
+      var item = { row: r, sheet: ws.name, fileStt: stt, name: name, value: valueCol ? xlMoney(cell(r, valueCol).value) : null,
+                   plan: {}, plan0: {}, actual: {}, done: {}, hidden: !!ws.getRow(r).hidden, progress: 0, progressText: '',
+                   na: /\((khong su dung|khong dung|khong thuc hien|huy)\)/.test(norm(name)) ? 'Không sử dụng' : '' }; // vd "Cẩu thùng (Không sử dụng)"
       if (progCol) {
         item.progressText = xlText(cell(r, progCol).value);
         var pk = khKey(item.progressText);
@@ -652,28 +702,49 @@
       MILESTONES.forEach(function (m) {
         var g = groups[m.key];
         if (!g) return;
-        item.plan[m.key] = xlDate(cell(r, g.plan).value);
-        item.plan0[m.key] = g.plan0 ? xlDate(cell(r, g.plan0).value) : '';
-        item.actual[m.key] = g.actual ? xlDate(cell(r, g.actual).value) : '';
-        if (item.plan[m.key] || item.actual[m.key]) any = true;
+        var cur = '', from = null;
+        for (var i = g.plans.length - 1; i >= 0 && !cur; i--) { cur = xlDate(cell(r, g.plans[i].col).value, mdy); if (cur) from = g.plans[i]; }
+        item.plan[m.key] = cur;
+        item.plan0[m.key] = g.plan0 ? xlDate(cell(r, g.plan0).value, mdy) : '';
+        if (from) {
+          maxUsed = Math.max(maxUsed, from.rev);
+          if (g.plan0 && from.col !== g.plan0) { hasBase = true; if (from.rev < 0) newer = true; }
+        }
+        if (g.actual) {
+          var av = cell(r, g.actual).value;
+          item.actual[m.key] = xlDate(av, mdy);
+          var at = item.actual[m.key] ? '' : khKey(xlText(av));
+          if (KH_DONE_RE.test(at)) item.done[m.key] = true;
+          else if (KH_NA_RE.test(at) && !item.na) item.na = xlText(av);
+        } else item.actual[m.key] = '';
+        if (item.plan[m.key] || item.actual[m.key] || item.done[m.key]) any = true;
       });
-      // Dòng nhóm (vd "I. PHẦN MÓNG": STT chữ La Mã/chữ cái, không có ngày) không phải gói thầu.
-      if (!any && !/^\d+([.,]\d+)*$/.test(stt)) continue;
+      // Dòng nhóm (vd "I. PHẦN MÓNG": STT chữ La Mã/chữ cái, hoặc tên VIẾT HOA, không có ngày) không phải gói thầu.
+      if (!any && (!/^\d+([.,]\d+)*$/.test(stt) || (name === name.toUpperCase() && /[A-ZĐ]/.test(name)))) continue;
+      // Mốc sau đã xong / có ngày thực tế → các mốc trước cũng đã xong (vd đã ký HĐ thì đã mời thầu, chọn thầu).
+      var later = false;
+      ['contract', 'select', 'invite'].forEach(function (k) {
+        if (later && !item.actual[k]) item.done[k] = true;
+        if (item.actual[k] || item.done[k]) later = true;
+      });
       rows.push(item);
     }
     if (!rows.length) return null;
-    // Không có "Kế hoạch RevNN" ở tiêu đề cột → lấy Rev ở tiêu đề sheet, vd "KẾ HOẠCH MUA SẮM … (REV01)".
-    if (maxRev < 0) {
-      for (r = 1; r < hr && maxRev < 0; r++) {
+    // File chỉ có 1 bản kế hoạch (cột Rev01… trống) → không có kế hoạch gốc riêng.
+    if (!hasBase) rows.forEach(function (it) { it.plan0 = {}; });
+    // Nhãn bản kế hoạch: Rev lớn nhất đã dùng; bản cập nhật không ghi Rev (vd "Kế hoạch 03/09/2026") → không ghi nhãn ("KH hiện hành").
+    var rev = newer && maxUsed <= 0 ? -2 : maxUsed;
+    if (rev === -1) {
+      // Không có "Kế hoạch RevNN" ở tiêu đề cột → lấy Rev ở tiêu đề sheet, vd "KẾ HOẠCH MUA SẮM … (REV01)".
+      for (r = 1; r < hr && rev < 0; r++) {
         for (c = 1; c <= Math.min(maxC, 40); c++) {
           var rv = revOf(khKey(xlText(cell(r, c).value)));
-          if (rv >= 0) { maxRev = rv; break; }
+          if (rv >= 0) { rev = rv; break; }
         }
       }
     }
-    var hasBase = Object.keys(groups).some(function (k) { return groups[k].plan0; });
-    return { name: ws.name, visible: !ws.state || ws.state === 'visible', headerRow: hr, groups: groups,
-             rev: maxRev >= 0 ? 'Rev' + ('0' + maxRev).slice(-2) : '', rev0: hasBase ? 'Rev00' : '', rows: rows };
+    return { name: ws.name, visible: !ws.state || ws.state === 'visible', headerRow: hr, groups: groups, mdy: mdy,
+             rev: rev >= 0 ? 'Rev' + ('0' + rev).slice(-2) : '', rev0: hasBase ? 'Rev00' : '', rows: rows };
   }
 
   function khmsUpload() {
@@ -706,6 +777,10 @@
           throw new Error('Không tìm thấy bảng KHMS trong file: cần dòng tiêu đề có cột "Hạng mục" và các nhóm cột ' +
             '"Ngày mời thầu / Ngày chọn thầu / Ngày ký kết hợp đồng" (dưới mỗi nhóm có cột Kế hoạch, Thực tế).');
         }
+        // File tổng hợp: các sheet đặt tên "STT_Tên dự án" của ≥ 2 dự án → tải nhiều dự án một lần.
+        var codes = {};
+        sheets.forEach(function (s) { var c = projectCodesOf(s.name)[0]; if (c) codes[c] = 1; });
+        if (Object.keys(codes).length >= 2) { S.khImport = khBatchInit(file.name, sheets); openKhmsBatch(); return; }
         var guess = projectCodesOf(file.name).filter(function (c) { return S.projMap[c]; })[0] || S.khms.project || '';
         // Nhiều sheet có bảng KHMS: ưu tiên sheet đang hiện, rồi bản có số "(n)" lớn nhất — theo người dùng, file KHMSGT
         // dùng "KHMSGT (2)" (bản mới) thay cho "KHMSGT" — rồi sheet nhiều gói nhất.
@@ -716,7 +791,7 @@
         var best = 0;
         sheets.forEach(function (s, i) { if (better(s, sheets[best]) > 0) best = i; });
         S.khImport = { fileName: file.name, sheets: sheets, sheet: best, project: guess, skip: {}, useProgress: true };
-        sheets[best].rows.forEach(function (r, i) { if (r.hidden) S.khImport.skip[i] = true; });
+        sheets[best].rows.forEach(function (r, i) { if (r.hidden || r.na) S.khImport.skip[i] = true; });
         openKhmsImport();
       }).catch(function (err) {
         toast((err && err.message) || 'Không đọc được file Excel.', 'err');
@@ -726,22 +801,28 @@
   }
 
   /**
-   * Ngày thực tế sẽ gửi lên: theo cột Thực tế trong file; nếu bật "theo cột tình trạng": gói "Đã ký HĐ" → mời thầu, chọn thầu,
-   * ký HĐ đã xong; "Đang ký HĐ" → mời thầu, chọn thầu đã xong — ô còn trống lấy ngày kế hoạch. inferred: các mốc được suy ra.
+   * Ngày thực tế sẽ gửi lên: theo cột Thực tế trong file; nếu bật "mốc đã xong theo file": ô Thực tế ghi "HT" / "Hoàn thành" /
+   * "HĐNT"…, gói "Đã ký HĐ" (mời thầu, chọn thầu, ký HĐ đã xong), "Đang ký HĐ" (mời thầu, chọn thầu đã xong) — ô còn trống lấy
+   * ngày kế hoạch (không sau hôm nay). inferred: các mốc được suy ra.
    */
   function khImpActual(st, r) {
     var a = {}, inferred = [];
     MILESTONES.forEach(function (m) { a[m.key] = r.actual[m.key] || ''; });
-    if (st.useProgress && r.progress) {
-      var done = r.progress >= 2 ? ['invite', 'select', 'contract'] : ['invite', 'select'];
-      done.forEach(function (k) { if (!a[k] && r.plan[k] && r.plan[k] <= S.today) { a[k] = r.plan[k]; inferred.push(k); } });
+    if (st.useProgress) {
+      var done = {};
+      if (r.progress) (r.progress >= 2 ? ['invite', 'select', 'contract'] : ['invite', 'select']).forEach(function (k) { done[k] = 1; });
+      MILESTONES.forEach(function (m) { if (r.done && r.done[m.key]) done[m.key] = 1; });
+      MILESTONES.forEach(function (m) {
+        var k = m.key, d = r.plan[k] > S.today ? S.today : r.plan[k];
+        if (done[k] && !a[k] && d) { a[k] = d; inferred.push(k); }
+      });
     }
     return { actual: a, inferred: inferred };
   }
   /** STT web tự đánh (theo người dùng: không dùng STT trong file): 1, 2, 3… theo thứ tự các gói được tích; gói bỏ tích → ''. */
-  function khAutoStt(st) {
+  function khAutoStt(rows, skip) {
     var n = 0;
-    return st.sheets[st.sheet].rows.map(function (r, i) { return st.skip[i] ? '' : String(++n); });
+    return rows.map(function (r, i) { return skip[i] ? '' : String(++n); });
   }
   /** Ghép dòng file với gói đã có (giống importPlan_ ở server): cùng tên không dấu, ưu tiên cùng STT. */
   function khmsMatch(rows, existing) {
@@ -754,15 +835,15 @@
       return hit;
     });
   }
-  function khmsDiff(st) {
-    var sh = st.sheets[st.sheet];
-    var existing = st.project ? S.packages.filter(function (p) { return p.project === st.project; }) : [];
-    var auto = khAutoStt(st);
-    var picked = sh.rows.map(function (r, i) { return { name: r.name, stt: auto[i] }; }).filter(function (r, i) { return !st.skip[i]; });
+  /** So các dòng file (bỏ dòng không tích) với KHMS đang có của dự án: Mới / Cập nhật (kê trường đổi) / Không đổi / Không còn trong file. */
+  function khmsDiff(st, rows, skip, project) {
+    var existing = project ? S.packages.filter(function (p) { return p.project === project; }) : [];
+    var auto = khAutoStt(rows, skip);
+    var picked = rows.map(function (r, i) { return { name: r.name, stt: auto[i] }; }).filter(function (r, i) { return !skip[i]; });
     var hits = khmsMatch(picked, existing), j = 0, matched = {};
-    var out = { add: 0, upd: 0, same: 0, info: [], removed: [] };
-    sh.rows.forEach(function (r, i) {
-      if (st.skip[i]) { out.info.push(null); return; }
+    var out = { add: 0, upd: 0, same: 0, n: picked.length, info: [], removed: [], auto: auto };
+    rows.forEach(function (r, i) {
+      if (skip[i]) { out.info.push(null); return; }
       var p = hits[j++];
       if (!p) { out.add++; out.info.push({ kind: 'new' }); return; }
       matched[p.id] = true;
@@ -781,18 +862,30 @@
     out.removed = existing.filter(function (p) { return p.active && !matched[p.id]; });
     return out;
   }
-
-  function openKhmsImport() {
-    var st = S.khImport, sh = st.sheets[st.sheet];
-    var diff = khmsDiff(st), auto = khAutoStt(st);
-    var gnames = MILESTONES.filter(function (m) { return sh.groups[m.key]; }).map(function (m) {
-      var g = sh.groups[m.key];
-      var rv = g.rev >= 0 ? 'Rev' + ('0' + g.rev).slice(-2) : '';
-      return m.label + ' (Kế hoạch' + (g.plan0 ? ' Rev00 + ' + (rv || 'bản mới') : rv ? ' ' + rv : '') + (g.actual ? ', Thực tế' : '') + ')';
+  /** Đếm mốc "đã xong" theo file trong các dòng được tích (cho ô tích "ghi nhận ngày thực tế = ngày kế hoạch"). */
+  function khProgCount(rows, skip, acc) {
+    acc = acc || { done: 0, sel: 0, ht: 0 };
+    rows.forEach(function (r, i) {
+      if (skip[i]) return;
+      if (r.progress === 2) acc.done++; else if (r.progress === 1) acc.sel++;
+      if (MILESTONES.some(function (m) { return r.done && r.done[m.key] && !r.actual[m.key]; })) acc.ht++;
     });
-    var missing = MILESTONES.filter(function (m) { return !sh.groups[m.key]; }).map(function (m) { return m.head; });
-    var n = sh.rows.length - Object.keys(st.skip).filter(function (k) { return st.skip[k]; }).length;
-    var rows = sh.rows.map(function (r, i) {
+    return acc;
+  }
+  function khProgOption(st, prog) {
+    if (!prog.done && !prog.sel && !prog.ht) return '';
+    var parts = [];
+    if (prog.ht) parts.push('<b>' + prog.ht + '</b> gói có cột Thực tế ghi "HT" / "Hoàn thành" / "HĐNT"… thay cho ngày');
+    if (prog.done) parts.push('<b>' + prog.done + '</b> gói "Đã ký HĐ" (đã mời thầu, chọn thầu, ký HĐ)');
+    if (prog.sel) parts.push('<b>' + prog.sel + '</b> gói "Đang ký HĐ" (đã mời thầu, chọn thầu)');
+    return '<label class="check sync-date-opt"><input type="checkbox" data-change="kh-imp-progress"' + (st.useProgress ? ' checked' : '') + '><span>' +
+      'Mốc đã xong theo file: ' + parts.join('; ') + ' → ghi nhận <b>ngày thực tế = ngày kế hoạch</b> (không sau hôm nay; mốc sau đã xong thì các mốc trước cũng xong; ' +
+      'chỉ điền ô còn trống, dấu *). Bỏ tích nếu không muốn.</span></label>';
+  }
+  /** Bảng các gói đọc được (xem trước): tích / bỏ từng gói. u: số thứ tự nhóm sheet khi tải nhiều dự án. */
+  function khImpTable(st, rows, skip, diff, o) {
+    var uAttr = o.u != null ? ' data-u="' + o.u + '"' : '';
+    var body = rows.map(function (r, i) {
       var inf = diff.info[i];
       var tag = !inf ? '<span class="muted">Bỏ qua</span>' : inf.kind === 'new' ? '<span class="kh-chg new">Mới</span>'
         : inf.kind === 'upd' ? '<span class="kh-chg upd">Cập nhật</span><small class="kh-chg-l">' + esc(inf.changes.join(', ')) + '</small>'
@@ -801,25 +894,51 @@
       var acts = MILESTONES.filter(function (m) { return eff.actual[m.key]; }).map(function (m) {
         return m.label + ' ' + fmtShort(eff.actual[m.key]) + (eff.inferred.indexOf(m.key) >= 0 ? '*' : '');
       });
-      return '<tr' + (st.skip[i] ? ' class="inactive"' : '') + '><td class="center"><input type="checkbox" data-change="kh-imp-row" data-i="' + i + '"' + (st.skip[i] ? '' : ' checked') + '></td>' +
-        '<td class="center code">' + (auto[i] ? esc(auto[i]) : '<span class="muted">—</span>') + '</td><td class="title-cell">' + esc(r.name) + (r.hidden ? ' <span class="kh-tag">dòng ẩn</span>' : '') + '</td>' +
+      var tags = (r.hidden ? ' <span class="kh-tag">dòng ẩn</span>' : '') + (r.na ? ' <span class="kh-tag">' + esc(r.na) + '</span>' : '') +
+        (o.multiSheet ? '<small class="kh-sheet">' + esc(r.sheet) + '</small>' : '');
+      return '<tr' + (skip[i] ? ' class="inactive"' : '') + '><td class="center"><input type="checkbox" data-change="kh-imp-row"' + uAttr + ' data-i="' + i + '"' + (skip[i] ? '' : ' checked') + '></td>' +
+        '<td class="center code">' + (diff.auto[i] ? esc(diff.auto[i]) : '<span class="muted">—</span>') + '</td><td class="title-cell">' + esc(r.name) + tags + '</td>' +
         '<td class="num nowrap">' + (r.value != null ? fmtMoney(r.value) : '—') + '</td>' +
         MILESTONES.map(function (m) {
           var a = r.plan0[m.key], b = r.plan[m.key];
-          return '<td class="nowrap">' + (sh.rev0 ? '<small class="kh-rev0x">' + (fmtShort(a) || '—') + '</small>' : '') +
-            '<span' + (sh.rev0 && a !== b ? ' class="kh-chgd"' : '') + '>' + (fmtShort(b) || '—') + '</span></td>';
+          return '<td class="nowrap">' + (o.rev0 ? '<small class="kh-rev0x">' + (fmtShort(a) || '—') + '</small>' : '') +
+            '<span' + (o.rev0 && a && a !== b ? ' class="kh-chgd"' : '') + '>' + (fmtShort(b) || '—') + '</span></td>';
         }).join('') +
         '<td class="kh-acts">' + (r.progressText ? '<b>' + esc(r.progressText) + '</b><br>' : '') +
           (acts.length ? esc(acts.join(' · ')) : '<span class="muted">—</span>') + '</td><td>' + tag + '</td></tr>';
     }).join('');
-    var removed = diff.removed.length ? syncSection('Gói không có trong file (sẽ đánh dấu "Không còn trong KHMS mới")', diff.removed.length,
-      '<ul class="sync-list">' + diff.removed.map(function (p) { return '<li>' + esc((p.stt ? p.stt + '. ' : '') + p.name) + (p.submissionId ? ' <span class="muted">(' + esc(p.submissionId) + ')</span>' : '') + '</li>'; }).join('') + '</ul>',
+    return '<div class="table-wrap"><table class="grid kh-imp"><thead><tr>' +
+      '<th class="center"><input type="checkbox" data-change="kh-imp-all"' + uAttr + (diff.n === rows.length ? ' checked' : '') + ' aria-label="Chọn tất cả"></th>' +
+      '<th title="Web tự đánh số 1, 2, 3… theo thứ tự các gói được tích (không dùng STT trong file)">STT</th><th>Hạng mục</th><th class="num">Giá trị</th>' +
+      MILESTONES.map(function (m) { return '<th>KH ' + esc(m.label.toLowerCase()) + (o.rev0 ? '<small class="kh-th-rev">Rev00 / ' + esc(o.rev || 'mới') + '</small>' : '') + '</th>'; }).join('') +
+      '<th>Tình trạng / thực tế trong file</th><th>Thay đổi</th></tr></thead><tbody>' + body + '</tbody></table></div>';
+  }
+  function khRemovedSection(removed) {
+    return removed.length ? syncSection('Gói không có trong file (sẽ đánh dấu "Không còn trong KHMS mới")', removed.length,
+      '<ul class="sync-list">' + removed.map(function (p) { return '<li>' + esc((p.stt ? p.stt + '. ' : '') + p.name) + (p.submissionId ? ' <span class="muted">(' + esc(p.submissionId) + ')</span>' : '') + '</li>'; }).join('') + '</ul>',
       false, 'Gói vẫn được giữ cùng ngày thực tế và hồ sơ đã gắn, chỉ ẩn khỏi danh sách; tải lại file có gói này thì dùng lại.') : '';
+  }
+
+  /** Ô tích gói trong bảng xem trước → { rows, skip } của KHMS đang xem (1 dự án, hoặc nhóm sheet data-u khi tải nhiều dự án). */
+  function khImpTarget(el) {
+    var st = S.khImport;
+    if (st.batch) return st.units[+el.dataset.u];
+    return { rows: st.sheets[st.sheet].rows, skip: st.skip };
+  }
+  function openKhmsImport() {
+    var st = S.khImport;
+    if (st.batch) { openKhmsBatch(); return; }
+    var sh = st.sheets[st.sheet];
+    var diff = khmsDiff(st, sh.rows, st.skip, st.project);
+    var gnames = MILESTONES.filter(function (m) { return sh.groups[m.key]; }).map(function (m) {
+      var g = sh.groups[m.key];
+      var rv = g.rev >= 0 ? 'Rev' + ('0' + g.rev).slice(-2) : '';
+      return m.label + ' (Kế hoạch' + (g.plan0 ? ' Rev00 + ' + (rv && g.rev > 0 ? rv : 'bản mới') : rv ? ' ' + rv : '') + (g.actual ? ', Thực tế' : '') + ')';
+    });
+    var missing = MILESTONES.filter(function (m) { return !sh.groups[m.key]; }).map(function (m) { return m.head; });
     var sheetSel = st.sheets.length > 1 ? '<div class="form-row"><label for="m-ksheet">Sheet</label><select id="m-ksheet" data-change="kh-imp-sheet">' +
       st.sheets.map(function (s, i) { return '<option value="' + i + '"' + (i === st.sheet ? ' selected' : '') + '>' + esc(s.name) + (s.visible ? '' : ' – sheet ẩn') + ' (' + s.rows.length + ' gói)</option>'; }).join('') + '</select></div>' : '';
     var first = st.project && !S.packages.some(function (p) { return p.project === st.project; });
-    var prog = { done: 0, sel: 0 };
-    sh.rows.forEach(function (r, i) { if (!st.skip[i]) { if (r.progress === 2) prog.done++; else if (r.progress === 1) prog.sel++; } });
     openModal(modalHead('Tải KHMS: ' + esc(st.fileName)) + '<div class="modal-body"><div id="m-err"></div>' +
       '<div class="form-row"><label for="m-kproject">Dự án của KHMS</label>' + khmsProjectSelect('m-kproject', st.project, 'import') +
       '<div class="help">Tự chọn theo số đầu tên file (vd "231_KHMS….xlsx"); kiểm tra lại trước khi tải lên.</div></div>' + sheetSel +
@@ -828,28 +947,26 @@
       '<div class="meta-grid" style="margin-top:12px"><div><small>Gói thầu trong file</small>' + sh.rows.length + '</div>' +
         '<div><small>Thêm mới</small>' + diff.add + '</div><div><small>Cập nhật</small>' + diff.upd + '</div><div><small>Không đổi</small>' + diff.same + '</div>' +
         '<div><small>Không còn trong file</small>' + diff.removed.length + '</div></div>' +
-      syncSection('Gói thầu đọc được', sh.rows.length, '<div class="table-wrap"><table class="grid kh-imp"><thead><tr>' +
-        '<th class="center"><input type="checkbox" data-change="kh-imp-all" checked aria-label="Chọn tất cả"></th><th title="Web tự đánh số 1, 2, 3… theo thứ tự các gói được tích (không dùng STT trong file)">STT</th><th>Hạng mục</th><th class="num">Giá trị</th>' +
-        MILESTONES.map(function (m) { return '<th>KH ' + esc(m.label.toLowerCase()) + (sh.rev0 ? '<small class="kh-th-rev">Rev00 / ' + esc(sh.rev || 'mới') + '</small>' : '') + '</th>'; }).join('') +
-        '<th>Tình trạng / thực tế trong file</th><th>Thay đổi</th></tr></thead><tbody>' +
-        rows + '</tbody></table></div>', true) + removed +
-      (prog.done || prog.sel ? '<label class="check sync-date-opt"><input type="checkbox" data-change="kh-imp-progress"' + (st.useProgress ? ' checked' : '') + '><span>' +
-        'Theo cột tình trạng trong file: <b>' + prog.done + '</b> gói "Đã ký HĐ" (đã mời thầu, chọn thầu, ký HĐ), <b>' + prog.sel + '</b> gói "Đang ký HĐ" (đã mời thầu, chọn thầu) ' +
-        '→ ghi nhận ngày thực tế = ngày kế hoạch cho các mốc đã xong (chỉ điền ô còn trống, dấu *). Bỏ tích nếu không muốn.</span></label>' : '') +
+      syncSection('Gói thầu đọc được', sh.rows.length, khImpTable(st, sh.rows, st.skip, diff, { rev0: sh.rev0, rev: sh.rev }), true) +
+      khRemovedSection(diff.removed) + khProgOption(st, khProgCount(sh.rows, st.skip)) +
       '<div class="info-box" style="margin-top:14px">' + (first
         ? 'Lần tải đầu của dự án: ngày kế hoạch được lưu làm <b>kế hoạch gốc</b> để so sánh khi có bản KHMS mới.'
         : 'Tải lại: cập nhật <b>kế hoạch hiện hành</b> theo file, giữ kế hoạch gốc, ngày thực tế và hồ sơ đã gắn trên web.') +
         ' Ngày thực tế trong file chỉ điền vào ô còn trống trên web; ngày chọn thầu thực tế lấy theo ngày duyệt hồ sơ khi đã gắn hồ sơ.</div></div>' +
       '<div class="modal-foot"><button class="secondary-btn" data-act="close-modal">Hủy</button>' +
-      '<button class="primary-btn" id="m-kimp-btn" style="min-height:42px;font-size:16px" data-act="kh-submit-import">' + ic('check') + 'Tải lên ' + n + ' gói thầu</button></div>', true);
+      '<button class="primary-btn" id="m-kimp-btn" style="min-height:42px;font-size:16px" data-act="kh-submit-import">' + ic('check') + 'Tải lên ' + diff.n + ' gói thầu</button></div>', true);
   }
 
+  /** Dòng gửi lên server của 1 KHMS (bỏ dòng không tích). */
+  function khImpPayloadRows(st, rows, skip) {
+    return rows.filter(function (r, i) { return !skip[i]; }).map(function (r, i) {
+      return { stt: String(i + 1), name: r.name, value: r.value, plan: r.plan, plan0: r.plan0, actual: khImpActual(st, r).actual };
+    });
+  }
   function submitKhmsImport(btn) {
     var st = S.khImport, sh = st.sheets[st.sheet];
     if (!st.project) { modalError('Vui lòng chọn dự án của KHMS.'); return; }
-    var rows = sh.rows.filter(function (r, i) { return !st.skip[i]; }).map(function (r, i) {
-      return { stt: String(i + 1), name: r.name, value: r.value, plan: r.plan, plan0: r.plan0, actual: khImpActual(st, r).actual };
-    });
+    var rows = khImpPayloadRows(st, sh.rows, st.skip);
     if (!rows.length) { modalError('Chưa chọn gói thầu nào.'); return; }
     busy(btn, true);
     call('importPlan', { projectCode: st.project, fileName: st.fileName, rev: sh.rev, rev0: sh.rev0, rows: rows }).then(function (r) {
@@ -860,6 +977,148 @@
       toast('Đã tải KHMS dự án ' + st.project + ': ' + r.added + ' gói mới, ' + r.updated + ' cập nhật, ' + r.unchanged + ' không đổi' +
         (r.removed ? ', ' + r.removed + ' không còn trong KHMS mới' : '') + '.');
     }).catch(function (err) { busy(btn, false); if (err.code === 'AUTH') handleErr(err); else modalError(err.message); });
+  }
+
+  /* ---------- Tải nhiều dự án một lần: file tổng hợp, mỗi sheet "STT_Tên dự án" là KHMS của 1 dự án ---------- */
+  /**
+   * Gom sheet theo dự án (số đầu tên sheet; "76_La Pura" + "76.1_La Pura MEP" → dự án 76). Mặc định bỏ tích gói "Không làm" / "CĐT cấp"…
+   * và dòng ẩn không có ngày nào (dòng nhóm); dòng ẩn có ngày vẫn tích — file tổng hợp thường ẩn các gói đã xong.
+   */
+  function khBatchInit(fileName, sheets) {
+    var units = [], byCode = {};
+    sheets.forEach(function (sh, si) {
+      var code = projectCodesOf(sh.name)[0] || '';
+      var u = code ? byCode[code] : null;
+      if (!u) {
+        u = { code: code, project: code && S.projMap[code] ? code : '', sheets: [], rows: [], skip: {}, on: false };
+        units.push(u);
+        if (code) byCode[code] = u;
+      }
+      u.sheets.push(si);
+      sh.rows.forEach(function (r) {
+        var data = MILESTONES.some(function (m) { return r.plan[m.key] || r.actual[m.key] || r.done[m.key]; });
+        if (r.na || (r.hidden && !data)) u.skip[u.rows.length] = true;
+        u.rows.push(r);
+      });
+    });
+    units.forEach(function (u) {
+      var shs = u.sheets.map(function (si) { return sheets[si]; });
+      var revs = shs.map(function (s) { return s.rev; });
+      u.rev = revs.every(function (v) { return v === revs[0]; }) ? revs[0] : '';
+      u.rev0 = shs.some(function (s) { return s.rev0; }) ? 'Rev00' : '';
+      // Sheet chỉ có kế hoạch Rev00 gộp với sheet có Rev00 + bản mới (vd 76_La Pura + 76.1_La Pura MEP): kế hoạch gốc = chính kế hoạch Rev00.
+      if (u.rev0) shs.forEach(function (s) {
+        if (!s.rev0 && s.rev === 'Rev00') s.rows.forEach(function (r) { MILESTONES.forEach(function (m) { r.plan0[m.key] = r.plan[m.key] || ''; }); });
+      });
+      u.name = shs.map(function (s) { return s.name; }).join(' + ');
+      u.on = !!u.project && shs.some(function (s) { return s.visible; });
+    });
+    return { batch: true, fileName: fileName, sheets: sheets, units: units, useProgress: true, open: -1 };
+  }
+  function openKhmsBatch() {
+    var st = S.khImport;
+    var tot = { units: 0, n: 0, add: 0, upd: 0, same: 0, removed: 0 }, prog = { done: 0, sel: 0, ht: 0 }, used = {};
+    var lines = st.units.map(function (u, ui) {
+      var diff = khmsDiff(st, u.rows, u.skip, u.project);
+      u._diff = diff;
+      if (u.on) {
+        tot.units++; tot.n += diff.n; tot.add += diff.add; tot.upd += diff.upd; tot.same += diff.same; tot.removed += diff.removed.length;
+        khProgCount(u.rows, u.skip, prog);
+        if (u.project) used[u.project] = (used[u.project] || 0) + 1;
+      }
+      var hidden = u.sheets.every(function (si) { return !st.sheets[si].visible; });
+      var warn = !u.project ? (u.code ? 'Dự án ' + u.code + ' chưa có trong danh mục' : 'Chưa xác định dự án') : '';
+      return { u: u, ui: ui, diff: diff, warn: warn, hidden: hidden };
+    });
+    var dup = Object.keys(used).filter(function (c) { return used[c] > 1; });
+    var missingCodes = lines.filter(function (l) { return l.warn && l.u.code; }).map(function (l) { return l.u.code; });
+    var body = lines.map(function (l) {
+      var u = l.u, d = l.diff, open = st.open === l.ui;
+      return '<tr' + (u.on ? '' : ' class="inactive"') + '><td class="center"><input type="checkbox" data-change="kh-bimp-on" data-u="' + l.ui + '"' + (u.on ? ' checked' : '') + '></td>' +
+        '<td class="title-cell">' + esc(u.name) + (l.hidden ? ' <span class="kh-tag">sheet ẩn</span>' : '') +
+          '<br><button class="link-btn kh-bopen" data-act="kh-bimp-open" data-u="' + l.ui + '">' + (open ? 'Ẩn danh sách gói ▴' : 'Xem gói ▾') + '</button></td>' +
+        '<td>' + khmsProjectSelect('m-kbp-' + l.ui, u.project, 'batch', ' data-u="' + l.ui + '" aria-label="Dự án của ' + esc(u.name) + '"') +
+          (l.warn ? '<div class="kh-warn kh-bwarn">' + esc(l.warn) + '</div>' : '') + (u.on && dup.indexOf(u.project) >= 0 ? '<div class="kh-warn kh-bwarn">Trùng dự án với nhóm sheet khác</div>' : '') + '</td>' +
+        '<td class="center nowrap">' + (u.rev0 ? 'Rev00 + ' + esc(u.rev || 'mới') : esc(u.rev || '—')) + '</td>' +
+        '<td class="num">' + d.n + (d.n !== u.rows.length ? '<small class="muted"> / ' + u.rows.length + '</small>' : '') + '</td>' +
+        '<td class="num">' + (d.add || '<span class="muted">0</span>') + '</td><td class="num">' + (d.upd || '<span class="muted">0</span>') + '</td>' +
+        '<td class="num">' + (d.same || '<span class="muted">0</span>') + '</td><td class="num">' + (d.removed.length || '<span class="muted">0</span>') + '</td></tr>';
+    }).join('');
+    var cur = st.open >= 0 ? st.units[st.open] : null;
+    var detail = cur ? syncSection('Gói thầu: ' + esc(cur.name) + (cur.project ? ' → dự án ' + esc(projectLabel(cur.project)) : ''), cur.rows.length,
+      khImpTable(st, cur.rows, cur.skip, cur._diff, { u: st.open, rev0: cur.rev0, rev: cur.rev, multiSheet: cur.sheets.length > 1 }), true) +
+      khRemovedSection(cur._diff.removed) : '';
+    var allOn = st.units.every(function (u) { return u.on || !u.project; });
+    openModal(modalHead('Tải KHMS nhiều dự án: ' + esc(st.fileName)) + '<div class="modal-body"><div id="m-err"></div>' +
+      '<div class="info-box">File có <b>' + st.sheets.length + '</b> sheet KHMS. Mỗi sheet <b>"STT_Tên dự án"</b> là KHMS của dự án có số đầu tên sheet; ' +
+        'các sheet cùng dự án (vd "76_La Pura" + "76.1_La Pura MEP") được gộp thành KHMS của dự án đó. Chỉ lấy các trường có trên web: tên gói, giá trị gói thầu, ' +
+        'ngày kế hoạch (Rev00 + bản mới nhất) và ngày thực tế của mời thầu / chọn thầu / ký hợp đồng / bắt đầu thi công.</div>' +
+      '<div class="meta-grid" style="margin-top:12px"><div><small>Dự án được chọn</small>' + tot.units + ' / ' + st.units.length + '</div>' +
+        '<div><small>Gói thầu tải lên</small>' + tot.n + '</div><div><small>Thêm mới</small>' + tot.add + '</div><div><small>Cập nhật</small>' + tot.upd + '</div>' +
+        '<div><small>Không đổi</small>' + tot.same + '</div><div><small>Không còn trong file</small>' + tot.removed + '</div></div>' +
+      syncSection('Dự án trong file', st.units.length, '<div class="table-wrap"><table class="grid kh-imp kh-bimp"><thead><tr>' +
+        '<th class="center"><input type="checkbox" data-change="kh-bimp-all"' + (allOn ? ' checked' : '') + ' aria-label="Chọn tất cả"></th>' +
+        '<th>Sheet</th><th>Dự án trên web</th><th class="center">Kế hoạch</th><th class="num">Gói thầu</th><th class="num">Mới</th><th class="num">Cập nhật</th>' +
+        '<th class="num">Không đổi</th><th class="num" title="Gói đang có trên web mà không còn trong file">Không còn</th></tr></thead><tbody>' + body + '</tbody></table></div>', true,
+        (missingCodes.length ? 'Dự án chưa có trong danh mục (' + esc(missingCodes.join(', ')) + '): admin thêm ở Quản trị → Dự án rồi tải lại file, ' +
+          'hoặc chọn dự án ở cột "Dự án trên web". ' : '') + 'Bấm "Xem gói" để xem / bỏ tích từng gói.') +
+      detail + khProgOption(st, prog) +
+      '<div class="info-box" style="margin-top:14px">Dự án tải lần đầu: ngày kế hoạch được lưu làm <b>kế hoạch gốc</b>. Dự án đã có KHMS: cập nhật <b>kế hoạch hiện hành</b>, ' +
+        'giữ kế hoạch gốc, ngày thực tế và hồ sơ đã gắn trên web. Ngày thực tế trong file chỉ điền vào ô còn trống; ngày chọn thầu thực tế lấy theo ngày duyệt hồ sơ khi đã gắn hồ sơ.</div></div>' +
+      '<div class="modal-foot"><button class="secondary-btn" data-act="close-modal">Hủy</button>' +
+      '<button class="primary-btn" id="m-kimp-btn" style="min-height:42px;font-size:16px" data-act="kh-submit-batch">' + ic('check') +
+        'Tải lên ' + tot.units + ' dự án (' + tot.n + ' gói thầu)</button></div>', 'xl');
+  }
+  function submitKhmsBatch(btn) {
+    var st = S.khImport;
+    var units = st.units.filter(function (u) { return u.on; });
+    if (!units.length) { modalError('Chưa chọn dự án nào.'); return; }
+    var seen = {}, plans = [];
+    for (var i = 0; i < units.length; i++) {
+      var u = units[i];
+      if (!u.project) { modalError('Chọn dự án trên web cho sheet "' + u.name + '" (hoặc bỏ tích).'); return; }
+      if (seen[u.project]) { modalError('Dự án ' + u.project + ' được chọn cho 2 nhóm sheet: "' + seen[u.project] + '" và "' + u.name + '".'); return; }
+      seen[u.project] = u.name;
+      var rows = khImpPayloadRows(st, u.rows, u.skip);
+      if (!rows.length) { modalError('Sheet "' + u.name + '": chưa chọn gói thầu nào (hoặc bỏ tích dự án).'); return; }
+      plans.push({ unit: u, data: { projectCode: u.project, rev: u.rev, rev0: u.rev0, rows: rows } });
+    }
+    // Gửi nhiều lần (mỗi lần ≤ ~600 gói) để không vượt giới hạn dữ liệu của 1 lần gọi; mỗi lần ghi trọn vẹn các dự án trong lần đó.
+    var chunks = [], curChunk = [], n = 0;
+    plans.forEach(function (p) {
+      if (curChunk.length && n + p.data.rows.length > 600) { chunks.push(curChunk); curChunk = []; n = 0; }
+      curChunk.push(p); n += p.data.rows.length;
+    });
+    if (curChunk.length) chunks.push(curChunk);
+    var sum = { projects: 0, added: 0, updated: 0, unchanged: 0, removed: 0 }, last = null, k = 0;
+    var label = btn.lastChild, text0 = label ? label.textContent : '';
+    busy(btn, true);
+    var step = function () {
+      if (k >= chunks.length) return Promise.resolve();
+      var ch = chunks[k];
+      if (label) label.textContent = 'Đang tải ' + (k + 1) + '/' + chunks.length + '…';
+      return call('importPlans', { fileName: st.fileName, plans: ch.map(function (p) { return p.data; }) }).then(function (r) {
+        last = r; k++;
+        ch.forEach(function (p) { p.unit.on = false; p.unit.doneUpload = true; });
+        r.results.forEach(function (x) { sum.projects++; sum.added += x.added; sum.updated += x.updated; sum.unchanged += x.unchanged; sum.removed += x.removed; });
+        return step();
+      });
+    };
+    var report = function () {
+      return 'Đã tải KHMS ' + sum.projects + ' dự án: ' + sum.added + ' gói mới, ' + sum.updated + ' cập nhật, ' + sum.unchanged + ' không đổi' +
+        (sum.removed ? ', ' + sum.removed + ' không còn trong KHMS mới' : '') + '.';
+    };
+    step().then(function () {
+      closeModal();
+      S.packages = last.packages; S.planUploads = last.uploads;
+      S.khms.project = ''; S.khms.state = ''; S.khImport = null;
+      derive(); render(); toast(report());
+    }).catch(function (err) {
+      if (last) { S.packages = last.packages; S.planUploads = last.uploads; derive(); render(); }
+      if (err.code === 'AUTH') { handleErr(err); return; }
+      if (last) { openKhmsBatch(); modalError(report().replace(/\.$/, '') + ' (đã lưu). Phần còn lại chưa lưu: ' + err.message); }
+      else { busy(btn, false); if (label) label.textContent = text0; modalError(err.message); }
+    });
   }
 
   /* ---------- Xuất Excel danh sách gói thầu đang xem ---------- */
@@ -943,7 +1202,8 @@
   EXT.busy.push(function () { return !!S.khEdit; }); // không tự làm mới 3 phút khi đang sửa bảng
   EXT.help.push('<li><b>Kế hoạch mua sắm</b>: bấm <b>Tải KHMS (Excel)</b> và chọn file KHMS của dự án (cột STT, Hạng mục, Giá trị gói thầu, các nhóm Ngày mời thầu / chọn thầu / ký kết hợp đồng / bắt đầu thi công) — web đọc ngày kế hoạch. ' +
         'Mỗi gói thầu gắn với 1 hồ sơ phê duyệt (web gợi ý theo tên hồ sơ cùng dự án, bấm <b>Xác nhận</b>); hồ sơ được duyệt → ngày duyệt là <b>ngày chọn thầu thực tế</b>. ' +
-        'Ngày mời thầu, ký hợp đồng, khởi công thực tế: bấm <b>Cập nhật bảng</b> để nhập cho cả bảng rồi <b>Lưu thay đổi</b> (hoặc bấm tên gói để sửa 1 gói). Tải lại KHMS (Rev mới): cập nhật kế hoạch, giữ kế hoạch gốc, ngày thực tế và hồ sơ đã gắn.</li>');
+        'Ngày mời thầu, ký hợp đồng, khởi công thực tế: bấm <b>Cập nhật bảng</b> để nhập cho cả bảng rồi <b>Lưu thay đổi</b> (hoặc bấm tên gói để sửa 1 gói). Tải lại KHMS (Rev mới): cập nhật kế hoạch, giữ kế hoạch gốc, ngày thực tế và hồ sơ đã gắn. ' +
+        'File tổng hợp nhiều sheet đặt tên <b>"STT_Tên dự án"</b> (vd KHMS cả phòng) → web tải <b>nhiều dự án một lần</b>, mỗi sheet vào dự án theo số đầu tên sheet.</li>');
 
   var ACTIONS_ADD = {
     'kh-upload': function () { khmsUpload(); },
@@ -995,7 +1255,12 @@
         derive(); render(); toast('Đã xóa KHMS dự án ' + el.dataset.code + '.');
       }).catch(function (err) { busy(el, false); handleErr(err); });
     },
-    'kh-submit-import': function (el) { submitKhmsImport(el); }
+    'kh-submit-import': function (el) { submitKhmsImport(el); },
+    'kh-submit-batch': function (el) { submitKhmsBatch(el); },
+    'kh-bimp-open': function (el) {
+      var u = +el.dataset.u;
+      S.khImport.open = S.khImport.open === u ? -1 : u; keepModalScroll(openKhmsImport);
+    }
   };
   Object.keys(ACTIONS_ADD).forEach(function (k) { A.ACTIONS[k] = ACTIONS_ADD[k]; });
 
@@ -1017,18 +1282,30 @@
     },
     'kh-imp-sheet': function (el) {
       S.khImport.sheet = +el.value; S.khImport.skip = {};
-      S.khImport.sheets[S.khImport.sheet].rows.forEach(function (r, i) { if (r.hidden) S.khImport.skip[i] = true; });
+      S.khImport.sheets[S.khImport.sheet].rows.forEach(function (r, i) { if (r.hidden || r.na) S.khImport.skip[i] = true; });
       openKhmsImport();
     },
     'kh-imp-progress': function (el) {
       S.khImport.useProgress = el.checked; keepModalScroll(openKhmsImport);
     },
     'kh-imp-row': function (el) {
-      S.khImport.skip[el.dataset.i] = !el.checked; keepModalScroll(openKhmsImport);
+      khImpTarget(el).skip[el.dataset.i] = !el.checked; keepModalScroll(openKhmsImport);
     },
     'kh-imp-all': function (el) {
-      S.khImport.sheets[S.khImport.sheet].rows.forEach(function (r, i) { S.khImport.skip[i] = !el.checked; });
+      var t = khImpTarget(el);
+      t.rows.forEach(function (r, i) { t.skip[i] = !el.checked; });
       keepModalScroll(openKhmsImport);
+    },
+    'kh-bimp-on': function (el) {
+      S.khImport.units[+el.dataset.u].on = el.checked; keepModalScroll(openKhmsImport);
+    },
+    'kh-bimp-all': function (el) {
+      S.khImport.units.forEach(function (u) { if (u.project) u.on = el.checked; });
+      keepModalScroll(openKhmsImport);
+    },
+    'kh-bimp-project': function (el) {
+      var u = S.khImport.units[+el.dataset.u];
+      u.project = el.value; u.on = !!el.value; keepModalScroll(openKhmsImport);
     }
   };
   Object.keys(CHANGE_ADD).forEach(function (k) { EXT.change[k] = CHANGE_ADD[k]; });

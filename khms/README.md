@@ -12,8 +12,8 @@ Thư mục này chứa **toàn bộ code và các trao đổi về chức năng 
 
 | File | Vai trò |
 |---|---|
-| `src/Procurement.gs` | Server: `KHMS_HEADERS_` (cột 2 sheet), `KHMS_ACTIONS_` (`importPlan`, `updatePackage`, `updatePackages`, `linkPackages`, `deletePlan`), `khmsBootstrap_`, `unlinkSubmissionPackages_` |
-| `src/Khms.html` | Client: trang "Kế hoạch mua sắm" (`viewKhms`), đọc file Excel (`parseKhmsSheet`), xem trước + tải lên, bảng gói thầu, "Cập nhật bảng", form 1 gói, gợi ý gắn hồ sơ, xuất Excel |
+| `src/Procurement.gs` | Server: `KHMS_HEADERS_` (cột 2 sheet), `KHMS_ACTIONS_` (`importPlan`, `importPlans` (nhiều dự án), `updatePackage`, `updatePackages`, `linkPackages`, `deletePlan`), `mergePlan_`, `khmsBootstrap_`, `unlinkSubmissionPackages_` |
+| `src/Khms.html` | Client: trang "Kế hoạch mua sắm" (`viewKhms`), đọc file Excel (`parseKhmsSheet`), xem trước + tải lên (1 dự án `openKhmsImport`; file tổng hợp nhiều dự án `openKhmsBatch`), bảng gói thầu, "Cập nhật bảng", form 1 gói, gợi ý gắn hồ sơ, xuất Excel |
 | `src/KhmsStyles.html` | CSS của trang KHMS |
 | `samples/` | File KHMS **mẫu tự tạo** để thử (bố cục như form của người dùng): 231 Rev00, 231 Rev01 (1 cột KH mỗi mốc), 240 (cột KH Rev00 + KH Rev01). File thật `267_The_Emerald_Boulevard_KHMSGT_2026.09.30.xlsx` **không đưa lên git** (repo công khai). |
 
@@ -55,12 +55,29 @@ Phần lõi không chứa code KHMS, chỉ có các "điểm gắn" — không c
 5. Cập nhật: thay vì từng dòng, **1 nút "Cập nhật bảng"** cho cả bảng, điều chỉnh toàn bảng một lúc rồi **Lưu thay đổi** một lần.
 6. **Tạm thời chỉ chạy trên `/dev`**, code và trao đổi để riêng thư mục này; deploy sau.
 7. **STT gói thầu do hệ thống tự đánh 1, 2, 3…** theo thứ tự các gói (được tích) trong file, **không dùng STT có trong file Excel** (STT trong file chỉ dùng để nhận ra dòng nhóm I, II… không phải gói thầu).
+8. **File tổng hợp `P.MH_KeHoachMuaSamVatTuGiaoThau.xlsx`** (người dùng gửi: "dùng data trong file này, upload lên phần KHMS, chỉ lấy data
+   những vùng nêu sẵn trong phần KHMS trên web") — 1 file, ~45 sheet, **mỗi sheet `STT_Tên dự án` là KHMS của 1 dự án** (sheet `DuAn` là danh sách
+   dự án / người phụ trách, bỏ qua). File thật **không đưa lên git**. Web đọc cả file và mở **"Tải KHMS nhiều dự án"**:
+   - Dự án theo số đầu tên sheet; các sheet cùng dự án được **gộp** (vd `76_La Pura` + `76.1_La Pura MEP` → dự án 76; `265_…` + `265.1_…`).
+     Dự án chưa có trong danh mục (vd **172 Tuyên Sơn**) → bỏ tích, cần admin thêm dự án hoặc chọn dự án khác.
+   - **Chỉ lấy các trường có trên web**: tên gói (cột "Tên vật tư/ gói thầu", không có thì "Hạng mục"), giá trị gói thầu, ngày kế hoạch
+     (Rev00 + bản mới nhất) và thực tế của mời thầu / chọn thầu / ký HĐ / bắt đầu thi công. Bỏ: nhà sản xuất, NCC, tỷ trọng, hình thức chọn thầu,
+     phối hợp soát xét, ngày trình vật liệu, tình trạng gói thầu, đơn vị chọn, các cột chậm trễ / tình trạng (công thức).
+   - Cột "Thực tế" của file này ghi **"HT"** (và "Hoàn thành", "Done", "HĐNT") thay cho ngày → mốc đã xong, ghi nhận **ngày thực tế = ngày kế hoạch**
+     (không sau hôm nay; mốc sau xong thì mốc trước cũng xong) — cùng ô tích với mục 3. "Không làm / Không dùng / Không thi công / CĐT cấp…"
+     hoặc tên có "(Không sử dụng)" → gói mặc định bỏ tích.
+   - **Dòng ẩn có ngày vẫn tích** (file này ẩn các gói đã xong); dòng ẩn không có ngày (dòng nhóm) bỏ tích. (Tải 1 dự án vẫn mặc định bỏ tích dòng ẩn như mục 3.)
+   - Gửi lên server theo đợt ≤ ~600 gói (action `importPlans`, mỗi đợt kiểm tra hết rồi mới ghi; đọc / ghi sheet `Packages` 1 lần).
 
 ## Chi tiết hoạt động
-- **Đọc file** (`parseKhmsSheet`, ExcelJS ở trình duyệt, chỉ .xlsx/.xlsm): tìm dòng tiêu đề có cột tên gói ("Hạng mục", "Tên vật tư/ gói thầu"…),
+- **Đọc file** (`parseKhmsSheet`, ExcelJS ở trình duyệt, chỉ .xlsx/.xlsm): tìm dòng tiêu đề có cột tên gói ("Tên vật tư/ gói thầu" ưu tiên hơn "Hạng mục"…),
   STT, "Giá trị gói thầu" và nhóm cột **Ngày mời thầu / Ngày chọn thầu / Ngày ký (kết) hợp đồng / Ngày bắt đầu thi công** (ưu tiên tiêu đề bắt đầu
   bằng "Ngày", bỏ "Hình thức chọn thầu", "…thi công mẫu"); nhóm kéo tới trước ô tiêu đề kế tiếp; dòng dưới có "Kế hoạch (RevNN)" / "Thực tế";
-  nhóm 1 cột thì cột đó là kế hoạch. Bản Rev lớn nhất = kế hoạch hiện hành, cột Rev00 riêng = kế hoạch gốc. Rev lấy ở tiêu đề cột hoặc tiêu đề sheet.
+  nhóm 1 cột thì cột đó là kế hoạch. Nhiều cột kế hoạch (Rev00, Rev01, "Kế hoạch 03/09/2026", "Kế hoạch tuần 11"…): cột Rev00 = kế hoạch gốc,
+  **kế hoạch hiện hành của từng gói = cột kế hoạch có ngày nằm bên phải nhất** (cột Rev01 trống → giữ Rev00). Rev lấy ở tiêu đề cột ("Rec01" = Rev01)
+  hoặc tiêu đề sheet; bản mới không ghi Rev → nhãn "KH hiện hành". Cột "Chậm trễ so với Thực tế…" không phải cột Thực tế. Ngày dạng chữ:
+  "25/08/2026" hay "08/25/2026" tự nhận; mơ hồ (05/06/2026) thì theo đa số ngày chữ trong sheet, không rõ thì theo ghi chú "(mm/dd/yy)" đầu sheet.
+  Bỏ dòng đánh số cột (1, 2, 7, 8…) và dòng nhóm (STT La Mã hoặc tên VIẾT HOA, không có ngày).
   Cột ẩn vẫn đọc; dòng nhóm (STT La Mã, không ngày) và "Tổng cộng" bỏ qua; dòng ẩn mặc định bỏ tích. Nhiều sheet → ưu tiên sheet hiện,
   rồi bản "(n)" lớn nhất. Cột tình trạng (có thể không tiêu đề) "Đã ký HĐ" / "Đang ký HĐ" như mục 3. Dự án tự chọn theo số đầu tên file.
 - **Xem trước** trước khi tải lên: chọn dự án, sheet, tích/bỏ từng gói; Mới / Cập nhật (kê trường đổi) / Không đổi / Không còn trong file.
