@@ -2031,10 +2031,10 @@
   /** Hàng ô số liệu của kỳ (đặt trong TỔNG QUAN). */
   /** Hồ sơ đang ở TP.MH (hiện nay, theo bộ lọc) — số liệu con của "Đang chờ duyệt". */
   var TPMH_STATUS = 'TP_MH';
-  var TPMH_TYPE_LABELS = { TD: 'Trình duyệt PMH', BC: 'Đợi báo cáo TPMH' };
+  var TPMH_TYPE_LABELS = { TD: 'Trình duyệt TP.MH', BC: 'Đợi báo cáo TP.MH' };
   /**
    * Số liệu TỔNG QUAN (web + Excel): main = 4 ô tổng quát của kỳ; sub = số liệu con "Trong đó đang ở TP.MH"
-   * chia theo loại (Trình duyệt PMH / Đợi báo cáo TPMH), hiển thị nhỏ hơn, không ngang hàng ô tổng quát.
+   * chia theo loại (Trình duyệt TP.MH / Đợi báo cáo TP.MH), hiển thị nhỏ hơn, không ngang hàng ô tổng quát.
    */
   function repKpiData(D) {
     var avg = D.approved.length ? D.approved.reduce(function (a, s) { return a + diffDays(s.createdAt, s.approvedAt); }, 0) / D.approved.length : null;
