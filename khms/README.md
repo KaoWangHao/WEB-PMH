@@ -114,6 +114,14 @@ Phần lõi không chứa code KHMS, chỉ có các "điểm gắn" — không c
    (nút ở KHMS chi tiết, hoặc "Cập nhật GĐ dự án / BOM" ở dòng thông tin dự án; gợi ý tên đã nhập; action `updateProjectInfo`). Hiện ở KHMS chi tiết,
    bảng theo dự án (KHMS chi tiết, Dashboard), file "Xuất tất cả dự án".
 
+15. **Thống kê theo GĐ dự án / BOM** (theo người dùng: "sau khi chuyên viên khai báo GDDA và BOM phụ trách dự án, tôi muốn có dashboard thống kê,
+   báo cáo theo GDDA và BOM phụ trách dự án"): Dashboard có 3 ô lọc **Chuyên viên phụ trách / Giám đốc dự án / BOM phụ trách** (kết hợp với chọn dự án;
+   nhớ ở localStorage `hs_khdash_owner|director|bom`) và thẻ **Tổng hợp theo người phụ trách** (nút chuyển Chuyên viên / GĐ dự án / BOM, nhớ
+   `hs_khdash_by`): biểu đồ tình trạng chọn thầu theo người (bỏ nhóm "chưa nhập") + bảng (dự án, gói, giá trị, đã chọn, tiến độ, đúng hạn, trễ,
+   sắp đến hạn, đã ký, chờ ký; bấm tên để lọc). Tên GĐ dự án / BOM là chữ tự do: tách nhiều người theo `, ; / & +` hoặc "và", gom theo tên không dấu
+   (hiện cách viết gặp nhiều nhất). **Xuất báo cáo (Excel)** (`khdExportXlsx`, theo bộ lọc đang chọn): sheet Theo chuyên viên / Theo GĐ dự án /
+   Theo BOM / Theo dự án.
+
 ## Chi tiết hoạt động
 - **Đọc file** (`parseKhmsSheet`, ExcelJS ở trình duyệt, chỉ .xlsx/.xlsm): tìm dòng tiêu đề có cột tên gói ("Tên vật tư/ gói thầu" ưu tiên hơn "Hạng mục"…),
   STT, "Giá trị gói thầu" và nhóm cột **Ngày mời thầu / Ngày chọn thầu / Ngày ký (kết) hợp đồng / Ngày bắt đầu thi công** (ưu tiên tiêu đề bắt đầu
