@@ -66,7 +66,17 @@ Phần lõi không chứa code KHMS, chỉ có các "điểm gắn" — không c
    - Cột "Thực tế" của file này ghi **"HT"** (và "Hoàn thành", "Done", "HĐNT") thay cho ngày → mốc đã xong, ghi nhận **ngày thực tế = ngày kế hoạch**
      (không sau hôm nay; mốc sau xong thì mốc trước cũng xong) — cùng ô tích với mục 3. "Không làm / Không dùng / Không thi công / CĐT cấp…"
      hoặc tên có "(Không sử dụng)" → gói mặc định bỏ tích.
-   - **Dòng ẩn có ngày vẫn tích** (file này ẩn các gói đã xong); dòng ẩn không có ngày (dòng nhóm) bỏ tích. (Tải 1 dự án vẫn mặc định bỏ tích dòng ẩn như mục 3.)
+   - Sheet không có số dự án (`DuAn`, `Bim Hạ Long`) bỏ qua (theo người dùng: "mặc kệ data trong sheet dự án và bim hạ long").
+   - Người dùng yêu cầu thêm **dự án 172_Tuyên Sơn** vào danh mục (`src/Projects.gs`: `PROJECT_SEED_` + bổ sung 1 lần, cờ `PROJECTS_FIX_V3`).
+   - **Ghi đè** (cột "Ghi đè" của dự án đã có KHMS, chỉ Trưởng phòng / admin; theo người dùng: "dùng data trong file chuẩn bị up để overwrite
+     lên data 2 dự án Boulevard và RiverPark" — 267, 285): kế hoạch gốc, kế hoạch, ngày thực tế, giá trị lấy hết theo file (như lần tải đầu);
+     gói cùng tên giữ mã gói, hồ sơ đã gắn, ghi chú; gói trên web không có trong file bị **xóa**. Mặc định không tích.
+   - **Tự tạo dự án** (theo người dùng: "dựa vào tên sheet có STT, cập nhật vào dự án có STT tương ứng trên web, nếu STT trên tên sheet chưa có
+     ghi nhận dự án trên web thì tự tạo dự án mới tương ứng với tên sheet"): STT chưa có trong danh mục → tạo dự án `STT_<tên>` (tên = phần
+     chung của các sheet sau "STT_" / "STT.n_", vd 172.1_Tuyên Sơn_MEP + 172.2_Tuyên Sơn_Psinh Landscape → "Tuyên Sơn"). Chỉ Trưởng phòng / admin
+     (chuyên viên: dòng đó bỏ tích, báo cần Trưởng phòng / admin); server kiểm tra lại, tạo trong cùng lần ghi (`createName` của `importPlans`).
+9. **Dòng ẩn trong file cũng được tải** (theo người dùng: "khi upload file excel lên, cập nhật cả data trong các dòng ẩn") — mặc định tích
+   ở cả tải 1 dự án và nhiều dự án (thay cho quyết định cũ "dòng ẩn mặc định bỏ tích"); bảng xem trước vẫn gắn nhãn "dòng ẩn".
    - Gửi lên server theo đợt ≤ ~600 gói (action `importPlans`, mỗi đợt kiểm tra hết rồi mới ghi; đọc / ghi sheet `Packages` 1 lần).
 
 ## Chi tiết hoạt động
@@ -78,7 +88,7 @@ Phần lõi không chứa code KHMS, chỉ có các "điểm gắn" — không c
   hoặc tiêu đề sheet; bản mới không ghi Rev → nhãn "KH hiện hành". Cột "Chậm trễ so với Thực tế…" không phải cột Thực tế. Ngày dạng chữ:
   "25/08/2026" hay "08/25/2026" tự nhận; mơ hồ (05/06/2026) thì theo đa số ngày chữ trong sheet, không rõ thì theo ghi chú "(mm/dd/yy)" đầu sheet.
   Bỏ dòng đánh số cột (1, 2, 7, 8…) và dòng nhóm (STT La Mã hoặc tên VIẾT HOA, không có ngày).
-  Cột ẩn vẫn đọc; dòng nhóm (STT La Mã, không ngày) và "Tổng cộng" bỏ qua; dòng ẩn mặc định bỏ tích. Nhiều sheet → ưu tiên sheet hiện,
+  Cột ẩn vẫn đọc; dòng nhóm (STT La Mã, không ngày) và "Tổng cộng" bỏ qua; dòng ẩn vẫn tích (mục 9). Nhiều sheet → ưu tiên sheet hiện,
   rồi bản "(n)" lớn nhất. Cột tình trạng (có thể không tiêu đề) "Đã ký HĐ" / "Đang ký HĐ" như mục 3. Dự án tự chọn theo số đầu tên file.
 - **Xem trước** trước khi tải lên: chọn dự án, sheet, tích/bỏ từng gói; Mới / Cập nhật (kê trường đổi) / Không đổi / Không còn trong file.
 - **Lưu** (`importPlan_`): khớp gói theo tên không dấu (`planKey_`/`khKey`), ưu tiên cùng STT. Lần tải đầu = kế hoạch gốc (`…Plan0`, nhãn `rev0`);
