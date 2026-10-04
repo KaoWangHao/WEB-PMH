@@ -108,6 +108,15 @@ function dmyToIso_(v) {
   return m[3] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[1]).slice(-2);
 }
 
+/** ISO yyyy-MM-dd (từ client) → dd/MM/yyyy để lưu sheet; sai định dạng/ngày không tồn tại → ''. */
+function isoToDmy_(iso) {
+  var m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return '';
+  var d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  if (d.getUTCFullYear() !== +m[1] || d.getUTCMonth() !== +m[2] - 1 || d.getUTCDate() !== +m[3]) return '';
+  return m[3] + '/' + m[2] + '/' + m[1];
+}
+
 function toBool_(v) {
   return v === true || String(v).toUpperCase() === 'TRUE';
 }

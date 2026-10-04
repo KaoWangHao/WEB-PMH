@@ -1038,6 +1038,25 @@
     input.click();
   }
 
+  /** Ngày sửa đổi của file trên server (giờ Việt Nam) → ISO yyyy-mm-dd; trình duyệt không có thì ''. */
+  function fileDay(ms) {
+    if (!ms) return '';
+    try { return new Date(ms).toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }); }
+    catch (e) { return new Date(ms + 7 * 3600000).toISOString().slice(0, 10); }
+  }
+  /** Ngày sẽ ghi nhận cho hồ sơ: ngày của file, không sau hôm nay, không trước lần thay đổi gần nhất (server kiểm tra lại y hệt). */
+  function syncEffDate(sub, iso) {
+    if (!iso) return S.today;
+    if (iso > S.today) iso = S.today;
+    if (sub) {
+      var last = sub.createdAt || '';
+      (S.histBySub[sub.id] || []).forEach(function (h) { if (h.date > last) last = h.date; });
+      if (iso < last) iso = last;
+    }
+    return iso;
+  }
+  function keepLatest(map, key, iso) { if (iso && (!map[key] || iso > map[key])) map[key] = iso; }
+
   /** Đọc danh sách file, áp quy tắc thư mục → tình trạng, so với hồ sơ trên web. */
   function buildSyncPlan(files) {
     var dirKey = syncKey;
@@ -1088,6 +1107,7 @@
       var parts = String(files[i].webkitRelativePath || files[i].name).split('/');
       var name = parts.pop();
       if (isJunkFile(name)) continue;
+      var day = fileDay(files[i].lastModified);
       total++;
       var rule = ruleFor(parts.map(dirKey));
       if (!rule) { ignored++; continue; }
@@ -1103,8 +1123,9 @@
         if (!key) continue;
         found = true;
         var where = (isFile ? parts : parts.slice(0, d + 1)).join('/') + (isFile ? '/' + name : '/');
-        var it = items[key] || (items[key] = { key: key, title: key, statuses: [], paths: [], owners: [], codes: [] });
+        var it = items[key] || (items[key] = { key: key, title: key, statuses: [], paths: [], owners: [], codes: [], dates: {} });
         if (it.statuses.indexOf(rule.status) < 0) it.statuses.push(rule.status);
+        keepLatest(it.dates, rule.status, day);
         if (it.paths.indexOf(where) < 0) it.paths.push(where);
         if (ini && it.owners.indexOf(ini.owner) < 0) { it.owners.push(ini.owner); it.codes.push(ini.code); }
       }
@@ -1116,8 +1137,9 @@
         if (fini && createIni.indexOf(fini.code) >= 0) {
           if (!S.me.isManager && fini.owner !== S.me.username) { freshOthers++; continue; }
           var fk = syncKey(base);
-          var fi = fresh[fk] || (fresh[fk] = { title: base, owner: fini.owner, code: fini.code, statuses: [], paths: [] });
+          var fi = fresh[fk] || (fresh[fk] = { title: base, owner: fini.owner, code: fini.code, statuses: [], paths: [], dates: {} });
           if (fi.statuses.indexOf(rule.status) < 0) fi.statuses.push(rule.status);
+          keepLatest(fi.dates, rule.status, day);
           fi.paths.push(parts.join('/') + '/' + name);
         } else if (rawIni && createIni.indexOf(rawIni) >= 0) noAccount++;
         else notOnWeb++;
@@ -1147,7 +1169,7 @@
       }
       if (it.statuses.length > 1) { plan.conflicts.push({ item: it, sub: sub }); return; }
       if (it.statuses[0] === sub.status) plan.same++;
-      else plan.changes.push({ item: it, sub: sub, status: it.statuses[0] });
+      else plan.changes.push({ item: it, sub: sub, status: it.statuses[0], date: it.dates[it.statuses[0]] || '' });
     });
     plan.notInFolder = S.subs.filter(function (s) { return canEdit(s) && !items[syncKey(s.title)]; }).length;
     var byTitle = function (a, b) { return a.item.title.localeCompare(b.item.title, 'vi'); };
@@ -1169,21 +1191,22 @@
   function openSyncPreview(plan) {
     var changes = plan.changes.length ? '<div class="table-wrap"><table class="grid"><thead><tr>' +
       '<th class="center"><input type="checkbox" checked data-change="sync-all" aria-label="Chọn tất cả"></th>' +
-      '<th>Hồ sơ</th><th>Trên web</th><th></th><th>Theo thư mục</th></tr></thead><tbody>' +
+      '<th>Hồ sơ</th><th>Trên web</th><th></th><th>Theo thư mục</th><th>Ngày ghi nhận</th></tr></thead><tbody>' +
       plan.changes.map(function (c, i) {
         return '<tr><td class="center"><input type="checkbox" checked data-sync-change="' + i + '"></td>' +
           '<td class="title-cell">' + esc(c.sub.title) + '<div class="code">' + esc(c.sub.id) + ' · ' + esc(userName(c.sub.owner)) + '</div></td>' +
-          '<td>' + statusBadge(c.sub.status) + '</td><td>→</td><td>' + statusBadge(c.status) + '</td></tr>';
+          '<td>' + statusBadge(c.sub.status) + '</td><td>→</td><td>' + statusBadge(c.status) + '</td>' + syncDateCell(c.sub, c.date) + '</tr>';
       }).join('') + '</tbody></table></div>' : '<div class="empty">Không có hồ sơ nào cần đổi tình trạng.</div>';
 
     var freshTbl = plan.fresh.length ? '<div class="table-wrap"><table class="grid"><thead><tr>' +
       '<th class="center"><input type="checkbox" checked data-change="sync-all-new" aria-label="Chọn tất cả"></th>' +
-      '<th>Tên hồ sơ (theo tên file)</th><th>Tình trạng</th><th>Chuyên viên</th></tr></thead><tbody>' +
+      '<th>Tên hồ sơ (theo tên file)</th><th>Tình trạng</th><th>Chuyên viên</th><th>Ngày ghi nhận</th></tr></thead><tbody>' +
       plan.fresh.map(function (it, i) {
         return '<tr><td class="center"><input type="checkbox" checked data-sync-new="' + i + '"></td>' +
           '<td class="title-cell">' + esc(it.title) + '</td>' +
           '<td>' + (it.statuses.length > 1 ? syncStatusSelect('data-sync-nstatus', i, it.statuses, true) : statusBadge(it.statuses[0])) + '</td>' +
-          '<td class="nowrap"><b>' + esc(userName(it.owner)) + '</b> <span class="proj-code">' + esc(it.code) + '</span></td></tr>';
+          '<td class="nowrap"><b>' + esc(userName(it.owner)) + '</b> <span class="proj-code">' + esc(it.code) + '</span></td>' +
+          syncDateCell(null, it.statuses.length > 1 ? '' : it.dates[it.statuses[0]]) + '</tr>';
       }).join('') + '</tbody></table></div>' : '';
 
     var ownersTbl = plan.owners.length ? '<div class="table-wrap"><table class="grid"><thead><tr><th class="center">Đổi</th>' +
@@ -1231,22 +1254,32 @@
       (plan.dupWeb.length ? syncSection('Trùng tên trên web (bỏ qua)', plan.dupWeb.length, dup, false,
         'Có nhiều hồ sơ trên web cùng tên nên không biết cập nhật hồ sơ nào. Hãy đổi tên cho khác nhau.') : '') +
       '<div class="info-box" style="margin-top:14px">' + fmtNum(plan.notInFolder) + ' hồ sơ trên web không thấy trong thư mục: giữ nguyên. ' +
-      'Hồ sơ đã duyệt luôn giữ "Đã duyệt" khi đồng bộ' + (plan.keptApproved ? ' (' + plan.keptApproved + ' hồ sơ có file ở thư mục khác)' : '') + '. ' +
-      'Ngày ghi nhận thay đổi: <b>' + fmtDate(S.today) + '</b>.</div></div>' +
+      'Hồ sơ đã duyệt luôn giữ "Đã duyệt" khi đồng bộ' + (plan.keptApproved ? ' (' + plan.keptApproved + ' hồ sơ có file ở thư mục khác)' : '') + '.</div>' +
+      '<label class="check sync-date-opt"><input type="checkbox" id="m-sync-filedate" checked><span>Ghi nhận theo <b>ngày sửa đổi của file trên server</b> ' +
+      '(cột "Ngày ghi nhận"; không sau hôm nay, không trước lần thay đổi gần nhất của hồ sơ, dấu * = đã điều chỉnh). Bỏ tích → ghi nhận ngày hôm nay (' + fmtDate(S.today) + ').</span></label></div>' +
       '<div class="modal-foot"><button class="secondary-btn" data-act="close-modal">Hủy</button>' +
       '<button class="primary-btn" style="min-height:42px;font-size:16px" data-act="submit-sync">' + ic('check') + 'Xác nhận cập nhật</button></div>', true);
   }
 
+  /** Ô "Ngày ghi nhận" trong bảng xem trước: ngày sẽ ghi (theo file), ghi chú nếu khác ngày file. */
+  function syncDateCell(sub, iso) {
+    if (!iso) return '<td class="nowrap muted" title="Không đọc được ngày của file — ghi nhận ngày hôm nay">' + fmtDate(S.today) + '</td>';
+    var eff = syncEffDate(sub, iso);
+    return '<td class="nowrap"' + (eff !== iso ? ' title="Ngày của file: ' + fmtDate(iso) + ' — điều chỉnh để không sớm hơn lần thay đổi gần nhất / không sau hôm nay"' : '') + '>' +
+      fmtDate(eff) + (eff !== iso ? ' <span class="muted">*</span>' : '') + '</td>';
+  }
+
   function collectSync() {
     var plan = S.syncPlan;
+    var fileDate = !!(modalRoot.querySelector('#m-sync-filedate') || {}).checked;
     var q = function (sel) { return Array.prototype.slice.call(modalRoot.querySelectorAll(sel)); };
     var changes = q('[data-sync-change]:checked').map(function (el) {
       var c = plan.changes[+el.dataset.syncChange];
-      return { id: c.sub.id, from: c.sub.status, status: c.status };
+      return { id: c.sub.id, from: c.sub.status, status: c.status, date: fileDate ? c.date : '' };
     });
     q('[data-sync-conflict]').forEach(function (el) {
       var c = plan.conflicts[+el.dataset.syncConflict];
-      if (el.value && el.value !== c.sub.status) changes.push({ id: c.sub.id, from: c.sub.status, status: el.value });
+      if (el.value && el.value !== c.sub.status) changes.push({ id: c.sub.id, from: c.sub.status, status: el.value, date: fileDate ? (c.item.dates[el.value] || '') : '' });
     });
     var owners = q('[data-sync-owner]:checked').map(function (el) {
       var c = plan.owners[+el.dataset.syncOwner];
@@ -1257,7 +1290,7 @@
       var i = el.dataset.syncNew, it = plan.fresh[+i];
       var sel = modalRoot.querySelector('[data-sync-nstatus="' + i + '"]');
       var st = sel ? sel.value : it.statuses[0];
-      if (st) creates.push({ title: it.title, owner: it.owner, status: st });
+      if (st) creates.push({ title: it.title, owner: it.owner, status: st, date: fileDate ? (it.dates[st] || '') : '' });
     });
     return { changes: changes, owners: owners, creates: creates };
   }
@@ -2598,7 +2631,8 @@
       'tên hồ sơ trên web phải trùng tên file (không cần đuôi file, không phân biệt chữ hoa/thường); file không có trên web được bỏ qua. ' +
       'File chưa có trên web mà tên kết thúc bằng ký hiệu chuyên viên (' + esc((S.cfg.folderSync.createInitials || []).join(', ')) + ', vd "..._CQH") được tạo mới cho chuyên viên đó; ' +
       'file không có ký hiệu thì không được tạo. Nếu ký hiệu khác người đang phụ trách, Trưởng phòng được chọn đổi chuyên viên. ' +
-      'Hồ sơ đã duyệt luôn được giữ "Đã duyệt" khi đồng bộ, kể cả khi file không còn trong thư mục Đã duyệt.</li>' +
+      'Hồ sơ đã duyệt luôn được giữ "Đã duyệt" khi đồng bộ, kể cả khi file không còn trong thư mục Đã duyệt. ' +
+      'Ngày ghi nhận = <b>ngày sửa đổi của file trên server</b> (không sau hôm nay, không trước lần thay đổi gần nhất của hồ sơ); bỏ tích ở bảng xem trước để ghi ngày hôm nay.</li>' +
       (S.cfg.installUrl ? '<li>Cài icon <b>CENTRAL PMH</b> lên màn hình điện thoại: mở <a href="' + esc(S.cfg.installUrl) + '" target="_blank" rel="noopener">' +
         esc(S.cfg.installUrl) + '</a> trên điện thoại và làm theo hướng dẫn.</li>' : '') + '</ul></div>' +
       '<div class="modal-foot"><button class="secondary-btn" data-act="close-modal">Đóng</button></div>');

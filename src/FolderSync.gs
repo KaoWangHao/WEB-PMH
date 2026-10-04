@@ -27,10 +27,23 @@ function lastFolderSync_() {
 }
 
 /**
- * payload.changes: [{ id, from, status }] — đổi tình trạng hồ sơ đã có (from = tình trạng lúc xem trước).
+ * Ngày ghi nhận theo ngày của file trên server (ngày sửa đổi, client gửi ISO yyyy-MM-dd): không sau hôm nay và không
+ * trước lần thay đổi gần nhất của hồ sơ (để lịch sử không bị đảo ngược). Không có/không hợp lệ → hôm nay.
+ */
+function syncDate_(iso, notBeforeIso, todayIso) {
+  var dmy = isoToDmy_(iso);
+  if (!dmy) return isoToDmy_(todayIso);
+  if (iso > todayIso) iso = todayIso;
+  if (notBeforeIso && iso < notBeforeIso) iso = notBeforeIso;
+  return isoToDmy_(iso);
+}
+
+/**
+ * payload.changes: [{ id, from, status, date? }] — đổi tình trạng hồ sơ đã có (from = tình trạng lúc xem trước;
+ *                  date = ngày của file trên server, ISO).
  * payload.owners:  [{ id, from, owner }]  — đổi chuyên viên phụ trách theo ký hiệu cuối tên file (from = người phụ trách lúc xem trước).
  * Mỗi hồ sơ ghi 1 dòng History (gộp cả đổi tình trạng và đổi chuyên viên nếu có).
- * payload.creates: [{ title, owner, status }] — tạo hồ sơ mới cho file chưa có trên web, tên kết thúc bằng ký hiệu
+ * payload.creates: [{ title, owner, status, date? }] — tạo hồ sơ mới cho file chưa có trên web, tên kết thúc bằng ký hiệu
  *                  trong FOLDER_SYNC.CREATE_INITIALS (owner = tài khoản có ký hiệu đó).
  * Mọi tài khoản đều đồng bộ được: chuyên viên chỉ đổi tình trạng / tạo hồ sơ của chính mình (canEditSubmission_);
  * đổi chuyên viên phụ trách chỉ dành cho Trưởng phòng/admin.
@@ -47,7 +60,15 @@ function applyFolderSync_(user, payload) {
 
   return withLock_(function () {
     var date = today_();
+    var todayIso = dmyToIso_(date);
     var subs = readTable_('Submissions');
+    // Ngày thay đổi gần nhất của từng hồ sơ (ISO) — ngày theo file không được sớm hơn.
+    var lastIso = {};
+    subs.forEach(function (s) { lastIso[String(s.id)] = dmyToIso_(s.createdAt); });
+    readTable_('History').forEach(function (h) {
+      var d = dmyToIso_(h.date), id = String(h.submissionId);
+      if (d && (!lastIso[id] || d > lastIso[id])) lastIso[id] = d;
+    });
     var byId = {};
     subs.forEach(function (s) { byId[String(s.id)] = s; });
     var userInfo = {};
@@ -81,6 +102,7 @@ function applyFolderSync_(user, payload) {
         return;
       }
       planFor(id).status = status;
+      plan[id].date = syncDate_(c.date, lastIso[id], todayIso);
     });
 
     var seenOwner = {};
@@ -126,8 +148,9 @@ function applyFolderSync_(user, payload) {
       var key = syncTitleKey_(title);
       if (byKey[key]) { skipped.push({ title: title, reason: 'Đã có hồ sơ cùng tên trên web.' }); return; }
       byKey[key] = true;
-      var rec = { id: prefix + ('000' + nextNum++).slice(-4), title: title, owner: owner, createdAt: date, submittedAt: '' };
-      applyStatusDates_(rec, status, date);
+      var d = syncDate_(c.date, '', todayIso);
+      var rec = { id: prefix + ('000' + nextNum++).slice(-4), title: title, owner: owner, createdAt: d, submittedAt: '' };
+      applyStatusDates_(rec, status, d);
       newRecs.push(rec);
     });
 
@@ -137,7 +160,8 @@ function applyFolderSync_(user, payload) {
       var p = plan[id], rec = byId[id];
       var oldStatus = String(rec.status);
       var notes = [FOLDER_SYNC.NOTE];
-      if (p.status) applyStatusDates_(rec, p.status, date);
+      var when = p.status ? p.date : date; // đổi tình trạng: ngày của file; chỉ đổi chuyên viên: hôm nay
+      if (p.status) applyStatusDates_(rec, p.status, when);
       if (p.owner) {
         var from = userInfo[normalizeUsername_(rec.owner)];
         notes.push('đổi chuyên viên: ' + (from ? from.name : rec.owner) + ' → ' + userInfo[p.owner].name);
@@ -147,14 +171,14 @@ function applyFolderSync_(user, payload) {
       writeObj_('Submissions', rec._row, rec);
       touched.push(rec);
       hist.push({ submissionId: rec.id, fromStatus: oldStatus, toStatus: String(rec.status), actor: user.username,
-                  note: notes.join(' · '), date: date });
+                  note: notes.join(' · '), date: when });
     });
 
     var firstSub = appendRows_('Submissions', newRecs);
     newRecs.forEach(function (r, i) {
       r._row = firstSub + i;
       touched.push(r);
-      hist.push({ submissionId: r.id, fromStatus: '', toStatus: r.status, actor: user.username, note: FOLDER_SYNC.CREATE_NOTE, date: date });
+      hist.push({ submissionId: r.id, fromStatus: '', toStatus: r.status, actor: user.username, note: FOLDER_SYNC.CREATE_NOTE, date: r.createdAt });
     });
 
     var firstHist = appendRows_('History', hist);
