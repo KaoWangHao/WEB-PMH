@@ -17,7 +17,7 @@
   var qTimer = null;
 
   S.packages = []; S.planUploads = [];
-  S.khms = { project: '', state: '', q: '', inactive: false }; S.khEdit = null;
+  S.khms = { project: '', state: '', q: '' }; S.khEdit = null;
 
   var ICON_ADD = {
     box: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
@@ -168,7 +168,7 @@
     var k = S.khms, q = norm(k.q).trim();
     return S.packages.filter(function (p) {
       if (k.project && p.project !== k.project) return false;
-      if (!k.inactive && !p.active) return false;
+      if (!p.active) return false;
       if (!khmsMatchState(p, k.state)) return false;
       if (q && norm(p.stt + ' ' + p.name + ' ' + p.project + ' ' + (p._sub ? p._sub.id + ' ' + p._sub.title : '')).indexOf(q) < 0) return false;
       return true;
@@ -413,7 +413,6 @@
     var rows = khmsRows();
     S.lastKhRows = rows;
     var showProj = !k.project;
-    var inactive = S.packages.filter(function (p) { return !p.active && (!k.project || p.project === k.project); }).length;
     var sugg = rows.filter(function (p) { return S.khSugg[p.id]; }).length;
     var pc = khPlanCols(rows), np = pc.two ? 2 : 1;
     var groups = MILESTONES.map(function (m) {
@@ -431,11 +430,11 @@
         return khPlanCell(p, m.key, pc) + khActualCell(p, m.key) + (m.key === 'start' ? '' : '<td>' + msBadge(p._ms[m.key]) + '</td>');
       }).join('');
       var nameCell = S.khEdit
-        ? '<b>' + esc(p.name) + '</b>' + (p.active ? '' : ' <span class="kh-tag">Không còn trong KHMS mới</span>') +
+        ? '<b>' + esc(p.name) + '</b>' +
           '<input type="text" class="kh-in kh-note-in' + khEditCls(p, 'note') + '" id="khe-' + esc(p.id) + '-note" data-input="kh-cell" data-id="' + esc(p.id) + '" data-f="note"' +
           ' maxlength="500" placeholder="Ghi chú…" value="' + esc(khEditVal(p, 'note')) + '">'
         : '<button class="link-btn kh-open" data-act="kh-edit" data-id="' + esc(p.id) + '" title="Xem chi tiết / cập nhật gói này">' + esc(p.name) + '</button>' +
-          (p.active ? '' : ' <span class="kh-tag">Không còn trong KHMS mới</span>') + (p.note ? '<div class="kh-pnote">' + esc(p.note) + '</div>' : '');
+          (p.note ? '<div class="kh-pnote">' + esc(p.note) + '</div>' : '');
       return '<tr' + (p.active ? '' : ' class="inactive"') + '><td class="center code">' + esc(p.stt) + '</td>' +
         '<td class="kh-name">' + nameCell + '</td>' +
         (showProj ? '<td class="nowrap"><span class="proj-code">' + esc(p.project) + '</span></td>' : '') +
@@ -451,8 +450,6 @@
     var editing = !!S.khEdit;
     var fill = editing ? rows.filter(function (p) { return S.khSugg[p.id] && !khEditVal(p, 'submissionId'); }).length : 0;
     var tools = '<div class="table-tools"><span class="muted"><b>' + fmtNum(rows.length) + '</b> gói thầu</span><div class="grow"></div>' +
-      (inactive ? '<label class="check kh-inact" title="Gói có trong KHMS tải lần trước nhưng không còn trong file KHMS mới nhất của dự án. ' +
-        'Web không xóa mà ẩn đi (giữ ngày thực tế, hồ sơ đã gắn); tích để xem lại. Tải lại file có gói này thì gói được dùng lại."><input type="checkbox" data-change="kh-inactive"' + (k.inactive ? ' checked' : '') + '>Hiện gói không còn trong KHMS mới (' + inactive + ')</label>' : '') +
       (editing
         ? (fill ? '<button class="secondary-btn" data-act="kh-fill-sugg">' + ic('link') + 'Điền hồ sơ gợi ý (' + fill + ')</button>' : '') +
           '<button class="secondary-btn" data-act="kh-edit-cancel">Hủy</button>' +
@@ -499,7 +496,7 @@
         (plan0 && plan0 !== plan ? '<div class="help">' + esc(p.rev0 && p.rev0 !== p.rev ? p.rev0 : 'Gốc') + ': ' + fmtDate(plan0) + '</div>' : '') + '</td><td>' + actual + '</td><td>' + msBadge(p._ms[m.key]) + '</td></tr>';
     }).join('');
     openModal(modalHead('Cập nhật gói thầu') + '<div class="modal-body"><div id="m-err"></div>' +
-      '<h3 style="margin:0 0 10px">' + esc(p.name) + (p.active ? '' : ' <span class="kh-tag">Không còn trong KHMS mới</span>') + '</h3>' +
+      '<h3 style="margin:0 0 10px">' + esc(p.name) + '</h3>' +
       '<div class="meta-grid"><div><small>Dự án</small>' + esc(projectLabel(p.project)) + '</div><div><small>STT</small>' + esc(p.stt || '—') + '</div>' +
       '<div><small>Giá trị gói thầu</small>' + (p.value != null ? fmtMoney(p.value) : '—') + '</div><div><small>KHMS</small>' + esc((p.rev0 && p.rev0 !== p.rev ? p.rev0 + ' → ' : '') + (p.rev || '—')) + '</div>' +
       '<div><small>Cập nhật</small>' + fmtDate(p.updatedAt) + (p.updatedBy ? ' · ' + esc(userName(p.updatedBy)) : '') + '</div></div>' +
@@ -865,7 +862,7 @@
       return hit;
     });
   }
-  /** So các dòng file (bỏ dòng không tích) với KHMS đang có của dự án: Mới / Cập nhật (kê trường đổi) / Không đổi / Không còn trong file. */
+  /** So các dòng file (bỏ dòng không tích) với KHMS đang có của dự án: Mới / Cập nhật (kê trường đổi) / Không đổi / Không còn trong file (sẽ xóa). */
   /** overwrite (Ghi đè): như server mergePlan_ — kế hoạch gốc / thực tế theo file, gói trên web không có trong file sẽ bị xóa. */
   function khmsDiff(st, rows, skip, project, overwrite) {
     var existing = project ? S.packages.filter(function (p) { return p.project === project; }) : [];
@@ -892,11 +889,10 @@
         if (r.plan0[k] && (p[k + 'Plan0'] || '') !== r.plan0[k]) ch.push('KH Rev00 ' + lb);
         if (eff.actual[k] && !p[k + 'Actual'] && !(k === 'select' && p._selectSrc === 'sub')) ch.push('TT ' + lb);
       });
-      if (!p.active) ch.push('dùng lại');
       if (ch.length) out.upd++; else out.same++;
       out.info.push({ kind: ch.length ? 'upd' : 'same', changes: ch });
     });
-    out.removed = existing.filter(function (p) { return (overwrite || p.active) && !matched[p.id]; });
+    out.removed = existing.filter(function (p) { return !matched[p.id]; });
     out.overwrite = !!overwrite;
     return out;
   }
@@ -957,9 +953,9 @@
         '<ul class="sync-list">' + removed.map(function (p) { return '<li>' + esc((p.stt ? p.stt + '. ' : '') + p.name) + (p.submissionId ? ' <span class="muted">(' + esc(p.submissionId) + ')</span>' : '') + '</li>'; }).join('') + '</ul>',
         false, 'Ghi đè: các gói này bị xóa khỏi KHMS của dự án (kể cả ngày thực tế và hồ sơ đã gắn).') : '';
     }
-    return removed.length ? syncSection('Gói không có trong file (sẽ đánh dấu "Không còn trong KHMS mới")', removed.length,
+    return removed.length ? syncSection('Gói trên web không có trong file (sẽ XÓA)', removed.length,
       '<ul class="sync-list">' + removed.map(function (p) { return '<li>' + esc((p.stt ? p.stt + '. ' : '') + p.name) + (p.submissionId ? ' <span class="muted">(' + esc(p.submissionId) + ')</span>' : '') + '</li>'; }).join('') + '</ul>',
-      false, 'Gói vẫn được giữ cùng ngày thực tế và hồ sơ đã gắn, chỉ ẩn khỏi danh sách; tải lại file có gói này thì dùng lại.') : '';
+      false, 'Gói không còn trong file KHMS mới bị xóa khỏi KHMS của dự án (kể cả ngày thực tế và hồ sơ đã gắn). Bỏ tích dự án nếu chưa muốn tải.') : '';
   }
 
   /** Ô tích gói trong bảng xem trước → { rows, skip } của KHMS đang xem (1 dự án, hoặc nhóm sheet data-u khi tải nhiều dự án). */
@@ -989,7 +985,7 @@
         ' · đọc được: ' + esc(gnames.join('; ')) + (missing.length ? '<br><span class="kh-warn">Không thấy nhóm cột: ' + esc(missing.join(', ')) + '</span>' : '') + '</div>' +
       '<div class="meta-grid" style="margin-top:12px"><div><small>Gói thầu trong file</small>' + sh.rows.length + '</div>' +
         '<div><small>Thêm mới</small>' + diff.add + '</div><div><small>Cập nhật</small>' + diff.upd + '</div><div><small>Không đổi</small>' + diff.same + '</div>' +
-        '<div><small>Không còn trong file</small>' + diff.removed.length + '</div></div>' +
+        '<div><small>Xóa (không còn trong file)</small>' + diff.removed.length + '</div></div>' +
       syncSection('Gói thầu đọc được', sh.rows.length, khImpTable(st, sh.rows, st.skip, diff, { rev0: sh.rev0, rev: sh.rev }), true) +
       khRemovedSection(diff.removed) + khProgOption(st, khProgCount(sh.rows, st.skip)) +
       '<div class="info-box" style="margin-top:14px">' + (first
@@ -1018,7 +1014,7 @@
       S.khms.project = st.project; S.khms.state = ''; S.khImport = null;
       derive(); render();
       toast('Đã tải KHMS dự án ' + st.project + ': ' + r.added + ' gói mới, ' + r.updated + ' cập nhật, ' + r.unchanged + ' không đổi' +
-        (r.removed ? ', ' + r.removed + ' không còn trong KHMS mới' : '') + '.');
+        (r.removed ? ', xóa ' + r.removed + ' gói không còn trong file' : '') + '.');
     }).catch(function (err) { busy(btn, false); if (err.code === 'AUTH') handleErr(err); else modalError(err.message); });
   }
 
@@ -1140,8 +1136,8 @@
         '<td class="center nowrap">' + (u.rev0 ? 'Rev00 + ' + esc(u.rev || 'mới') : esc(u.rev || '—')) + '</td>' +
         '<td class="num">' + d.n + (d.n !== u.rows.length ? '<small class="muted"> / ' + u.rows.length + '</small>' : '') + '</td>' +
         '<td class="num">' + (d.add || '<span class="muted">0</span>') + '</td><td class="num">' + (d.upd || '<span class="muted">0</span>') + '</td>' +
-        '<td class="num">' + (d.same || '<span class="muted">0</span>') + '</td><td class="num' + (u.overwrite && d.removed.length ? ' kh-warn' : '') + '">' +
-          (d.removed.length ? d.removed.length + (u.overwrite ? ' xóa' : '') : '<span class="muted">0</span>') + '</td>' +
+        '<td class="num">' + (d.same || '<span class="muted">0</span>') + '</td><td class="num' + (d.removed.length ? ' kh-warn' : '') + '">' +
+          (d.removed.length ? d.removed.length : '<span class="muted">0</span>') + '</td>' +
         '<td class="center">' + (u.has && S.me.isManager ? '<input type="checkbox" data-change="kh-bimp-over" data-u="' + l.ui + '"' + (u.overwrite ? ' checked' : '') +
           ' aria-label="Ghi đè KHMS dự án ' + esc(u.project) + '">' : '<span class="muted">—</span>') + '</td></tr>';
     }).join('');
@@ -1157,11 +1153,11 @@
         'ngày kế hoạch (Rev00 + bản mới nhất) và ngày thực tế của mời thầu / chọn thầu / ký hợp đồng / bắt đầu thi công.</div>' +
       '<div class="meta-grid" style="margin-top:12px"><div><small>Dự án được chọn</small>' + tot.units + ' / ' + st.units.length + '</div>' +
         '<div><small>Gói thầu tải lên</small>' + tot.n + '</div><div><small>Thêm mới</small>' + tot.add + '</div><div><small>Cập nhật</small>' + tot.upd + '</div>' +
-        '<div><small>Không đổi</small>' + tot.same + '</div><div><small>Không còn trong file</small>' + tot.removed + '</div></div>' +
+        '<div><small>Không đổi</small>' + tot.same + '</div><div><small>Xóa (không còn trong file)</small>' + tot.removed + '</div></div>' +
       syncSection('Dự án trong file', st.units.length, '<div class="table-wrap"><table class="grid kh-imp kh-bimp"><thead><tr>' +
         '<th class="center"><input type="checkbox" data-change="kh-bimp-all"' + (allOn ? ' checked' : '') + ' aria-label="Chọn tất cả"></th>' +
         '<th>Sheet</th><th>Dự án trên web</th><th class="center">Kế hoạch</th><th class="num">Gói thầu</th><th class="num">Mới</th><th class="num">Cập nhật</th>' +
-        '<th class="num">Không đổi</th><th class="num" title="Gói đang có trên web mà không còn trong file">Không còn</th>' +
+        '<th class="num">Không đổi</th><th class="num" title="Gói đang có trên web mà không còn trong file — sẽ bị xóa">Xóa</th>' +
         '<th class="center" title="Dự án đã có KHMS trên web: thay toàn bộ bằng dữ liệu trong file (kế hoạch gốc, kế hoạch, ngày thực tế, giá trị); gói không có trong file bị xóa. Trưởng phòng / admin.">Ghi đè</th></tr></thead><tbody>' + body + '</tbody></table></div>', true,
         (newCodes.length ? 'STT chưa có dự án trên web → <b>tự tạo dự án mới</b> theo tên sheet: ' + esc(newCodes.join(', ')) + ' (đổi ở cột "Dự án trên web" nếu muốn). ' : '') +
         (missingCodes.length ? 'Dự án chưa có trong danh mục (' + esc(missingCodes.join(', ')) + '): admin thêm ở Quản trị → Dự án rồi tải lại file, ' +
@@ -1321,7 +1317,7 @@
     };
     var report = function () {
       return 'Đã tải KHMS ' + sum.projects + ' dự án: ' + sum.added + ' gói mới, ' + sum.updated + ' cập nhật, ' + sum.unchanged + ' không đổi' +
-        (sum.removed ? ', ' + sum.removed + ' không còn trong KHMS mới / xóa do ghi đè' : '') +
+        (sum.removed ? ', xóa ' + sum.removed + ' gói không còn trong file' : '') +
         (sum.created.length ? '; tạo dự án mới: ' + sum.created.join(', ') : '') +
         (sum.dropped.length ? '; xóa KHMS cũ đã gộp của dự án ' + sum.dropped.join(', ') : '') +
         (sum.assigned ? '; phân công chuyên viên cho ' + sum.assigned + ' dự án' : '') + '.';
@@ -1385,7 +1381,7 @@
         if (m.key !== 'start') line.push(p._ms[m.key].code === 'none' ? '' : msText(p._ms[m.key]));
       });
       line.push(p._sub ? p._sub.id : p.submissionId, p._sub ? statusOf(p._sub.status).label : '', p._sub ? p._sub.title : '',
-        (p.active ? '' : '[Không còn trong KHMS mới] ') + p.note);
+        p.note);
       var row = ws.addRow(line);
       row.eachCell(function (cl) { if (cl.value instanceof Date) cl.numFmt = 'dd/mm/yyyy'; });
       row.getCell(lead).numFmt = '#,##0';
@@ -2163,9 +2159,6 @@
     },
     'kh-state': function (el) {
       S.khms.state = el.value; S.scrollReset = { 'scroll-khms': true }; render();
-    },
-    'kh-inactive': function (el) {
-      S.khms.inactive = el.checked; render();
     },
     'kh-dash-sel': function (el) {
       var c = el.dataset.code, sel = S.khDash.sel.filter(function (x) { return x !== c; });

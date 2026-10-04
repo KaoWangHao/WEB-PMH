@@ -2,7 +2,8 @@
  * Kế hoạch mua sắm (KHMS) theo dự án: mỗi dòng sheet "Packages" là một gói thầu.
  * - Chuyên viên tải file Excel KHMS của dự án (đọc ở trình duyệt bằng ExcelJS) → importPlan_: khớp gói theo
  *   (dự án, tên hạng mục, STT). Lần tải đầu giữ làm kế hoạch gốc (…Plan0, nhãn rev0 vd Rev00); file có cột "Kế hoạch Rev00"
- *   riêng thì cột đó là kế hoạch gốc. Các lần tải sau cập nhật kế hoạch hiện hành (…Plan, nhãn rev); gói mới ở bản sau không có gốc. Ngày thực tế và hồ sơ đã gắn được giữ nguyên; gói không còn trong file mới → active = FALSE.
+ *   riêng thì cột đó là kế hoạch gốc. Các lần tải sau cập nhật kế hoạch hiện hành (…Plan, nhãn rev); gói mới ở bản sau không có gốc. Ngày thực tế và hồ sơ đã gắn được giữ nguyên;
+ *   gói không còn trong file mới → XÓA (theo người dùng: "hệ thống tự xóa hẳn"; trước đây chỉ đánh dấu active = FALSE).
  * - Ngày chọn thầu thực tế = ngày duyệt của hồ sơ gắn với gói (tính ở client, luôn khớp hồ sơ); cột selectActual chỉ là
  *   ngày lấy từ file / nhập tay cho gói chưa có hồ sơ được duyệt trên web.
  * - Ngày mời thầu / ký hợp đồng / khởi công thực tế: chuyên viên tự cập nhật (updatePackage_).
@@ -47,6 +48,7 @@ var KHMS_EXPORT_ALL_USERS_ = ['haocq', 'thuync', 'thoaiht'];
 /** Dữ liệu KHMS gửi kèm bootstrap_ (Submissions.gs gọi nếu có hàm này). */
 function khmsBootstrap_(user) {
   var me = user ? normalizeUsername_(user.username) : '';
+  purgeInactivePackages_();
   return { packages: listPackages_(), planUploads: listPlanUploads_(), khmsAssign: listAssign_(),
            khmsExportAll: KHMS_EXPORT_ALL_USERS_.indexOf(me) >= 0 };
 }
@@ -182,6 +184,21 @@ function serializePlanUpload_(rec) {
 function listPackages_() {
   ensurePlanSheets_();
   return readTable_('Packages').map(serializePackage_).filter(function (p) { return p.project; });
+}
+
+/**
+ * Dọn gói "Không còn trong KHMS mới" (active = FALSE) còn sót từ cách cũ — theo người dùng: "hệ thống tự xóa hẳn giúp mình 2 gói đó".
+ * Gọi ở khmsBootstrap_; không có gói ẩn thì không ghi gì.
+ */
+function purgeInactivePackages_() {
+  ensurePlanSheets_();
+  var rows = readTable_('Packages');
+  if (!rows.some(function (p) { return !toBool_(p.active); })) return;
+  withLock_(function () {
+    var all = readTable_('Packages');
+    var keep = all.filter(function (p) { return toBool_(p.active); });
+    if (keep.length !== all.length) rewriteTable_('Packages', keep);
+  });
 }
 
 function listPlanUploads_() {
@@ -323,11 +340,11 @@ function mergePlan_(user, all, plan, ctx) {
       rec.updatedAt = date; rec.updatedBy = user.username;
     }
   });
-  mine.forEach(function (p) {
-    if (!matched[p.id] && toBool_(p.active)) { p.active = false; p.updatedAt = date; p.updatedBy = user.username; removed++; }
-  });
+  // Gói không còn trong file mới (kể cả gói ẩn còn sót từ cách cũ) → xóa hẳn.
+  deleted = mine.filter(function (p) { return !matched[p.id]; });
+  removed = deleted.length;
   return {
-    changed: mine, added: added, deleted: deleted,
+    changed: mine.filter(function (p) { return matched[p.id]; }), added: added, deleted: deleted,
     upload: { projectCode: code, fileName: ctx.fileName, rev: rev, actor: user.username, date: date,
               added: added.length, updated: updated, removed: removed, total: rows.length },
     stats: { project: code, added: added.length, updated: updated, unchanged: unchanged, removed: removed }
@@ -343,8 +360,14 @@ function importPlan_(user, payload) {
   return withLock_(function () {
     var all = readTable_('Packages');
     var res = mergePlan_(user, all, plan, { num: nextPackageNum_(all), date: today_(), fileName: fileName });
-    writeObjs_('Packages', res.changed);
-    appendRows_('Packages', res.added);
+    if (res.deleted.length) {
+      var gone = {};
+      res.deleted.forEach(function (p) { gone[p.id] = true; });
+      rewriteTable_('Packages', all.filter(function (p) { return !gone[p.id]; }).concat(res.added));
+    } else {
+      writeObjs_('Packages', res.changed);
+      appendRows_('Packages', res.added);
+    }
     appendObj_('PlanUploads', res.upload);
     var st = res.stats;
     return { added: st.added, updated: st.updated, unchanged: st.unchanged, removed: st.removed,

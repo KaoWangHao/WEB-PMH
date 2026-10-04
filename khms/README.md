@@ -44,7 +44,7 @@ Phần lõi không chứa code KHMS, chỉ có các "điểm gắn" — không c
    - Gắn hồ sơ ↔ gói thầu: **gợi ý + xác nhận** (web dò hồ sơ cùng dự án có tên chứa tên gói; chuyên viên xác nhận hoặc chọn hồ sơ khác).
    - Ngày **mời thầu thực tế**: chuyên viên tự nhập (file có ngày thực tế thì nhận luôn).
    - **Tải lại KHMS (Rev mới)**: giữ kế hoạch gốc Rev00 + cập nhật kế hoạch hiện hành; giữ ngày thực tế và hồ sơ đã gắn;
-     gói mới được thêm, gói không còn trong file được đánh dấu (ẩn, không xóa).
+     gói mới được thêm, gói không còn trong file được đánh dấu (ẩn, không xóa) — **đã đổi, xem mục 16: nay xóa hẳn**.
 3. **File thật** dự án 267 (`KHMSGT`): mỗi chuyên viên upload 1 file tương tự cho từng dự án để web điền các trường như form.
    Khác ảnh mẫu: cột tên "Tên vật tư/ gói thầu", nhóm chọn thầu / ký HĐ / thi công chỉ 1 cột (= kế hoạch), cột "Ngày mời thầu" bị ẩn,
    có "Ngày bắt đầu thi công mẫu" (bỏ qua), Rev ở tiêu đề sheet "(REV01)", 2 sheet `KHMSGT` và `KHMSGT (2)`, cột ẩn AI ghi tình trạng.
@@ -122,6 +122,11 @@ Phần lõi không chứa code KHMS, chỉ có các "điểm gắn" — không c
    (hiện cách viết gặp nhiều nhất). **Xuất báo cáo (Excel)** (`khdExportXlsx`, theo bộ lọc đang chọn): sheet Theo chuyên viên / Theo GĐ dự án /
    Theo BOM / Theo dự án.
 
+16. **Gói không còn trong file → xóa hẳn** (theo người dùng: "hệ thống tự xóa hẳn giúp mình 2 gói đó và xóa phần khoanh đỏ trên web luôn"):
+   tải lại KHMS (1 hay nhiều dự án) xóa gói trên web không có trong file (`mergePlan_` trả `deleted`, ghi lại cả bảng); xem trước ghi "sẽ XÓA".
+   Gói ẩn còn sót từ cách cũ (`active` = FALSE) được `purgeInactivePackages_` dọn khi mở web (`khmsBootstrap_`). Bỏ ô tích
+   "Hiện gói không còn trong KHMS mới" ở bảng gói thầu.
+
 ## Chi tiết hoạt động
 - **Đọc file** (`parseKhmsSheet`, ExcelJS ở trình duyệt, chỉ .xlsx/.xlsm): tìm dòng tiêu đề có cột tên gói ("Tên vật tư/ gói thầu" ưu tiên hơn "Hạng mục"…),
   STT, "Giá trị gói thầu" và nhóm cột **Ngày mời thầu / Ngày chọn thầu / Ngày ký (kết) hợp đồng / Ngày bắt đầu thi công** (ưu tiên tiêu đề bắt đầu
@@ -135,7 +140,7 @@ Phần lõi không chứa code KHMS, chỉ có các "điểm gắn" — không c
   rồi bản "(n)" lớn nhất. Cột tình trạng (có thể không tiêu đề) "Đã ký HĐ" / "Đang ký HĐ" như mục 3. Dự án tự chọn theo số đầu tên file.
 - **Xem trước** trước khi tải lên: chọn dự án, sheet, tích/bỏ từng gói; Mới / Cập nhật (kê trường đổi) / Không đổi / Không còn trong file.
 - **Lưu** (`importPlan_`): khớp gói theo tên không dấu (`planKey_`/`khKey`), ưu tiên cùng STT. Lần tải đầu = kế hoạch gốc (`…Plan0`, nhãn `rev0`);
-  file có cột Rev00 thì cột đó là gốc; gói mới ở bản sau không có gốc. Ngày thực tế trong file chỉ điền ô còn trống. Gói không còn trong file → `active` FALSE.
+  file có cột Rev00 thì cột đó là gốc; gói mới ở bản sau không có gốc. Ngày thực tế trong file chỉ điền ô còn trống. Gói không còn trong file → xóa (mục 16).
   Mỗi lần tải ghi 1 dòng `PlanUploads`.
 - **Ngày chọn thầu thực tế** = ngày duyệt hồ sơ gắn với gói (tính ở client `khmsDerive`, ưu tiên hơn ngày nhập tay/từ file).
 - **Gợi ý gắn hồ sơ** (`khmsSuggestions`): hồ sơ Trình duyệt cùng dự án (số đầu tên), chưa gắn, tên chứa tên gói (không dấu) hoặc ≥ 80% từ;
