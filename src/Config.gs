@@ -97,7 +97,14 @@ var SHEET_HEADERS = {
   Submissions: ['id', 'title', 'owner', 'status', 'createdAt', 'submittedAt', 'updatedAt', 'approvedAt'],
   History: ['submissionId', 'fromStatus', 'toStatus', 'actor', 'note', 'date'],
   // Danh mục dự án (STT_TÊN). Sheet tự tạo + nạp danh sách ban đầu khi chưa có (xem Projects.gs).
-  Projects: ['code', 'name', 'active', 'createdAt']
+  Projects: ['code', 'name', 'active', 'createdAt'],
+  // Kế hoạch mua sắm: mỗi dòng 1 gói thầu (xem Procurement.gs). …Plan0 = kế hoạch gốc (lần tải đầu), …Plan = kế hoạch hiện hành.
+  Packages: ['id', 'projectCode', 'stt', 'name', 'value',
+             'invitePlan0', 'invitePlan', 'inviteActual', 'selectPlan0', 'selectPlan', 'selectActual',
+             'contractPlan0', 'contractPlan', 'contractActual', 'startPlan0', 'startPlan', 'startActual',
+             'submissionId', 'note', 'active', 'sortOrder', 'rev', 'createdAt', 'updatedAt', 'updatedBy'],
+  // Lịch sử tải file KHMS.
+  PlanUploads: ['projectCode', 'fileName', 'rev', 'actor', 'date', 'added', 'updated', 'removed', 'total']
 };
 
 function isValidStatus_(code) {

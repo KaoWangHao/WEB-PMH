@@ -44,6 +44,8 @@ function bootstrap_(user) {
     submissions: readTable_('Submissions').map(serializeSubmission_),
     history: readTable_('History').map(serializeHistory_),
     projects: listProjects_(),
+    packages: listPackages_(),
+    planUploads: listPlanUploads_(),
     folderSync: lastFolderSync_(),
     notifSeen: notifSeen_(user)
   };
@@ -151,6 +153,7 @@ function deleteSubmission_(user, payload) {
     deleteRows_('History', histRows);
     deleteRows_('Submissions', [rec._row]);
     shiftNotifSeen_(histRows);
+    unlinkSubmissionPackages_(id);
     return { id: id };
   });
 }

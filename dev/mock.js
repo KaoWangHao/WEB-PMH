@@ -120,6 +120,13 @@
       }
       return this;
     };
+    this.clearContent = function () {
+      for (var r = 0; r < nr; r++) {
+        var target = sheet.data[row - 1 + r];
+        if (target) for (var c = 0; c < nc; c++) target[col - 1 + c] = '';
+      }
+      return this;
+    };
     this.setNumberFormat = function () { return this; };
     this.setFontWeight = function () { return this; };
   }
