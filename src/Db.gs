@@ -105,10 +105,18 @@ function rewriteTable_(name, objs) {
   range.setValues(values);
 }
 
-/** Tạo sheet theo SHEET_HEADERS nếu chưa có (không cần chạy lại setup()). */
+/** Tạo sheet theo SHEET_HEADERS nếu chưa có; sheet đã có mà thiếu cột mới ở cuối → ghi bổ sung header (không cần chạy lại setup()). */
 function ensureSheet_(name) {
   var ss = db_();
-  if (ss.getSheetByName(name)) return;
+  var have = ss.getSheetByName(name);
+  if (have) {
+    var n = SHEET_HEADERS[name].length;
+    if (have.getLastColumn() < n) {
+      have.getRange(1, 1, 1, n).setValues([SHEET_HEADERS[name]]).setFontWeight('bold');
+      have.getRange(1, 1, have.getMaxRows(), n).setNumberFormat('@');
+    }
+    return;
+  }
   withLock_(function () {
     if (ss.getSheetByName(name)) return;
     var sh = ss.insertSheet(name);

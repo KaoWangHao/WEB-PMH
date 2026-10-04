@@ -2682,10 +2682,32 @@
       { collapsible: true });
   }
 
-  function khPlanCell(p, m) {
+  /**
+   * Cột kế hoạch của bảng gói thầu: 1 cột khi chỉ có 1 bản kế hoạch; 2 cột "KH Rev00" (gốc) + "KH Rev01" (hiện hành) khi file KHMS
+   * có cả 2 bản hoặc kế hoạch đã đổi qua các lần tải. Nhãn Rev lấy theo dữ liệu (khác nhau giữa các dự án → "KH gốc" / "KH hiện hành").
+   */
+  function khPlanCols(rows) {
+    var two = rows.some(function (p) {
+      return (p.rev0 && p.rev && p.rev0 !== p.rev) ||
+        MILESTONES.some(function (m) { var a = p[m.key + 'Plan0']; return a && a !== p[m.key + 'Plan']; });
+    });
+    var only = function (arr) {
+      var u = arr.filter(function (v, i) { return v && arr.indexOf(v) === i; });
+      return u.length === 1 && arr.every(Boolean) ? u[0] : '';
+    };
+    var cur = only(rows.map(function (p) { return p.rev; })), base = only(rows.map(function (p) { return p.rev0; }));
+    if (!two) return { two: false, cur: cur ? 'Kế hoạch ' + cur : 'Kế hoạch' };
+    if (!base || !cur || base === cur) return { two: true, base: 'KH gốc', cur: 'KH hiện hành' };
+    return { two: true, base: 'KH ' + base, cur: 'KH ' + cur };
+  }
+  function khPlanCell(p, m, pc) {
     var plan = p[m + 'Plan'], plan0 = p[m + 'Plan0'];
-    return '<td class="kh-d">' + (plan ? fmtShort(plan) : '<span class="muted">—</span>') +
-      (plan0 && plan0 !== plan ? '<small class="kh-rev0" title="Kế hoạch gốc (lần tải KHMS đầu tiên)">gốc ' + fmtShort(plan0) + '</small>' : '') + '</td>';
+    var d = function (iso) { return iso ? fmtShort(iso) : '<span class="muted">—</span>'; };
+    if (!pc.two) return '<td class="kh-d">' + d(plan) + '</td>';
+    var moved = plan0 && plan && plan0 !== plan;
+    return '<td class="kh-d kh-base">' + d(plan0) + '</td>' +
+      '<td class="kh-d' + (moved ? ' kh-chgd' : '') + '"' +
+      (moved ? ' title="Đổi so với kế hoạch gốc: ' + (diffDays(plan0, plan) > 0 ? '+' : '') + diffDays(plan0, plan) + ' ngày"' : '') + '>' + d(plan) + '</td>';
   }
   function khActualCell(p, m) {
     var a = p._actual[m];
@@ -2715,17 +2737,20 @@
     var showProj = !k.project;
     var inactive = S.packages.filter(function (p) { return !p.active && (!k.project || p.project === k.project); }).length;
     var sugg = rows.filter(function (p) { return S.khSugg[p.id]; }).length;
+    var pc = khPlanCols(rows), np = pc.two ? 2 : 1;
     var groups = MILESTONES.map(function (m) {
-      return '<th class="kh-g kh-g-' + m.key + '" colspan="' + (m.key === 'start' ? 2 : 3) + '">' + esc(m.head) + '</th>';
+      return '<th class="kh-g kh-g-' + m.key + '" colspan="' + (np + (m.key === 'start' ? 1 : 2)) + '">' + esc(m.head) + '</th>';
     }).join('');
     var subs = MILESTONES.map(function (m) {
-      return '<th class="kh-g-' + m.key + '">Kế hoạch</th><th class="kh-g-' + m.key + '">Thực tế</th>' + (m.key === 'start' ? '' : '<th class="kh-g-' + m.key + '">Tình trạng</th>');
+      var g = ' class="kh-g-' + m.key + '"';
+      return (pc.two ? '<th' + g + '>' + esc(pc.base) + '</th><th' + g + '>' + esc(pc.cur) + '</th>' : '<th' + g + '>' + esc(pc.cur) + '</th>') +
+        '<th' + g + '>Thực tế</th>' + (m.key === 'start' ? '' : '<th' + g + '>Tình trạng</th>');
     }).join('');
     var head = '<tr><th rowspan="2" class="center">STT</th><th rowspan="2">Hạng mục</th>' + (showProj ? '<th rowspan="2">Dự án</th>' : '') +
       '<th rowspan="2" class="num">Giá trị gói thầu</th>' + groups + '<th rowspan="2">Hồ sơ phê duyệt</th><th rowspan="2"></th></tr><tr>' + subs + '</tr>';
     var body = rows.map(function (p) {
       var cells = MILESTONES.map(function (m) {
-        return khPlanCell(p, m.key) + khActualCell(p, m.key) + (m.key === 'start' ? '' : '<td>' + msBadge(p._ms[m.key]) + '</td>');
+        return khPlanCell(p, m.key, pc) + khActualCell(p, m.key) + (m.key === 'start' ? '' : '<td>' + msBadge(p._ms[m.key]) + '</td>');
       }).join('');
       return '<tr' + (p.active ? '' : ' class="inactive"') + '><td class="center code">' + esc(p.stt) + '</td>' +
         '<td class="kh-name"><b>' + esc(p.name) + '</b>' + (p.active ? '' : ' <span class="kh-tag">Không còn trong KHMS mới</span>') +
@@ -2735,7 +2760,7 @@
         '<td class="kh-link">' + khLinkCell(p) + '</td>' +
         '<td><div class="row-actions"><button data-act="kh-edit" data-id="' + esc(p.id) + '">' + ic('edit') + 'Cập nhật</button></div></td></tr>';
     }).join('');
-    var cols = 16 + (showProj ? 1 : 0);
+    var cols = 16 + (showProj ? 1 : 0) + (pc.two ? 4 : 0);
     if (!rows.length) {
       body = '<tr><td colspan="' + cols + '" class="empty">' + (S.packages.length ? 'Không có gói thầu nào phù hợp.'
         : 'Chưa có KHMS nào. Bấm <b>Tải KHMS (Excel)</b> và chọn file kế hoạch mua sắm của dự án (bố cục: cột STT, Hạng mục, Giá trị gói thầu và các nhóm cột ' +
@@ -2746,8 +2771,8 @@
       (sugg ? '<button class="secondary-btn" data-act="kh-confirm-all">' + ic('check') + 'Xác nhận tất cả gợi ý (' + sugg + ')</button>' : '') + '</div>';
     return card('khms-detail', 'Danh sách gói thầu', tools +
       '<div class="table-wrap table-scroll kh-scroll" id="scroll-khms"><table class="grid kh-table"><thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>' +
-      '<div class="pager"><span>Tình trạng: hoàn thành / trễ N ngày so với kế hoạch hiện hành; "Còn N ngày" khi còn ≤ ' + KHMS_SOON_DAYS +
-      ' ngày tới hạn. "gốc" = kế hoạch lần tải đầu tiên (khi kế hoạch đã đổi).</span></div>');
+      '<div class="pager"><span>Tình trạng: hoàn thành / trễ N ngày so với kế hoạch ' + (pc.two ? 'hiện hành (' + esc(pc.cur) + '; chữ cam = đã đổi so với ' + esc(pc.base) + ')' : 'hiện hành') +
+      '; "Còn N ngày" khi còn ≤ ' + KHMS_SOON_DAYS + ' ngày tới hạn.</span></div>');
   }
 
   /* ---------- Cập nhật 1 gói thầu ---------- */
@@ -2778,13 +2803,13 @@
         ? '<b>' + fmtDate(p._actual.select) + '</b><div class="help">Theo ngày duyệt hồ sơ ' + esc(p._sub.id) + '</div>'
         : khDateInput('m-ka-' + m.key, m.key === 'select' ? p.selectActual : p[m.key + 'Actual']) +
           (m.key === 'select' ? '<div class="help">Gắn hồ sơ: khi hồ sơ được duyệt, ngày duyệt tự ghi nhận vào đây.</div>' : '');
-      return '<tr><td><b>' + esc(m.label) + '</b></td><td class="nowrap">' + (plan ? fmtDate(plan) : '—') +
-        (plan0 && plan0 !== plan ? '<div class="help">Gốc: ' + fmtDate(plan0) + '</div>' : '') + '</td><td>' + actual + '</td><td>' + msBadge(p._ms[m.key]) + '</td></tr>';
+      return '<tr><td><b>' + esc(m.label) + '</b></td><td class="nowrap">' + (plan ? fmtDate(plan) : '—') + (p.rev ? ' <small class="muted">' + esc(p.rev) + '</small>' : '') +
+        (plan0 && plan0 !== plan ? '<div class="help">' + esc(p.rev0 && p.rev0 !== p.rev ? p.rev0 : 'Gốc') + ': ' + fmtDate(plan0) + '</div>' : '') + '</td><td>' + actual + '</td><td>' + msBadge(p._ms[m.key]) + '</td></tr>';
     }).join('');
     openModal(modalHead('Cập nhật gói thầu') + '<div class="modal-body"><div id="m-err"></div>' +
       '<h3 style="margin:0 0 10px">' + esc(p.name) + (p.active ? '' : ' <span class="kh-tag">Không còn trong KHMS mới</span>') + '</h3>' +
       '<div class="meta-grid"><div><small>Dự án</small>' + esc(projectLabel(p.project)) + '</div><div><small>STT</small>' + esc(p.stt || '—') + '</div>' +
-      '<div><small>Giá trị gói thầu</small>' + (p.value != null ? fmtMoney(p.value) : '—') + '</div><div><small>KHMS</small>' + esc(p.rev || '—') + '</div>' +
+      '<div><small>Giá trị gói thầu</small>' + (p.value != null ? fmtMoney(p.value) : '—') + '</div><div><small>KHMS</small>' + esc((p.rev0 && p.rev0 !== p.rev ? p.rev0 + ' → ' : '') + (p.rev || '—')) + '</div>' +
       '<div><small>Cập nhật</small>' + fmtDate(p.updatedAt) + (p.updatedBy ? ' · ' + esc(userName(p.updatedBy)) : '') + '</div></div>' +
       '<div class="table-wrap" style="margin-bottom:16px"><table class="grid kh-ms"><thead><tr><th>Mốc</th><th>Kế hoạch</th><th>Thực tế</th><th>Tình trạng</th></tr></thead><tbody>' +
       rows + '</tbody></table></div>' +
@@ -2916,8 +2941,8 @@
         }
       }
       if (!plans.length) plans.push({ col: s.col, rev: -1, hidden: hidden(s.col) });
-      // Kế hoạch hiện hành = bản Rev lớn nhất (ưu tiên cột không ẩn); có thêm cột Rev00 → làm mốc gốc.
-      plans.sort(function (a, b) { return (a.hidden - b.hidden) || (b.rev - a.rev) || (b.col - a.col); });
+      // Kế hoạch hiện hành = bản Rev lớn nhất (cùng Rev: ưu tiên cột không ẩn); có thêm cột Rev00 → kế hoạch gốc.
+      plans.sort(function (a, b) { return (b.rev - a.rev) || (a.hidden - b.hidden) || (b.col - a.col); });
       var cur = plans[0], base = plans.filter(function (p) { return p.rev === 0 && p.col !== cur.col; })[0];
       groups[s.key] = { plan: cur.col, plan0: base ? base.col : 0, actual: actual, rev: cur.rev };
       maxRev = Math.max(maxRev, cur.rev);
@@ -2968,8 +2993,9 @@
         }
       }
     }
+    var hasBase = Object.keys(groups).some(function (k) { return groups[k].plan0; });
     return { name: ws.name, visible: !ws.state || ws.state === 'visible', headerRow: hr, groups: groups,
-             rev: maxRev >= 0 ? 'Rev' + ('0' + maxRev).slice(-2) : '', rows: rows };
+             rev: maxRev >= 0 ? 'Rev' + ('0' + maxRev).slice(-2) : '', rev0: hasBase ? 'Rev00' : '', rows: rows };
   }
 
   function khmsUpload() {
@@ -3061,6 +3087,7 @@
       if ((p.value == null ? null : p.value) !== r.value) ch.push('giá trị');
       MILESTONES.forEach(function (m) {
         if ((p[m.key + 'Plan'] || '') !== (r.plan[m.key] || '')) ch.push('KH ' + m.label.toLowerCase());
+        if (r.plan0[m.key] && (p[m.key + 'Plan0'] || '') !== r.plan0[m.key]) ch.push('KH Rev00 ' + m.label.toLowerCase());
         if (eff.actual[m.key] && !p[m.key + 'Actual'] && !(m.key === 'select' && p._selectSrc === 'sub')) ch.push('TT ' + m.label.toLowerCase());
       });
       if (!p.active) ch.push('dùng lại');
@@ -3076,7 +3103,8 @@
     var diff = khmsDiff(st);
     var gnames = MILESTONES.filter(function (m) { return sh.groups[m.key]; }).map(function (m) {
       var g = sh.groups[m.key];
-      return m.label + ' (Kế hoạch' + (g.rev >= 0 ? ' Rev' + ('0' + g.rev).slice(-2) : '') + (g.actual ? ', Thực tế' : '') + ')';
+      var rv = g.rev >= 0 ? 'Rev' + ('0' + g.rev).slice(-2) : '';
+      return m.label + ' (Kế hoạch' + (g.plan0 ? ' Rev00 + ' + (rv || 'bản mới') : rv ? ' ' + rv : '') + (g.actual ? ', Thực tế' : '') + ')';
     });
     var missing = MILESTONES.filter(function (m) { return !sh.groups[m.key]; }).map(function (m) { return m.head; });
     var n = sh.rows.length - Object.keys(st.skip).filter(function (k) { return st.skip[k]; }).length;
@@ -3092,7 +3120,11 @@
       return '<tr' + (st.skip[i] ? ' class="inactive"' : '') + '><td class="center"><input type="checkbox" data-change="kh-imp-row" data-i="' + i + '"' + (st.skip[i] ? '' : ' checked') + '></td>' +
         '<td class="center code">' + esc(r.stt) + '</td><td class="title-cell">' + esc(r.name) + (r.hidden ? ' <span class="kh-tag">dòng ẩn</span>' : '') + '</td>' +
         '<td class="num nowrap">' + (r.value != null ? fmtMoney(r.value) : '—') + '</td>' +
-        MILESTONES.map(function (m) { return '<td class="nowrap">' + (fmtShort(r.plan[m.key]) || '—') + '</td>'; }).join('') +
+        MILESTONES.map(function (m) {
+          var a = r.plan0[m.key], b = r.plan[m.key];
+          return '<td class="nowrap">' + (sh.rev0 ? '<small class="kh-rev0x">' + (fmtShort(a) || '—') + '</small>' : '') +
+            '<span' + (sh.rev0 && a !== b ? ' class="kh-chgd"' : '') + '>' + (fmtShort(b) || '—') + '</span></td>';
+        }).join('') +
         '<td class="kh-acts">' + (r.progressText ? '<b>' + esc(r.progressText) + '</b><br>' : '') +
           (acts.length ? esc(acts.join(' · ')) : '<span class="muted">—</span>') + '</td><td>' + tag + '</td></tr>';
     }).join('');
@@ -3114,7 +3146,8 @@
         '<div><small>Không còn trong file</small>' + diff.removed.length + '</div></div>' +
       syncSection('Gói thầu đọc được', sh.rows.length, '<div class="table-wrap"><table class="grid kh-imp"><thead><tr>' +
         '<th class="center"><input type="checkbox" data-change="kh-imp-all" checked aria-label="Chọn tất cả"></th><th>STT</th><th>Hạng mục</th><th class="num">Giá trị</th>' +
-        MILESTONES.map(function (m) { return '<th>KH ' + esc(m.label.toLowerCase()) + '</th>'; }).join('') + '<th>Tình trạng / thực tế trong file</th><th>Thay đổi</th></tr></thead><tbody>' +
+        MILESTONES.map(function (m) { return '<th>KH ' + esc(m.label.toLowerCase()) + (sh.rev0 ? '<small class="kh-th-rev">Rev00 / ' + esc(sh.rev || 'mới') + '</small>' : '') + '</th>'; }).join('') +
+        '<th>Tình trạng / thực tế trong file</th><th>Thay đổi</th></tr></thead><tbody>' +
         rows + '</tbody></table></div>', true) + removed +
       (prog.done || prog.sel ? '<label class="check sync-date-opt"><input type="checkbox" data-change="kh-imp-progress"' + (st.useProgress ? ' checked' : '') + '><span>' +
         'Theo cột tình trạng trong file: <b>' + prog.done + '</b> gói "Đã ký HĐ" (đã mời thầu, chọn thầu, ký HĐ), <b>' + prog.sel + '</b> gói "Đang ký HĐ" (đã mời thầu, chọn thầu) ' +
@@ -3135,7 +3168,7 @@
     });
     if (!rows.length) { modalError('Chưa chọn gói thầu nào.'); return; }
     busy(btn, true);
-    call('importPlan', { projectCode: st.project, fileName: st.fileName, rev: sh.rev, rows: rows }).then(function (r) {
+    call('importPlan', { projectCode: st.project, fileName: st.fileName, rev: sh.rev, rev0: sh.rev0, rows: rows }).then(function (r) {
       closeModal();
       S.packages = r.packages; S.planUploads = r.uploads;
       S.khms.project = st.project; S.khms.state = ''; S.khImport = null;
@@ -3153,27 +3186,30 @@
     loadExcelJs().then(function (ExcelJS) {
       var wb = new ExcelJS.Workbook();
       var ws = wb.addWorksheet('KHMS', { views: [{ state: 'frozen', xSplit: 3, ySplit: 4 }] });
-      var head1 = ['STT', 'Hạng mục', 'Dự án', 'Giá trị gói thầu'], head2 = ['', '', '', ''];
+      var pc = khPlanCols(rows);
+      var head1 = ['STT', 'Hạng mục', 'Dự án', 'Giá trị gói thầu'], head2 = ['', '', '', ''], spans = [];
       MILESTONES.forEach(function (m) {
-        head1.push(m.head, '', m.key === 'start' ? null : ''); head2.push('Kế hoạch', 'Thực tế', m.key === 'start' ? null : 'Tình trạng');
+        var sub = (pc.two ? [pc.base, pc.cur] : [pc.cur]).concat(['Thực tế'], m.key === 'start' ? [] : ['Tình trạng']);
+        spans.push(sub.length);
+        sub.forEach(function (t, i) { head1.push(i ? '' : m.head); head2.push(t); });
       });
-      head1 = head1.filter(function (x) { return x !== null; }); head2 = head2.filter(function (x) { return x !== null; });
-      head1.push('Kế hoạch gốc chọn thầu', 'Hồ sơ phê duyệt', 'Tình trạng hồ sơ', 'Tên hồ sơ', 'Ghi chú');
-      head2.push('', '', '', '', '');
+      head1.push('Hồ sơ phê duyệt', 'Tình trạng hồ sơ', 'Tên hồ sơ', 'Ghi chú');
+      head2.push('', '', '', '');
       ws.addRow(['KẾ HOẠCH MUA SẮM' + (S.khms.project ? ' – DỰ ÁN ' + projectLabel(S.khms.project).toUpperCase() : ' – TẤT CẢ DỰ ÁN')]);
       ws.addRow(['Xuất ngày ' + fmtDate(S.today) + ' bởi ' + S.me.displayName + ' · ' + rows.length + ' gói thầu']);
       ws.addRow(head1); ws.addRow(head2);
       var col = 5;
-      MILESTONES.forEach(function (m) { var w = m.key === 'start' ? 2 : 3; ws.mergeCells(3, col, 3, col + w - 1); col += w; });
+      spans.forEach(function (w) { ws.mergeCells(3, col, 3, col + w - 1); col += w; });
       for (var c = 1; c <= head1.length; c++) if (!head2[c - 1]) ws.mergeCells(3, c, 4, c);
       var xd = function (iso) { return iso ? new Date(iso + 'T00:00:00Z') : null; };
       rows.forEach(function (p) {
         var line = [p.stt, p.name, projectLabel(p.project), p.value];
         MILESTONES.forEach(function (m) {
+          if (pc.two) line.push(xd(p[m.key + 'Plan0']));
           line.push(xd(p[m.key + 'Plan']), xd(p._actual[m.key]));
           if (m.key !== 'start') line.push(p._ms[m.key].code === 'none' ? '' : msText(p._ms[m.key]));
         });
-        line.push(xd(p.selectPlan0), p._sub ? p._sub.id : p.submissionId, p._sub ? statusOf(p._sub.status).label : '', p._sub ? p._sub.title : '',
+        line.push(p._sub ? p._sub.id : p.submissionId, p._sub ? statusOf(p._sub.status).label : '', p._sub ? p._sub.title : '',
           (p.active ? '' : '[Không còn trong KHMS mới] ') + p.note);
         var row = ws.addRow(line);
         row.eachCell(function (cl) { if (cl.value instanceof Date) cl.numFmt = 'dd/mm/yyyy'; });
@@ -3191,7 +3227,9 @@
                         left: { style: 'thin', color: { argb: 'FFB0B8CC' } }, right: { style: 'thin', color: { argb: 'FFB0B8CC' } } };
         }
       });
-      var widths = [7, 42, 26, 18, 12, 12, 18, 12, 12, 18, 12, 12, 18, 12, 12, 14, 14, 18, 50, 30];
+      var widths = [7, 42, 26, 18];
+      head2.slice(4, head2.length - 4).forEach(function (t) { widths.push(t === 'Tình trạng' ? 18 : 12); });
+      widths.push(14, 18, 50, 30);
       widths.forEach(function (w, i) { ws.getColumn(i + 1).width = w; });
       ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4 + rows.length, column: head1.length } };
       return wb.xlsx.writeBuffer();

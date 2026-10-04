@@ -1,8 +1,8 @@
 /**
  * Kế hoạch mua sắm (KHMS) theo dự án: mỗi dòng sheet "Packages" là một gói thầu.
  * - Chuyên viên tải file Excel KHMS của dự án (đọc ở trình duyệt bằng ExcelJS) → importPlan_: khớp gói theo
- *   (dự án, tên hạng mục, STT). Lần đầu có ngày kế hoạch thì giữ làm mốc gốc Rev00 (…Plan0); các lần tải sau chỉ cập nhật
- *   kế hoạch hiện hành (…Plan). Ngày thực tế và hồ sơ đã gắn được giữ nguyên; gói không còn trong file mới → active = FALSE.
+ *   (dự án, tên hạng mục, STT). Lần tải đầu giữ làm kế hoạch gốc (…Plan0, nhãn rev0 vd Rev00); file có cột "Kế hoạch Rev00"
+ *   riêng thì cột đó là kế hoạch gốc. Các lần tải sau cập nhật kế hoạch hiện hành (…Plan, nhãn rev); gói mới ở bản sau không có gốc. Ngày thực tế và hồ sơ đã gắn được giữ nguyên; gói không còn trong file mới → active = FALSE.
  * - Ngày chọn thầu thực tế = ngày duyệt của hồ sơ gắn với gói (tính ở client, luôn khớp hồ sơ); cột selectActual chỉ là
  *   ngày lấy từ file / nhập tay cho gói chưa có hồ sơ được duyệt trên web.
  * - Ngày mời thầu / ký hợp đồng / khởi công thực tế: chuyên viên tự cập nhật (updatePackage_).
@@ -32,7 +32,7 @@ function serializePackage_(rec) {
     id: String(rec.id), project: normalizeProjectCode_(rec.projectCode), stt: String(rec.stt || ''),
     name: String(rec.name || ''), value: rec.value === '' || rec.value == null ? null : Number(rec.value),
     submissionId: String(rec.submissionId || ''), note: String(rec.note || ''), active: toBool_(rec.active),
-    order: Number(rec.sortOrder) || 0, rev: String(rec.rev || ''),
+    order: Number(rec.sortOrder) || 0, rev: String(rec.rev || ''), rev0: String(rec.rev0 || ''),
     updatedAt: dmyToIso_(rec.updatedAt), updatedBy: normalizeUsername_(rec.updatedBy || '')
   };
   if (isNaN(out.value)) out.value = null;
@@ -106,7 +106,7 @@ function matchPlanRows_(rows, existing) {
 }
 
 /**
- * Tải KHMS của 1 dự án. payload: { projectCode, fileName, rev, rows: [{ stt, name, value, plan:{invite,select,contract,start},
+ * Tải KHMS của 1 dự án. payload: { projectCode, fileName, rev, rev0, rows: [{ stt, name, value, plan:{invite,select,contract,start},
  * plan0:{…} (cột Rev00 nếu file có cả Rev00 và bản mới hơn), actual:{…} }] } — ngày dạng ISO yyyy-MM-dd.
  */
 function importPlan_(user, payload) {
@@ -121,6 +121,8 @@ function importPlan_(user, payload) {
   var rows = raw.map(cleanPlanRow_).filter(Boolean);
   if (!rows.length) throw appError_('File không có gói thầu nào.');
   var rev = String(payload.rev || '').replace(/\s+/g, ' ').trim().slice(0, 30);
+  // File có cột "Kế hoạch Rev00" riêng (bên cạnh bản mới hơn) → rev0 = 'Rev00': cột đó ghi đè kế hoạch gốc.
+  var rev0 = String(payload.rev0 || '').replace(/\s+/g, ' ').trim().slice(0, 30);
   var fileName = String(payload.fileName || '').trim().slice(0, 200);
   ensurePlanSheets_();
 
@@ -131,23 +133,30 @@ function importPlan_(user, payload) {
     var date = today_();
     var num = nextPackageNum_(all);
     var added = [], updated = 0, unchanged = 0, removed = 0, matched = {};
+    // Nhãn bản kế hoạch gốc của dự án (vd Rev00) — cho gói mới xuất hiện ở bản sau (không có trong bản gốc).
+    var baseRev = mostCommon_(mine.map(function (p) { return String(p.rev0 || p.rev || ''); }));
 
     rows.forEach(function (r, i) {
       var rec = hits[i];
+      var lateNew = !rec && mine.length > 0 && !rev0;
       if (!rec) {
         rec = { id: 'GT-' + ('0000' + num++).slice(-5), projectCode: code, submissionId: '', note: '', createdAt: date };
-        PLAN_MILESTONES_.forEach(function (m) { rec[m + 'Plan0'] = r.plan0[m] || r.plan[m]; rec[m + 'Actual'] = r.actual[m]; });
+        // Lần tải đầu: kế hoạch trong file là kế hoạch gốc. Gói thêm ở bản sau: không có kế hoạch gốc.
+        PLAN_MILESTONES_.forEach(function (m) { rec[m + 'Plan0'] = r.plan0[m] || (lateNew ? '' : r.plan[m]); rec[m + 'Actual'] = r.actual[m]; });
         added.push(rec);
       } else {
         matched[rec.id] = true;
       }
       var before = hits[i] ? planRowCore_(rec) : '';
+      var prevRev = String(rec.rev || '');
       rec.stt = r.stt; rec.name = r.name; rec.value = r.value; rec.sortOrder = i + 1; rec.active = true; rec.rev = rev;
       PLAN_MILESTONES_.forEach(function (m) {
         rec[m + 'Plan'] = r.plan[m];
-        if (!rec[m + 'Plan0']) rec[m + 'Plan0'] = r.plan0[m] || r.plan[m]; // mốc gốc chỉ ghi lần đầu có ngày
+        // Kế hoạch gốc: theo cột Rev00 của file nếu có; không thì giữ nguyên (ghi ở lần tải đầu).
+        if (r.plan0[m]) rec[m + 'Plan0'] = r.plan0[m];
         if (!rec[m + 'Actual'] && r.actual[m]) rec[m + 'Actual'] = r.actual[m]; // ngày thực tế trên web được ưu tiên
       });
+      rec.rev0 = rev0 || rec.rev0 || (hits[i] ? prevRev : lateNew ? baseRev : rev) || rev;
       if (hits[i]) {
         // Chỉ đổi Rev / thứ tự dòng thì không tính là cập nhật nội dung.
         if (planRowCore_(rec) !== before) { updated++; rec.updatedAt = date; rec.updatedBy = user.username; }
@@ -169,11 +178,18 @@ function importPlan_(user, payload) {
   });
 }
 
-/** Nội dung gói để đếm "cập nhật": bỏ các cột rev, sortOrder, updatedAt, updatedBy. */
+/** Giá trị xuất hiện nhiều nhất (bỏ rỗng); không có → ''. */
+function mostCommon_(arr) {
+  var n = {}, best = '';
+  arr.forEach(function (v) { if (v) { n[v] = (n[v] || 0) + 1; if (!best || n[v] > n[best]) best = v; } });
+  return best;
+}
+
+/** Nội dung gói để đếm "cập nhật": bỏ các cột rev, rev0, sortOrder, updatedAt, updatedBy. */
 function planRowCore_(rec) {
   var h = SHEET_HEADERS.Packages;
   return JSON.stringify(toRowValues_('Packages', rec).filter(function (v, i) {
-    return ['rev', 'sortOrder', 'updatedAt', 'updatedBy'].indexOf(h[i]) < 0;
+    return ['rev', 'rev0', 'sortOrder', 'updatedAt', 'updatedBy'].indexOf(h[i]) < 0;
   }));
 }
 

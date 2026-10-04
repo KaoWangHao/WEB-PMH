@@ -141,6 +141,12 @@
       return 0;
     };
     this.getMaxRows = function () { return Math.max(1000, raw.data.length); };
+    this.getLastColumn = function () {
+      return raw.data.reduce(function (m, r) {
+        for (var i = (r || []).length - 1; i >= 0; i--) if (r[i] !== '' && r[i] != null) return Math.max(m, i + 1);
+        return m;
+      }, 0);
+    };
     this.getRange = function (row, col, nr, nc) { return new Range(this, row, col, nr || 1, nc || 1); };
     this.deleteRow = function (r) { raw.data.splice(r - 1, 1); };
     this.setFrozenRows = function () {};

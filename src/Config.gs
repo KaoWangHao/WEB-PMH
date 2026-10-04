@@ -102,7 +102,9 @@ var SHEET_HEADERS = {
   Packages: ['id', 'projectCode', 'stt', 'name', 'value',
              'invitePlan0', 'invitePlan', 'inviteActual', 'selectPlan0', 'selectPlan', 'selectActual',
              'contractPlan0', 'contractPlan', 'contractActual', 'startPlan0', 'startPlan', 'startActual',
-             'submissionId', 'note', 'active', 'sortOrder', 'rev', 'createdAt', 'updatedAt', 'updatedBy'],
+             'submissionId', 'note', 'active', 'sortOrder', 'rev', 'createdAt', 'updatedAt', 'updatedBy',
+             // thêm sau (cột cuối): nhãn bản kế hoạch gốc (vd Rev00) — header tự ghi bởi ensureSheet_.
+             'rev0'],
   // Lịch sử tải file KHMS.
   PlanUploads: ['projectCode', 'fileName', 'rev', 'actor', 'date', 'added', 'updated', 'removed', 'total']
 };
