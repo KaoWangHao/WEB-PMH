@@ -299,7 +299,8 @@
    * Thông báo (chuông) tính từ History; mỗi dòng History có seq = số dòng trong sheet (tăng dần).
    *  - 'incoming' (TP.MH / TP.C&C / GĐTM): hồ sơ mới chuyển sang "Đang trình <chức danh của tôi>".
    *  - 'mine': hồ sơ của tôi bị người khác đổi tình trạng (đồng bộ thư mục, Trưởng phòng cập nhật…) hoặc được tạo từ đồng bộ.
-   * Thay đổi do chính mình làm thì không báo. Gộp theo hồ sơ; "mới" = seq > mốc đã xem (lưu ở server, chỉ tăng khi mở chuông).
+   * Thay đổi do chính mình bấm Cập nhật thì không báo; thay đổi do đồng bộ thư mục thì luôn báo, kể cả khi chính mình
+   * là người đồng bộ (theo người dùng: người đồng bộ vẫn cần nhận thông báo về hồ sơ của họ). Gộp theo hồ sơ; "mới" = seq > mốc đã xem (lưu ở server, chỉ tăng khi mở chuông).
    */
   function notifData(since) {
     var me = S.me, pos = isManagerPos() ? me.position : null;
@@ -307,7 +308,7 @@
     S.subs.forEach(function (s) { byId[s.id] = s; });
     var groups = {};
     S.hist.forEach(function (h) {
-      if (h.actor === me.username || h.fromStatus === h.toStatus) return;
+      if (h.fromStatus === h.toStatus || (h.actor === me.username && !isSyncNote(h.note))) return;
       var sub = byId[h.submissionId];
       if (!sub) return;
       var kind = pos && h.toStatus === pos ? 'incoming' : sub.owner === me.username ? 'mine' : null;
@@ -335,7 +336,7 @@
   }
   /** "đồng bộ thư mục bởi X" / "cập nhật bởi X". */
   function notifHow(h) {
-    return (isSyncNote(h.note) ? 'Đồng bộ thư mục' : 'Cập nhật') + ' bởi ' + userName(h.actor);
+    return (isSyncNote(h.note) ? 'Đồng bộ thư mục' : 'Cập nhật') + ' bởi ' + (h.actor === S.me.username ? 'bạn' : userName(h.actor));
   }
   /** Bảng hồ sơ của tôi đổi tình trạng: tình trạng trước → hiện tại. */
   function notifMineTable(groups, isNew) {
@@ -387,7 +388,7 @@
         inc.length ? notifIncomingTable(inc, true) : empty('Không có hồ sơ mới đệ trình đến bạn.'), true) : '') +
       (isMgr && !mine.length ? '' : syncSection('Hồ sơ của bạn thay đổi tình trạng', mine.length,
         mine.length ? notifMineTable(mine, true) : empty('Không có hồ sơ nào của bạn thay đổi tình trạng mới.'), true,
-        mine.length ? 'Do đồng bộ thư mục, Trưởng phòng cập nhật… (thay đổi do chính bạn làm thì không báo). Bấm Lịch sử để xem chi tiết từng lần thay đổi.' : '')) +
+        mine.length ? 'Do đồng bộ thư mục, Trưởng phòng cập nhật… (thay đổi bạn tự bấm Cập nhật thì không báo; đồng bộ thư mục thì luôn báo). Bấm Lịch sử để xem chi tiết từng lần thay đổi.' : '')) +
       (recMine.length || recInc.length ? syncSection('Đã xem gần đây (30 ngày)', recMine.length + recInc.length,
         (recMine.length ? notifMineTable(recMine, false) : '') + (recInc.length ? '<p class="muted sync-note">Đệ trình đến bạn:</p>' + notifIncomingTable(recInc, false) : ''), !N.count) : '');
     openModal(modalHead('Thông báo cập nhật') + '<div class="modal-body">' + body + '</div>' +
@@ -2717,7 +2718,7 @@
       '<li><b>Báo cáo tổng hợp</b> (Dashboard Trưởng phòng; chuyên viên: mục "Báo cáo tổng hợp"): chọn kỳ <b>Tuần / Tháng / Quý / Năm</b> ở THAM SỐ, bấm ‹ › để lùi/tiến kỳ, "Hiện tại" để về kỳ này. ' +
       'Mỗi ô báo cáo có nút <b>Biểu đồ / Bảng</b>; bấm vào số, cột hoặc miếng biểu đồ để xem danh sách hồ sơ. "Xuất báo cáo (Excel)" tải file .xlsx gồm trang Dashboard (ô số liệu, biểu đồ, bảng dữ liệu) và các trang danh sách hồ sơ (lọc/sắp xếp được).</li>' +
       '<li>Chuyên viên xem được mọi hồ sơ nhưng chỉ sửa hồ sơ của mình. TP.MH, TP.C&amp;C, GĐTM sửa được mọi hồ sơ.</li>' +
-      '<li><b>Chuông thông báo</b>: chuyên viên được báo khi hồ sơ của mình bị người khác đổi tình trạng (đồng bộ thư mục, Trưởng phòng cập nhật…); ' +
+      '<li><b>Chuông thông báo</b>: chuyên viên được báo khi hồ sơ của mình đổi tình trạng do người khác cập nhật hoặc do <b>đồng bộ thư mục</b> (kể cả khi chính bạn bấm đồng bộ); ' +
       'TP.MH / TP.C&amp;C / GĐTM được báo khi có hồ sơ mới đệ trình đến mình. Bấm chuông mở <b>cửa sổ Thông báo cập nhật</b>: bảng hồ sơ thay đổi (tình trạng trước → hiện tại, ngày, ai thay đổi), bấm <b>Lịch sử</b> để xem chi tiết rồi "‹ Thông báo" để quay lại. Số trên chuông giữ nguyên cho tới khi bạn mở xem (kể cả khi đăng nhập máy khác); web tự cập nhật mỗi 3 phút.</li>' +
       EXT.help.join('') +
       '<li>Ô "Số ngày ở TT hiện tại" chuyển màu cam khi ≥ 7 ngày, đỏ khi ≥ 14 ngày.</li>' +
