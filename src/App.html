@@ -324,7 +324,7 @@
     var monthAgo = numToIso(dayNum(S.today) - 30);
     return {
       fresh: fresh, count: Object.keys(ids).length,
-      recent: list.filter(function (g) { return !g.firstNew && g.last.date >= monthAgo; }).slice(0, 6),
+      recent: list.filter(function (g) { return !g.firstNew && g.last.date >= monthAgo; }).slice(0, 100),
       maxSeq: S.hist.reduce(function (m, h) { return Math.max(m, h.seq); }, 0)
     };
   }
@@ -333,37 +333,66 @@
     var fs = S.cfg.folderSync || {};
     return !!note && ((fs.note && note.indexOf(fs.note) >= 0) || (fs.createNote && note.indexOf(fs.createNote) >= 0));
   }
-  function notifItem(g) {
-    var s = g.sub, h = g.firstNew || g.last, isNew = !!g.firstNew;
-    var how = isSyncNote(g.last.note) ? 'đồng bộ thư mục' : 'cập nhật';
-    var line;
-    if (g.kind === 'incoming') {
-      line = typeBadge(s._type) + '<span>' + esc(userName(s.owner)) + '</span>' +
-        (s.status !== g.last.toStatus ? '<span class="nd-arrow">hiện:</span>' + statusBadge(s.status) : '');
-    } else {
-      line = (h.fromStatus ? statusBadge(h.fromStatus) + '<span class="nd-arrow">→</span>' : '<span class="nd-tag">Tạo mới</span>') + statusBadge(s.status);
-    }
-    return '<button class="nd-item' + (isNew ? ' new' : '') + '" data-act="open-history" data-id="' + esc(s.id) + '" title="Xem lịch sử hồ sơ">' +
-      '<span class="nd-dot" aria-hidden="true"></span><span class="nd-main">' +
-      '<span class="nd-title">' + esc(s.title) + '</span><span class="nd-line">' + line + '</span>' +
-      '<small>' + esc(fmtDate(g.last.date)) + ' · ' + how + ' bởi ' + esc(userName(g.last.actor)) + (g.n > 1 ? ' · ' + g.n + ' lần thay đổi' : '') + '</small>' +
-      '</span></button>';
+  /** "đồng bộ thư mục bởi X" / "cập nhật bởi X". */
+  function notifHow(h) {
+    return (isSyncNote(h.note) ? 'Đồng bộ thư mục' : 'Cập nhật') + ' bởi ' + userName(h.actor);
   }
-  function notifPanel() {
+  /** Bảng hồ sơ của tôi đổi tình trạng: tình trạng trước → hiện tại. */
+  function notifMineTable(groups, isNew) {
+    return '<div class="table-wrap"><table class="grid notif-tbl"><thead><tr><th>Hồ sơ</th><th>Trước</th><th></th><th>Hiện tại</th>' +
+      '<th>Ngày</th><th>Thay đổi bởi</th><th></th></tr></thead><tbody>' + groups.map(function (g) {
+        var s = g.sub, h = (isNew && g.firstNew) || g.last;
+        return '<tr' + (isNew ? ' class="nt-new"' : '') + '><td class="title-cell">' + esc(s.title) + '<div class="code">' + esc(s.id) + ' · ' + typeBadge(s._type) +
+          (isNew && g.n > 1 ? ' · ' + g.n + ' lần thay đổi' : '') + '</div></td>' +
+          '<td>' + (h.fromStatus ? statusBadge(h.fromStatus) : '<span class="nd-tag">Tạo mới</span>') + '</td><td class="nt-arrow">→</td>' +
+          '<td>' + statusBadge(s.status) + '</td><td class="nowrap">' + fmtDate(g.last.date) + '</td>' +
+          '<td class="nt-who">' + esc(notifHow(g.last)) + '</td>' +
+          '<td><div class="row-actions"><button data-act="notif-history" data-id="' + esc(s.id) + '">' + ic('history') + 'Lịch sử</button></div></td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+  /** Bảng hồ sơ mới đệ trình đến tôi (Trưởng phòng / GĐTM). */
+  function notifIncomingTable(groups, isNew) {
+    return '<div class="table-wrap"><table class="grid notif-tbl"><thead><tr><th>Hồ sơ</th><th>Chuyên viên</th><th>Trình đến ngày</th>' +
+      '<th>Tình trạng hiện tại</th><th></th></tr></thead><tbody>' + groups.map(function (g) {
+        var s = g.sub, h = (isNew && g.firstNew) || g.last;
+        return '<tr' + (isNew ? ' class="nt-new"' : '') + '><td class="title-cell">' + esc(s.title) + '<div class="code">' + esc(s.id) + ' · ' + typeBadge(s._type) + '</div></td>' +
+          '<td class="nowrap">' + esc(userName(s.owner)) + '</td><td class="nowrap">' + fmtDate(h.date) + '</td><td>' + statusBadge(s.status) + '</td>' +
+          '<td><div class="row-actions"><button data-act="notif-history" data-id="' + esc(s.id) + '">' + ic('history') + 'Lịch sử</button></div></td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+  /**
+   * Cửa sổ thông báo (bấm chuông) — kiểu cửa sổ xem trước đồng bộ: ô tóm tắt + từng mục là bảng hồ sơ.
+   * "Mới" = thay đổi sau lần mở chuông trước (S.notifView giữ mốc cũ trong lúc đang xem).
+   */
+  function openNotifModal() {
     var since = S.notifView != null ? S.notifView : (S.notifSeen || 0);
     var N = notifData(since);
-    var sec = function (title, items, count) {
-      return items.length ? '<div class="nd-sec">' + esc(title) + (count ? '<span class="nd-count">' + count + ' mới</span>' : '') + '</div>' + items.map(notifItem).join('') : '';
-    };
+    var isMgr = !!(isManagerPos() && S.me.position !== 'CV');
     var inc = N.fresh.filter(function (g) { return g.kind === 'incoming'; });
     var mine = N.fresh.filter(function (g) { return g.kind === 'mine'; });
-    var body = sec('Hồ sơ mới đệ trình đến bạn (' + posLabel(S.me.position) + ')', inc, inc.length) +
-      sec('Hồ sơ của bạn thay đổi tình trạng', mine, mine.length);
-    if (!body) body = '<div class="dd-empty">' + ic('check') + 'Không có thông báo mới.</div>';
-    if (N.recent.length) body += sec('Đã xem gần đây (30 ngày)', N.recent);
-    return '<div class="dropdown notif-dd">' +
-      '<div class="dd-head"><b>Thông báo</b><small>' + (N.count ? N.count + ' hồ sơ có thay đổi mới' : 'Bạn đã xem hết thông báo') +
-      ' · bấm vào hồ sơ để xem lịch sử</small></div><div class="nd-body">' + body + '</div></div>';
+    var recMine = N.recent.filter(function (g) { return g.kind === 'mine'; });
+    var recInc = N.recent.filter(function (g) { return g.kind === 'incoming'; });
+    var approved = mine.filter(function (g) { return g.sub.status === S.cfg.approvedStatus; }).length;
+    var returned = mine.filter(function (g) { return g.sub.status === 'TRA_LAI'; }).length;
+    var summary = '<div class="meta-grid">' +
+      '<div><small>Hồ sơ có thay đổi mới</small>' + N.count + '</div>' +
+      (!isMgr || mine.length ? '<div><small>Hồ sơ của bạn đổi tình trạng</small>' + mine.length + '</div>' : '') +
+      (approved ? '<div><small>Trong đó: Đã duyệt</small>' + approved + '</div>' : '') +
+      (returned ? '<div><small>Trong đó: Trả lại</small>' + returned + '</div>' : '') +
+      (isMgr ? '<div><small>Mới đệ trình đến bạn</small>' + inc.length + '</div>' : '') +
+      '<div><small>Đã xem gần đây (30 ngày)</small>' + N.recent.length + '</div></div>';
+    var empty = function (t) { return '<div class="empty">' + t + '</div>'; };
+    var body = summary +
+      (isMgr ? syncSection('Hồ sơ mới đệ trình đến bạn (' + esc(posLabel(S.me.position)) + ')', inc.length,
+        inc.length ? notifIncomingTable(inc, true) : empty('Không có hồ sơ mới đệ trình đến bạn.'), true) : '') +
+      (isMgr && !mine.length ? '' : syncSection('Hồ sơ của bạn thay đổi tình trạng', mine.length,
+        mine.length ? notifMineTable(mine, true) : empty('Không có hồ sơ nào của bạn thay đổi tình trạng mới.'), true,
+        mine.length ? 'Do đồng bộ thư mục, Trưởng phòng cập nhật… (thay đổi do chính bạn làm thì không báo). Bấm Lịch sử để xem chi tiết từng lần thay đổi.' : '')) +
+      (recMine.length || recInc.length ? syncSection('Đã xem gần đây (30 ngày)', recMine.length + recInc.length,
+        (recMine.length ? notifMineTable(recMine, false) : '') + (recInc.length ? '<p class="muted sync-note">Đệ trình đến bạn:</p>' + notifIncomingTable(recInc, false) : ''), !N.count) : '');
+    openModal(modalHead('Thông báo thay đổi') + '<div class="modal-body">' + body + '</div>' +
+      '<div class="modal-foot"><span class="muted left">' + (N.count ? 'Đã đánh dấu đã xem — lần mở sau các hồ sơ này chuyển vào "Đã xem gần đây".' : 'Bạn đã xem hết thông báo.') + '</span>' +
+      '<button class="secondary-btn" data-act="close-modal">Đóng</button></div>', 'xl');
   }
   /** Mở chuông: giữ mốc cũ để tô "mới" trong lúc đang mở, đồng thời lưu mốc đã xem lên server. */
   function openNotif() {
@@ -402,7 +431,6 @@
         (n.count ? '<span class="nav-count">' + n.count + '</span>' : '') + ic('chevRight', 'chev') + '</button>';
     }).join('');
 
-    var notifDd = S.open === 'notif' ? notifPanel() : '';
 
     var userDd = S.open === 'user' ? '<div class="dropdown">' +
       '<div class="dd-head"><b>' + esc(me.displayName) + '</b><small>' + esc(me.username) + ' · ' + esc(posLabel(me.position)) +
@@ -419,9 +447,9 @@
         '<button class="pill-btn" data-act="go-dashboard">Dashboard</button>' +
         '<button class="icon-btn" data-act="reload" title="Tải lại dữ liệu" aria-label="Tải lại dữ liệu">' + ic('refresh') + '</button>' +
         '<button class="icon-btn" data-act="help" title="Hướng dẫn" aria-label="Hướng dẫn">' + ic('help') + '</button>' +
-        '<div class="anchor"><button class="icon-btn' + (unread ? ' ringing' : '') + '" data-act="toggle-dd" data-dd="notif" aria-label="Thông báo' + (unread ? ': ' + unread + ' mới' : '') + '"' +
+        '<div class="anchor"><button class="icon-btn' + (unread ? ' ringing' : '') + '" data-act="open-notif" id="notif-btn" aria-label="Thông báo' + (unread ? ': ' + unread + ' mới' : '') + '"' +
           ' title="' + (unread ? unread + ' hồ sơ có thay đổi mới' : 'Thông báo') + '">' + ic('bell') +
-          (unread ? '<span class="badge">' + (unread > 99 ? '99+' : unread) + '</span>' : '') + '</button>' + notifDd + '</div>' +
+          (unread ? '<span class="badge">' + (unread > 99 ? '99+' : unread) + '</span>' : '') + '</button></div>' +
         '<div class="anchor"><button class="user-btn" data-act="toggle-dd" data-dd="user"><span class="avatar">' + esc(initials(me.displayName)) +
           '</span><span class="uname">' + esc(me.username) + '</span>' + ic('chevDown') + '</button>' + userDd + '</div>' +
       '</header>' +
@@ -2533,12 +2561,13 @@
   /* =====================================================================
    * Modal
    * ===================================================================== */
+  /** wide: true = rộng (760px), 'xl' = rất rộng (bảng nhiều cột, vd cửa sổ thông báo). */
   function openModal(html, wide) {
-    modalRoot.innerHTML = '<div class="modal-bg" data-act="modal-bg"><div class="modal' + (wide ? ' wide' : '') + '" role="dialog" aria-modal="true">' + html + '</div></div>';
+    modalRoot.innerHTML = '<div class="modal-bg" data-act="modal-bg"><div class="modal' + (wide ? ' wide' : '') + (wide === 'xl' ? ' xl' : '') + '" role="dialog" aria-modal="true">' + html + '</div></div>';
     var first = modalRoot.querySelector('input:not([type=hidden]):not([readonly]), textarea, select');
     if (first) first.focus();
   }
-  function closeModal() { modalRoot.innerHTML = ''; }
+  function closeModal() { modalRoot.innerHTML = ''; S.histBack = false; }
   /** Vẽ lại hộp thoại nhưng giữ vị trí cuộn (bảng xem trước dài). */
   function keepModalScroll(fn) {
     var body = modalRoot.querySelector('.modal-body');
@@ -2611,7 +2640,8 @@
     }).join('') + '</ul>' : '<div class="empty">Chưa có lịch sử.</div>';
     openModal(modalHead('Lịch sử hồ sơ') + '<div class="modal-body"><h3 style="margin:0 0 6px">' + esc(s.title) + '</h3>' +
       '<div style="margin-bottom:14px">' + statusBadge(s.status) + '</div>' + metaGrid(s) + list + '</div>' +
-      '<div class="modal-foot">' + (canEdit(s) ? '<button class="primary-btn" style="min-height:42px;font-size:16px" data-act="open-update" data-id="' + esc(s.id) + '">' + ic('edit') + 'Cập nhật</button>' : '<span class="muted left">Bạn chỉ được xem hồ sơ này.</span>') +
+      '<div class="modal-foot">' + (S.histBack ? '<button class="secondary-btn left" data-act="notif-back">' + ic('chevLeft') + 'Thông báo</button>' : '') +
+      (canEdit(s) ? '<button class="primary-btn" style="min-height:42px;font-size:16px" data-act="open-update" data-id="' + esc(s.id) + '">' + ic('edit') + 'Cập nhật</button>' : '<span class="muted' + (S.histBack ? '' : ' left') + '">Bạn chỉ được xem hồ sơ này.</span>') +
       '<button class="secondary-btn" data-act="close-modal">Đóng</button></div>', true);
   }
 
@@ -2688,7 +2718,7 @@
       'Mỗi ô báo cáo có nút <b>Biểu đồ / Bảng</b>; bấm vào số, cột hoặc miếng biểu đồ để xem danh sách hồ sơ. "Xuất báo cáo (Excel)" tải file .xlsx gồm trang Dashboard (ô số liệu, biểu đồ, bảng dữ liệu) và các trang danh sách hồ sơ (lọc/sắp xếp được).</li>' +
       '<li>Chuyên viên xem được mọi hồ sơ nhưng chỉ sửa hồ sơ của mình. TP.MH, TP.C&amp;C, GĐTM sửa được mọi hồ sơ.</li>' +
       '<li><b>Chuông thông báo</b>: chuyên viên được báo khi hồ sơ của mình bị người khác đổi tình trạng (đồng bộ thư mục, Trưởng phòng cập nhật…); ' +
-      'TP.MH / TP.C&amp;C / GĐTM được báo khi có hồ sơ mới đệ trình đến mình. Số trên chuông giữ nguyên cho tới khi bạn bấm vào xem (kể cả khi đăng nhập máy khác); web tự cập nhật mỗi 3 phút.</li>' +
+      'TP.MH / TP.C&amp;C / GĐTM được báo khi có hồ sơ mới đệ trình đến mình. Bấm chuông mở <b>cửa sổ Thông báo thay đổi</b>: bảng hồ sơ thay đổi (tình trạng trước → hiện tại, ngày, ai thay đổi), bấm <b>Lịch sử</b> để xem chi tiết rồi "‹ Thông báo" để quay lại. Số trên chuông giữ nguyên cho tới khi bạn mở xem (kể cả khi đăng nhập máy khác); web tự cập nhật mỗi 3 phút.</li>' +
       EXT.help.join('') +
       '<li>Ô "Số ngày ở TT hiện tại" chuyển màu cam khi ≥ 7 ngày, đỏ khi ≥ 14 ngày.</li>' +
       '<li>Hồ sơ có cụm <b>"xin ý kiến"</b> trong tên (ví dụ "(Trình xin ý kiến)") được tính là <b>Báo cáo</b>, còn lại là <b>Trình duyệt</b>; lọc theo ô "Loại hồ sơ".</li>' +
@@ -2857,12 +2887,14 @@
     'toggle-side': function () { S.collapsed = !S.collapsed; render(); setTimeout(function () { S.charts.forEach(function (c) { c.resize(); }); }, 250); },
     'toggle-dd': function (el) {
       S.open = S.open === el.dataset.dd ? null : el.dataset.dd;
-      if (S.open === 'notif') openNotif();
       render();
     },
     'reload': function () { loadAll(true).then(function () { toast('Đã cập nhật dữ liệu mới nhất.'); }).catch(handleErr); },
     'run-report': function () { S.open = null; loadAll(true).then(function () { toast('Đã chạy báo cáo với dữ liệu mới nhất.'); }).catch(handleErr); },
     'help': function () { openHelp(); },
+    'open-notif': function () { S.open = null; openNotif(); openNotifModal(); render(); },
+    'notif-history': function (el) { S.histBack = true; openHistory(el.dataset.id); },
+    'notif-back': function () { S.histBack = false; openNotifModal(); },
     'logout': function () { closeModal(); logout(); },
     'change-password': function () { S.open = null; render(); openChangePassword(); },
     'cal-nav': function (el) {
