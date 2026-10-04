@@ -79,6 +79,12 @@ Phần lõi không chứa code KHMS, chỉ có các "điểm gắn" — không c
    ở cả tải 1 dự án và nhiều dự án (thay cho quyết định cũ "dòng ẩn mặc định bỏ tích"); bảng xem trước vẫn gắn nhãn "dòng ẩn".
    - Gửi lên server theo đợt ≤ ~600 gói (action `importPlans`, mỗi đợt kiểm tra hết rồi mới ghi; đọc / ghi sheet `Packages` 1 lần).
 
+10. **Xuất KHMS tất cả dự án** (theo người dùng: tài khoản **haocq, thuync, thoaiht** — ban đầu "htt", người dùng đổi thành "thoaiht"):
+   nút **"Xuất tất cả dự án"** cạnh "Xuất Excel", chỉ hiện với các username trong `KHMS_EXPORT_ALL_USERS_` (`Procurement.gs`, gửi qua
+   `khmsBootstrap_` → `khmsExportAll`). 1 file Excel: sheet **"Tổng hợp"** (mỗi dự án 1 dòng: KHMS cập nhật, Rev, số gói, giá trị, đã chọn thầu,
+   trễ, sắp đến hạn, đã ký HĐ…, có link tới sheet) + **mỗi dự án 1 sheet** (tên `STT_Tên dự án`, bố cục như "Xuất Excel"), gói còn trong KHMS,
+   không theo bộ lọc đang xem (`khmsExportAll`).
+
 ## Chi tiết hoạt động
 - **Đọc file** (`parseKhmsSheet`, ExcelJS ở trình duyệt, chỉ .xlsx/.xlsm): tìm dòng tiêu đề có cột tên gói ("Tên vật tư/ gói thầu" ưu tiên hơn "Hạng mục"…),
   STT, "Giá trị gói thầu" và nhóm cột **Ngày mời thầu / Ngày chọn thầu / Ngày ký (kết) hợp đồng / Ngày bắt đầu thi công** (ưu tiên tiêu đề bắt đầu

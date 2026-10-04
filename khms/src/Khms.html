@@ -208,7 +208,9 @@
         KH_STATES.map(function (s) { return '<option value="' + s[0] + '"' + (s[0] === k.state ? ' selected' : '') + '>' + esc(s[1]) + '</option>'; }).join('') + '</select></div></div>' +
       '<div class="field"><div class="fbody"><label for="kh-q">Gói thầu / hồ sơ</label>' +
         '<input type="text" id="kh-q" data-input="kh-q" placeholder="Nhập để tìm…" value="' + esc(k.q) + '"></div></div></div>' + info;
-    var tools = '<button class="secondary-btn" data-act="kh-export">' + ic('download') + 'Xuất Excel</button>' +
+    var tools = (S.khExportAll ? '<button class="secondary-btn" data-act="kh-export-all" title="1 file Excel: sheet Tổng hợp + mỗi dự án 1 sheet">' +
+        ic('download') + 'Xuất tất cả dự án</button>' : '') +
+      '<button class="secondary-btn" data-act="kh-export">' + ic('download') + 'Xuất Excel</button>' +
       '<button class="primary-btn kh-upload" data-act="kh-upload">' + ic('upload') + 'Tải KHMS (Excel)</button>';
     return card('khms-params', 'Kế hoạch mua sắm', body, { tools: tools, collapsible: true });
   }
@@ -1177,6 +1179,65 @@
     });
   }
 
+  /** 1 sheet danh sách gói thầu (bố cục như bảng trên web: 2 tầng tiêu đề, kế hoạch gốc / hiện hành, thực tế, tình trạng, hồ sơ). */
+  function khExportSheet(wb, name, title, rows, withProject) {
+    var ws = wb.addWorksheet(name, { views: [{ state: 'frozen', xSplit: withProject ? 3 : 2, ySplit: 4 }] });
+    var pc = khPlanCols(rows);
+    var head1 = ['STT', 'Hạng mục'].concat(withProject ? ['Dự án'] : [], ['Giá trị gói thầu']), lead = head1.length;
+    var head2 = head1.map(function () { return ''; }), spans = [];
+    MILESTONES.forEach(function (m) {
+      var sub = (pc.two ? [pc.base, pc.cur] : [pc.cur]).concat(['Thực tế'], m.key === 'start' ? [] : ['Tình trạng']);
+      spans.push(sub.length);
+      sub.forEach(function (t, i) { head1.push(i ? '' : m.head); head2.push(t); });
+    });
+    head1.push('Hồ sơ phê duyệt', 'Tình trạng hồ sơ', 'Tên hồ sơ', 'Ghi chú');
+    head2.push('', '', '', '');
+    ws.addRow([title]);
+    ws.addRow(['Xuất ngày ' + fmtDate(S.today) + ' bởi ' + S.me.displayName + ' · ' + rows.length + ' gói thầu']);
+    ws.addRow(head1); ws.addRow(head2);
+    var col = lead + 1;
+    spans.forEach(function (w) { ws.mergeCells(3, col, 3, col + w - 1); col += w; });
+    for (var c = 1; c <= head1.length; c++) if (!head2[c - 1]) ws.mergeCells(3, c, 4, c);
+    var xd = function (iso) { return iso ? new Date(iso + 'T00:00:00Z') : null; };
+    rows.forEach(function (p) {
+      var line = [p.stt, p.name].concat(withProject ? [projectLabel(p.project)] : [], [p.value]);
+      MILESTONES.forEach(function (m) {
+        if (pc.two) line.push(xd(p[m.key + 'Plan0']));
+        line.push(xd(p[m.key + 'Plan']), xd(p._actual[m.key]));
+        if (m.key !== 'start') line.push(p._ms[m.key].code === 'none' ? '' : msText(p._ms[m.key]));
+      });
+      line.push(p._sub ? p._sub.id : p.submissionId, p._sub ? statusOf(p._sub.status).label : '', p._sub ? p._sub.title : '',
+        (p.active ? '' : '[Không còn trong KHMS mới] ') + p.note);
+      var row = ws.addRow(line);
+      row.eachCell(function (cl) { if (cl.value instanceof Date) cl.numFmt = 'dd/mm/yyyy'; });
+      row.getCell(lead).numFmt = '#,##0';
+    });
+    ws.getRow(1).font = { bold: true, size: 14, color: { argb: 'FF1E2B59' } };
+    [3, 4].forEach(function (r) { khHeadStyle(ws.getRow(r), head1.length); });
+    var widths = [7, 42].concat(withProject ? [26] : [], [18]);
+    head2.slice(lead, head2.length - 4).forEach(function (t) { widths.push(t === 'Tình trạng' ? 18 : 12); });
+    widths.push(14, 18, 50, 30);
+    widths.forEach(function (w, i) { ws.getColumn(i + 1).width = w; });
+    if (rows.length) ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4 + rows.length, column: head1.length } };
+    return ws;
+  }
+  function khHeadStyle(row, n) {
+    var bd = { style: 'thin', color: { argb: 'FFB0B8CC' } };
+    for (var c = 1; c <= n; c++) {
+      var cl = row.getCell(c);
+      cl.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cl.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E2B59' } };
+      cl.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      cl.border = { top: bd, bottom: bd, left: bd, right: bd };
+    }
+  }
+  function khDownload(wb, fileName, msg) {
+    return wb.xlsx.writeBuffer().then(function (buf) {
+      downloadBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), fileName);
+      toast(msg);
+    });
+  }
+
   /* ---------- Xuất Excel danh sách gói thầu đang xem ---------- */
   function khmsExport(btn) {
     var rows = S.lastKhRows || [];
@@ -1184,58 +1245,59 @@
     busy(btn, true); setLoading(1);
     loadExcelJs().then(function (ExcelJS) {
       var wb = new ExcelJS.Workbook();
-      var ws = wb.addWorksheet('KHMS', { views: [{ state: 'frozen', xSplit: 3, ySplit: 4 }] });
-      var pc = khPlanCols(rows);
-      var head1 = ['STT', 'Hạng mục', 'Dự án', 'Giá trị gói thầu'], head2 = ['', '', '', ''], spans = [];
-      MILESTONES.forEach(function (m) {
-        var sub = (pc.two ? [pc.base, pc.cur] : [pc.cur]).concat(['Thực tế'], m.key === 'start' ? [] : ['Tình trạng']);
-        spans.push(sub.length);
-        sub.forEach(function (t, i) { head1.push(i ? '' : m.head); head2.push(t); });
+      khExportSheet(wb, 'KHMS', 'KẾ HOẠCH MUA SẮM' + (S.khms.project ? ' – DỰ ÁN ' + projectLabel(S.khms.project).toUpperCase() : ' – TẤT CẢ DỰ ÁN'), rows, true);
+      return khDownload(wb, 'KHMS-' + (S.khms.project || 'tat-ca') + '-' + S.today + '.xlsx', 'Đã xuất file Excel KHMS.');
+    }).catch(function (err) {
+      toast((err && err.message) || 'Không tạo được file Excel.', 'err');
+    }).then(function () { busy(btn, false); setLoading(-1); });
+  }
+
+  /** Tên sheet Excel: ≤ 31 ký tự, không có : \ / ? * [ ], không trùng. */
+  function khSheetName(s, used) {
+    var base = String(s).replace(/[:\\\/?*\[\]]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 31) || 'Sheet', name = base, i = 2;
+    while (used[name.toLowerCase()]) { var suf = ' (' + i++ + ')'; name = base.slice(0, 31 - suf.length) + suf; }
+    used[name.toLowerCase()] = true;
+    return name;
+  }
+  /**
+   * Xuất KHMS tất cả dự án (theo người dùng: tài khoản haocq, thuync, thoaiht — KHMS_EXPORT_ALL_USERS_ ở Procurement.gs):
+   * 1 file Excel, sheet "Tổng hợp" + mỗi dự án 1 sheet (tên "STT_Tên dự án"), gói còn trong KHMS, không theo bộ lọc đang xem.
+   */
+  function khmsExportAll(btn) {
+    var by = {};
+    S.packages.forEach(function (p) { if (p.active) (by[p.project] = by[p.project] || []).push(p); });
+    var codes = Object.keys(by).sort(projectSort);
+    if (!codes.length) { toast('Chưa có KHMS nào để xuất.', 'err'); return; }
+    busy(btn, true); setLoading(1);
+    loadExcelJs().then(function (ExcelJS) {
+      var wb = new ExcelJS.Workbook(), used = {};
+      var sum = wb.addWorksheet(khSheetName('Tổng hợp', used), { views: [{ state: 'frozen', ySplit: 3 }] });
+      var total = codes.reduce(function (n, c) { return n + by[c].length; }, 0);
+      sum.addRow(['KẾ HOẠCH MUA SẮM – TẤT CẢ DỰ ÁN']);
+      sum.addRow(['Xuất ngày ' + fmtDate(S.today) + ' bởi ' + S.me.displayName + ' · ' + codes.length + ' dự án · ' + total + ' gói thầu']);
+      var head = ['Dự án', 'Sheet', 'KHMS cập nhật', 'Rev', 'Gói thầu', 'Giá trị gói thầu', 'Đã chọn thầu', 'Trễ chọn thầu', 'Sắp đến hạn chọn thầu',
+                  'Đã ký HĐ', 'Đã chọn thầu – chưa ký HĐ', 'Chưa gắn hồ sơ'];
+      sum.addRow(head);
+      khHeadStyle(sum.getRow(3), head.length);
+      codes.forEach(function (c) {
+        var rows = by[c].slice().sort(function (a, b) { return a.order - b.order; });
+        var name = khSheetName(projectLabel(c), used);
+        khExportSheet(wb, name, 'KẾ HOẠCH MUA SẮM – DỰ ÁN ' + projectLabel(c).toUpperCase(), rows, false);
+        var st = khmsStats(rows), last = S.planLast[c];
+        var r = sum.addRow([projectLabel(c), name, last && last.date ? new Date(last.date + 'T00:00:00Z') : null, last ? last.rev : '',
+          st.n, st.value, st.done, st.late, st.soon, st.contract, st.waitContract, st.nolink]);
+        r.getCell(2).value = { text: name, hyperlink: "#'" + name.replace(/'/g, "''") + "'!A1" };
+        r.getCell(2).font = { color: { argb: 'FF2563EB' }, underline: true };
+        r.getCell(3).numFmt = 'dd/mm/yyyy';
+        r.getCell(6).numFmt = '#,##0';
       });
-      head1.push('Hồ sơ phê duyệt', 'Tình trạng hồ sơ', 'Tên hồ sơ', 'Ghi chú');
-      head2.push('', '', '', '');
-      ws.addRow(['KẾ HOẠCH MUA SẮM' + (S.khms.project ? ' – DỰ ÁN ' + projectLabel(S.khms.project).toUpperCase() : ' – TẤT CẢ DỰ ÁN')]);
-      ws.addRow(['Xuất ngày ' + fmtDate(S.today) + ' bởi ' + S.me.displayName + ' · ' + rows.length + ' gói thầu']);
-      ws.addRow(head1); ws.addRow(head2);
-      var col = 5;
-      spans.forEach(function (w) { ws.mergeCells(3, col, 3, col + w - 1); col += w; });
-      for (var c = 1; c <= head1.length; c++) if (!head2[c - 1]) ws.mergeCells(3, c, 4, c);
-      var xd = function (iso) { return iso ? new Date(iso + 'T00:00:00Z') : null; };
-      rows.forEach(function (p) {
-        var line = [p.stt, p.name, projectLabel(p.project), p.value];
-        MILESTONES.forEach(function (m) {
-          if (pc.two) line.push(xd(p[m.key + 'Plan0']));
-          line.push(xd(p[m.key + 'Plan']), xd(p._actual[m.key]));
-          if (m.key !== 'start') line.push(p._ms[m.key].code === 'none' ? '' : msText(p._ms[m.key]));
-        });
-        line.push(p._sub ? p._sub.id : p.submissionId, p._sub ? statusOf(p._sub.status).label : '', p._sub ? p._sub.title : '',
-          (p.active ? '' : '[Không còn trong KHMS mới] ') + p.note);
-        var row = ws.addRow(line);
-        row.eachCell(function (cl) { if (cl.value instanceof Date) cl.numFmt = 'dd/mm/yyyy'; });
-        row.getCell(4).numFmt = '#,##0';
-      });
-      ws.getRow(1).font = { bold: true, size: 14, color: { argb: 'FF1E2B59' } };
-      [3, 4].forEach(function (r) {
-        var row = ws.getRow(r);
-        for (var c = 1; c <= head1.length; c++) {
-          var cl = row.getCell(c);
-          cl.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-          cl.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E2B59' } };
-          cl.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-          cl.border = { top: { style: 'thin', color: { argb: 'FFB0B8CC' } }, bottom: { style: 'thin', color: { argb: 'FFB0B8CC' } },
-                        left: { style: 'thin', color: { argb: 'FFB0B8CC' } }, right: { style: 'thin', color: { argb: 'FFB0B8CC' } } };
-        }
-      });
-      var widths = [7, 42, 26, 18];
-      head2.slice(4, head2.length - 4).forEach(function (t) { widths.push(t === 'Tình trạng' ? 18 : 12); });
-      widths.push(14, 18, 50, 30);
-      widths.forEach(function (w, i) { ws.getColumn(i + 1).width = w; });
-      ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4 + rows.length, column: head1.length } };
-      return wb.xlsx.writeBuffer();
-    }).then(function (buf) {
-      downloadBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
-        'KHMS-' + (S.khms.project || 'tat-ca') + '-' + S.today + '.xlsx');
-      toast('Đã xuất file Excel KHMS.');
+      var tot = sum.addRow(['Tổng cộng', '', null, '', { formula: 'SUM(E4:E' + (3 + codes.length) + ')' }, { formula: 'SUM(F4:F' + (3 + codes.length) + ')' }]
+        .concat(['G', 'H', 'I', 'J', 'K', 'L'].map(function (L) { return { formula: 'SUM(' + L + '4:' + L + (3 + codes.length) + ')' }; })));
+      tot.font = { bold: true }; tot.getCell(6).numFmt = '#,##0';
+      sum.getRow(1).font = { bold: true, size: 14, color: { argb: 'FF1E2B59' } };
+      [40, 30, 14, 9, 10, 20, 13, 13, 13, 11, 16, 13].forEach(function (w, i) { sum.getColumn(i + 1).width = w; });
+      sum.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3 + codes.length, column: head.length } };
+      return khDownload(wb, 'KHMS-tat-ca-du-an-' + S.today + '.xlsx', 'Đã xuất KHMS ' + codes.length + ' dự án (mỗi dự án 1 sheet).');
     }).catch(function (err) {
       toast((err && err.message) || 'Không tạo được file Excel.', 'err');
     }).then(function () { busy(btn, false); setLoading(-1); });
@@ -1250,7 +1312,7 @@
   }
 
   /* ---------- Gắn vào ứng dụng ---------- */
-  EXT.data.push(function (d) { S.packages = d.packages || []; S.planUploads = d.planUploads || []; });
+  EXT.data.push(function (d) { S.packages = d.packages || []; S.planUploads = d.planUploads || []; S.khExportAll = !!d.khmsExportAll; });
   EXT.derive.push(khmsDerive);
   EXT.nav.push(function () { return { view: 'khms', icon: 'box', label: 'Kế hoạch mua sắm' }; });
   EXT.views.khms = viewKhms;
@@ -1264,6 +1326,7 @@
   var ACTIONS_ADD = {
     'kh-upload': function () { khmsUpload(); },
     'kh-export': function (el) { khmsExport(el); },
+    'kh-export-all': function (el) { khmsExportAll(el); },
     'kh-state': function (el) { S.khms.state = el.dataset.state; S.scrollReset = { 'scroll-khms': true }; render(); },
     'kh-pick-project': function (el) {
       S.khms.project = el.dataset.code; S.khms.state = el.dataset.state || '';

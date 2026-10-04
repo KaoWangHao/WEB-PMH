@@ -32,9 +32,17 @@ var KHMS_ACTIONS_ = {
   deletePlan:     function (user, p) { return deletePlan_(user, p); }
 };
 
+/**
+ * Tài khoản có nút "Xuất tất cả dự án" (1 file Excel, mỗi dự án 1 sheet) — theo người dùng: haocq, thuync, thoaiht.
+ * Chỉ là nút ở giao diện (dữ liệu KHMS mọi tài khoản đều xem được); thêm / bớt username ở đây.
+ */
+var KHMS_EXPORT_ALL_USERS_ = ['haocq', 'thuync', 'thoaiht'];
+
 /** Dữ liệu KHMS gửi kèm bootstrap_ (Submissions.gs gọi nếu có hàm này). */
-function khmsBootstrap_() {
-  return { packages: listPackages_(), planUploads: listPlanUploads_() };
+function khmsBootstrap_(user) {
+  var me = user ? normalizeUsername_(user.username) : '';
+  return { packages: listPackages_(), planUploads: listPlanUploads_(),
+           khmsExportAll: KHMS_EXPORT_ALL_USERS_.indexOf(me) >= 0 };
 }
 
 var PLAN_MILESTONES_ = ['invite', 'select', 'contract', 'start'];
