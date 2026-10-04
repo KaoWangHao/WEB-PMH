@@ -28,6 +28,7 @@ var API_ACTIONS_ = {
   importProjects: function (user, p) { return importProjects_(user, p); },
   importPlan:     function (user, p) { return importPlan_(user, p); },
   updatePackage:  function (user, p) { return updatePackage_(user, p); },
+  updatePackages: function (user, p) { return updatePackages_(user, p); },
   linkPackages:   function (user, p) { return linkPackages_(user, p); },
   deletePlan:     function (user, p) { return deletePlan_(user, p); },
   changePassword: function (user, p) { return changePassword_(user, p); },

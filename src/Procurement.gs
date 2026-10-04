@@ -210,34 +210,68 @@ function checkPackageLink_(rows, rec, submissionId, subs) {
   });
 }
 
+/** Áp 1 thay đổi vào gói (chưa ghi sheet): ngày thực tế (ISO, '' = xóa; không sau hôm nay), ghi chú, hồ sơ gắn ('' = bỏ gắn). */
+function applyPackageEdit_(rec, it, todayIso) {
+  PLAN_MILESTONES_.forEach(function (m) {
+    var k = m + 'Actual';
+    if (it[k] === undefined) return;
+    var v = it[k] ? isoToDmy_(it[k]) : '';
+    if (it[k] && !v) throw appError_('ngày không hợp lệ');
+    if (it[k] && it[k] > todayIso) throw appError_('ngày thực tế không được sau hôm nay');
+    rec[k] = v;
+  });
+  if (it.note !== undefined) rec.note = String(it.note || '').trim().slice(0, 500);
+  if (it.submissionId !== undefined) rec.submissionId = String(it.submissionId || '');
+}
+
+/** Sau khi sửa: hồ sơ gắn phải tồn tại và mỗi hồ sơ chỉ gắn 1 gói (kiểm tra cả khi đổi chéo giữa các gói trong cùng lần lưu). */
+function checkPackageLinks_(rows, changed, subs) {
+  var exists = {}, byId = {}, errs = [];
+  subs.forEach(function (s) { exists[String(s.id)] = true; });
+  rows.forEach(function (p) {
+    var sid = String(p.submissionId || '');
+    if (sid) (byId[sid] = byId[sid] || []).push(p);
+  });
+  changed.forEach(function (p) {
+    var sid = String(p.submissionId || '');
+    if (!sid) return;
+    if (!exists[sid]) errs.push('"' + p.name + '": không tìm thấy hồ sơ ' + sid);
+    else if (byId[sid].length > 1) {
+      errs.push('hồ sơ ' + sid + ' đang gắn với ' + byId[sid].length + ' gói (' + byId[sid].map(function (x) { return x.name; }).join(', ') + ')');
+    }
+  });
+  return errs.filter(function (e, i) { return errs.indexOf(e) === i; });
+}
+
 /**
- * Cập nhật 1 gói: ngày thực tế (mời thầu, chọn thầu khi chưa có hồ sơ được duyệt, ký HĐ, khởi công), ghi chú,
- * và hồ sơ gắn với gói (submissionId: '' = bỏ gắn; không gửi = giữ nguyên).
+ * Lưu nhiều gói một lần (nút "Cập nhật bảng" và form 1 gói). payload: { items: [{ id, inviteActual?, selectActual?, contractActual?,
+ * startActual?, note?, submissionId? }] }. Có lỗi ở bất kỳ gói nào → không lưu gì, báo lỗi.
  */
-function updatePackage_(user, payload) {
-  payload = payload || {};
+function updatePackages_(user, payload) {
+  var items = (payload && payload.items) || [];
+  if (!items.length) throw appError_('Không có thay đổi nào để lưu.');
+  if (items.length > PLAN_MAX_ROWS_) throw appError_('Quá nhiều gói thầu trong một lần lưu.');
   ensurePlanSheets_();
   return withLock_(function () {
     var rows = readTable_('Packages');
-    var rec = findPackage_(rows, payload.id);
-    if (!rec) throw appError_('Không tìm thấy gói thầu.');
-    PLAN_MILESTONES_.forEach(function (m) {
-      var k = m + 'Actual';
-      if (payload[k] === undefined) return;
-      var v = payload[k] ? isoToDmy_(payload[k]) : '';
-      if (payload[k] && !v) throw appError_('Ngày không hợp lệ.');
-      rec[k] = v;
+    var date = today_(), todayIso = dmyToIso_(date), changed = [], errs = [];
+    items.forEach(function (it) {
+      var rec = findPackage_(rows, it && it.id);
+      if (!rec) { errs.push('không tìm thấy gói ' + (it && it.id)); return; }
+      try { applyPackageEdit_(rec, it, todayIso); } catch (e) { errs.push('"' + rec.name + '": ' + e.message); return; }
+      rec.updatedAt = date; rec.updatedBy = user.username;
+      if (changed.indexOf(rec) < 0) changed.push(rec);
     });
-    if (payload.note !== undefined) rec.note = String(payload.note || '').trim().slice(0, 500);
-    if (payload.submissionId !== undefined) {
-      var sid = String(payload.submissionId || '');
-      checkPackageLink_(rows, rec, sid, readTable_('Submissions'));
-      rec.submissionId = sid;
-    }
-    rec.updatedAt = today_(); rec.updatedBy = user.username;
-    writeObj_('Packages', rec._row, rec);
-    return { packages: [serializePackage_(rec)] };
+    if (!errs.length) errs = checkPackageLinks_(rows, changed, readTable_('Submissions'));
+    if (errs.length) throw appError_('Chưa lưu: ' + errs.slice(0, 3).join('; ') + (errs.length > 3 ? ' (và ' + (errs.length - 3) + ' lỗi khác)' : '') + '.');
+    writeObjs_('Packages', changed);
+    return { packages: changed.map(serializePackage_) };
   });
+}
+
+/** Cập nhật 1 gói (form Cập nhật) — như updatePackages_ với 1 gói. */
+function updatePackage_(user, payload) {
+  return updatePackages_(user, { items: [payload || {}] });
 }
 
 /** Xác nhận nhiều gợi ý gắn hồ sơ một lần. payload: { links: [{ id, submissionId }] }. */
