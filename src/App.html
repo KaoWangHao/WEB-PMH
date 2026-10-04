@@ -390,7 +390,7 @@
         mine.length ? 'Do đồng bộ thư mục, Trưởng phòng cập nhật… (thay đổi do chính bạn làm thì không báo). Bấm Lịch sử để xem chi tiết từng lần thay đổi.' : '')) +
       (recMine.length || recInc.length ? syncSection('Đã xem gần đây (30 ngày)', recMine.length + recInc.length,
         (recMine.length ? notifMineTable(recMine, false) : '') + (recInc.length ? '<p class="muted sync-note">Đệ trình đến bạn:</p>' + notifIncomingTable(recInc, false) : ''), !N.count) : '');
-    openModal(modalHead('Thông báo thay đổi') + '<div class="modal-body">' + body + '</div>' +
+    openModal(modalHead('Thông báo cập nhật') + '<div class="modal-body">' + body + '</div>' +
       '<div class="modal-foot"><span class="muted left">' + (N.count ? 'Đã đánh dấu đã xem — lần mở sau các hồ sơ này chuyển vào "Đã xem gần đây".' : 'Bạn đã xem hết thông báo.') + '</span>' +
       '<button class="secondary-btn" data-act="close-modal">Đóng</button></div>', 'xl');
   }
@@ -2718,7 +2718,7 @@
       'Mỗi ô báo cáo có nút <b>Biểu đồ / Bảng</b>; bấm vào số, cột hoặc miếng biểu đồ để xem danh sách hồ sơ. "Xuất báo cáo (Excel)" tải file .xlsx gồm trang Dashboard (ô số liệu, biểu đồ, bảng dữ liệu) và các trang danh sách hồ sơ (lọc/sắp xếp được).</li>' +
       '<li>Chuyên viên xem được mọi hồ sơ nhưng chỉ sửa hồ sơ của mình. TP.MH, TP.C&amp;C, GĐTM sửa được mọi hồ sơ.</li>' +
       '<li><b>Chuông thông báo</b>: chuyên viên được báo khi hồ sơ của mình bị người khác đổi tình trạng (đồng bộ thư mục, Trưởng phòng cập nhật…); ' +
-      'TP.MH / TP.C&amp;C / GĐTM được báo khi có hồ sơ mới đệ trình đến mình. Bấm chuông mở <b>cửa sổ Thông báo thay đổi</b>: bảng hồ sơ thay đổi (tình trạng trước → hiện tại, ngày, ai thay đổi), bấm <b>Lịch sử</b> để xem chi tiết rồi "‹ Thông báo" để quay lại. Số trên chuông giữ nguyên cho tới khi bạn mở xem (kể cả khi đăng nhập máy khác); web tự cập nhật mỗi 3 phút.</li>' +
+      'TP.MH / TP.C&amp;C / GĐTM được báo khi có hồ sơ mới đệ trình đến mình. Bấm chuông mở <b>cửa sổ Thông báo cập nhật</b>: bảng hồ sơ thay đổi (tình trạng trước → hiện tại, ngày, ai thay đổi), bấm <b>Lịch sử</b> để xem chi tiết rồi "‹ Thông báo" để quay lại. Số trên chuông giữ nguyên cho tới khi bạn mở xem (kể cả khi đăng nhập máy khác); web tự cập nhật mỗi 3 phút.</li>' +
       EXT.help.join('') +
       '<li>Ô "Số ngày ở TT hiện tại" chuyển màu cam khi ≥ 7 ngày, đỏ khi ≥ 14 ngày.</li>' +
       '<li>Hồ sơ có cụm <b>"xin ý kiến"</b> trong tên (ví dụ "(Trình xin ý kiến)") được tính là <b>Báo cáo</b>, còn lại là <b>Trình duyệt</b>; lọc theo ô "Loại hồ sơ".</li>' +
