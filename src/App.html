@@ -1690,7 +1690,10 @@
   function repRows(sel, D) {
     var base;
     switch (sel.kind) {
-      case 'kpi': base = sel.key === 'approved' ? D.approved : sel.key === 'returned' ? D.returned : sel.key === 'pending' ? D.pending : D.sub; break;
+      case 'kpi':
+        base = sel.key === 'approved' ? D.approved : sel.key === 'returned' ? D.returned : sel.key === 'pending' ? D.pending :
+          sel.key === 'tpmh' ? D.pending.filter(function (s) { return s.status === TPMH_STATUS; }) : D.sub;
+        break;
       case 'owner': base = D.sub.filter(function (s) { return sel.key === '*' || s.owner === sel.key; }); break;
       case 'period':
         var r = periodRange(sel.key, D.g);
@@ -2001,7 +2004,8 @@
 
   function repSelTitle(sel, D) {
     var subName = !sel.sub ? '' : S.typeMap[sel.sub] ? S.typeMap[sel.sub].label : sel.sub === 'PENDING' ? 'Đang trình' : statusOf(sel.sub).short;
-    var kpiNames = { sub: 'Đệ trình trong kỳ', approved: 'Duyệt hoàn tất trong kỳ', returned: 'Trả lại trong kỳ', pending: 'Đang chờ duyệt' };
+    var kpiNames = { sub: 'Đệ trình trong kỳ', approved: 'Duyệt hoàn tất trong kỳ', returned: 'Trả lại trong kỳ', pending: 'Đang chờ duyệt', tpmh: 'Đang ở TP.MH' };
+    if (sel.key === 'tpmh' && TPMH_TYPE_LABELS[sel.sub]) return TPMH_TYPE_LABELS[sel.sub] + ' (đang ở TP.MH, hiện nay)';
     var main;
     switch (sel.kind) {
       case 'owner': main = (sel.key === '*' ? 'Tất cả chuyên viên' : userName(sel.key)) + ' · đệ trình trong kỳ'; break;
@@ -2025,24 +2029,42 @@
   }
 
   /** Hàng ô số liệu của kỳ (đặt trong TỔNG QUAN). */
-  /** 6 ô số liệu chính của kỳ (dùng cho TỔNG QUAN và file Excel). */
+  /** Hồ sơ đang ở TP.MH (hiện nay, theo bộ lọc) — số liệu con của "Đang chờ duyệt". */
+  var TPMH_STATUS = 'TP_MH';
+  var TPMH_TYPE_LABELS = { TD: 'Trình duyệt PMH', BC: 'Đợi báo cáo TPMH' };
+  /**
+   * Số liệu TỔNG QUAN (web + Excel): main = 4 ô tổng quát của kỳ; sub = số liệu con "Trong đó đang ở TP.MH"
+   * chia theo loại (Trình duyệt PMH / Đợi báo cáo TPMH), hiển thị nhỏ hơn, không ngang hàng ô tổng quát.
+   */
   function repKpiData(D) {
-    var pct = function (n) { return D.sub.length ? Math.round(n * 100 / D.sub.length) + '% số đệ trình' : 'trong kỳ'; };
     var avg = D.approved.length ? D.approved.reduce(function (a, s) { return a + diffDays(s.createdAt, s.approvedAt); }, 0) / D.approved.length : null;
     var longest = D.pending.reduce(function (m, s) { return Math.max(m, s._days); }, 0);
     var k = function (key, sub, color, label, n, note) { return { key: key, sub: sub, color: color, label: label, n: n, note: note }; };
-    return [k('sub', '', '#1E2B59', 'Hồ sơ đệ trình', D.sub.length, 'trong kỳ')].concat(
-      (S.cfg.docTypes || []).map(function (t) { var n = D.sub.filter(function (s) { return s._type === t.code; }).length; return k('sub', t.code, t.color, t.label, n, pct(n)); }),
-      [k('approved', '', statusOf(S.cfg.approvedStatus).color, 'Duyệt hoàn tất', D.approved.length, avg == null ? 'trong kỳ' : 'TB ' + fmt1(avg) + ' ngày để duyệt'),
-       k('returned', '', statusOf('TRA_LAI').color, 'Trả lại', D.returned.length, 'trong kỳ'),
-       k('pending', '', '#E9A23B', 'Đang chờ duyệt', D.pending.length, D.pending.length ? 'lâu nhất ' + longest + ' ngày' : 'hiện nay')]);
+    var tp = D.pending.filter(function (s) { return s.status === TPMH_STATUS; });
+    return {
+      main: [k('sub', '', '#1E2B59', 'Hồ sơ đệ trình', D.sub.length, 'trong kỳ'),
+             k('approved', '', statusOf(S.cfg.approvedStatus).color, 'Duyệt hoàn tất', D.approved.length, avg == null ? 'trong kỳ' : 'TB ' + fmt1(avg) + ' ngày để duyệt'),
+             k('returned', '', statusOf('TRA_LAI').color, 'Trả lại', D.returned.length, 'trong kỳ'),
+             k('pending', '', '#E9A23B', 'Đang chờ duyệt', D.pending.length, D.pending.length ? 'lâu nhất ' + longest + ' ngày' : 'hiện nay')],
+      sub: { title: 'Trong đó đang ở TP.MH', note: 'hiện nay', total: tp.length,
+             items: (S.cfg.docTypes || []).map(function (t) {
+               return k('tpmh', t.code, t.color, TPMH_TYPE_LABELS[t.code] || t.label, tp.filter(function (s) { return s._type === t.code; }).length, '');
+             }) }
+    };
   }
   function repKpis(D) {
     var sel = repSelOf(D.view);
-    return '<div class="rep-kpis">' + repKpiData(D).map(function (x) {
-      return '<button class="rep-kpi' + (sameSel(sel, 'kpi', 'kpi', x.key, x.sub) ? ' on' : '') + '" style="--c:' + x.color + '"' + repSelAttrs(D, 'kpi', 'kpi', x.key, x.sub) + '>' +
+    var K = repKpiData(D);
+    var on = function (x) { return sameSel(sel, 'kpi', 'kpi', x.key, x.sub) ? ' on' : ''; };
+    return '<div class="rep-kpis">' + K.main.map(function (x) {
+      return '<button class="rep-kpi' + on(x) + '" style="--c:' + x.color + '"' + repSelAttrs(D, 'kpi', 'kpi', x.key, x.sub) + '>' +
         '<span class="rk-l">' + esc(x.label) + '</span><b>' + fmtNum(x.n) + '</b><span class="rk-n">' + esc(x.note) + '</span></button>';
-    }).join('') + '</div>';
+    }).join('') + '</div>' +
+      '<div class="rep-sub"><span class="rs-l">' + esc(K.sub.title) + ' <small>(' + esc(K.sub.note) + ': ' + fmtNum(K.sub.total) + ')</small></span>' +
+      K.sub.items.map(function (x) {
+        return '<button class="rep-subkpi' + on(x) + '" style="--c:' + x.color + '"' + repSelAttrs(D, 'kpi', 'kpi', x.key, x.sub) + '>' +
+          '<span>' + esc(x.label) + '</span><b>' + fmtNum(x.n) + '</b></button>';
+      }).join('') + '</div>';
   }
 
   /** Các ô báo cáo (giữa TỔNG QUAN và thanh tab); ô "Hồ sơ đệ trình theo chuyên viên" luôn đầu tiên. */
@@ -2187,11 +2209,11 @@
     band(4, 'Bộ lọc: ' + filterSummary(D.f) + '   ·   Xuất ngày ' + fmtDate(S.today) + ' bởi ' + S.me.displayName,
       { name: 'Calibri', size: 9.5, italic: true, color: { argb: argb(MUTED) } }, null, 18);
 
-    // Ô số liệu: 6 ô, mỗi ô rộng như cột B (24) — cột C..L gộp từng cặp.
-    var kpis = repKpiData(D);
-    var slots = [[2, 2], [3, 4], [5, 6], [7, 8], [9, 10], [11, 12]];
+    // Ô số liệu: 4 ô tổng quát (B–C, D–F, G–I, J–L) + 1 hàng số liệu con "Trong đó đang ở TP.MH".
+    var K = repKpiData(D);
+    var slots = [[2, 3], [4, 6], [7, 9], [10, 12]];
     var R = 6;
-    kpis.slice(0, 6).forEach(function (k, i) {
+    K.main.forEach(function (k, i) {
       var c1 = slots[i][0], c2 = slots[i][1];
       [[R, k.label.toUpperCase(), { size: 9, bold: true, color: { argb: argb(MUTED) } }, 18],
        [R + 1, k.n, { size: 22, bold: true, color: { argb: argb(NAVY) } }, 32],
@@ -2209,7 +2231,28 @@
         ws.getRow(x[0]).height = x[3];
       });
     });
-    R += 4;
+    R += 3;
+    ws.getRow(R).height = 8; // dòng đệm: số liệu con tách khỏi 4 ô tổng quát
+    R += 1;
+    var sl = ws.getCell(R, C0);
+    sl.value = K.sub.title.toUpperCase() + ' (' + K.sub.note + ': ' + K.sub.total + ')';
+    sl.font = { name: 'Calibri', size: 8.5, bold: true, color: { argb: argb(MUTED) } };
+    sl.alignment = { vertical: 'middle', horizontal: 'left', indent: 1, wrapText: true };
+    K.sub.items.forEach(function (k, i) {
+      var c1 = 3 + i * 3, c2 = c1 + 2;
+      ws.mergeCells(R, c1, R, c2);
+      var c = ws.getCell(R, c1);
+      c.value = k.label + ':  ' + k.n;
+      c.font = { name: 'Calibri', size: 11, bold: true, color: { argb: argb(NAVY) } };
+      c.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+      for (var cc = c1; cc <= c2; cc++) {
+        var cell = ws.getCell(R, cc);
+        cell.fill = fill('F5F8FC');
+        cell.border = { left: cc === c1 ? { style: 'thick', color: { argb: argb(k.color) } } : undefined, right: cc === c2 ? thin : undefined, top: thin, bottom: thin };
+      }
+    });
+    ws.getRow(R).height = 24;
+    R += 2;
 
     /** Bảng dữ liệu: cols = [{ h, span, color, num, pct, fmt }], rows = mảng giá trị; total = dòng tổng (tùy chọn). */
     var table = function (r, cols, rows, total) {
@@ -2384,8 +2427,11 @@
     var lines = [['BÁO CÁO TỔNG HỢP HỒ SƠ – ' + D.label + (D.f.period ? ' (' + fmtDate(D.range[0]) + ' – ' + fmtDate(D.range[1]) + ')' : '')],
       ['Ngày xuất', fmtDate(S.today), 'Người xuất', S.me.displayName], [],
       ['Hồ sơ đệ trình trong kỳ', D.sub.length]];
-    types.forEach(function (t) { lines.push(['  ' + t.label, D.sub.filter(function (s) { return s._type === t.code; }).length]); });
-    lines.push(['Duyệt hoàn tất trong kỳ', D.approved.length], ['Trả lại trong kỳ', D.returned.length], ['Đang chờ duyệt (hiện nay)', D.pending.length], []);
+    var KS = repKpiData(D).sub;
+    lines.push(['Duyệt hoàn tất trong kỳ', D.approved.length], ['Trả lại trong kỳ', D.returned.length], ['Đang chờ duyệt (hiện nay)', D.pending.length],
+      ['  ' + KS.title + ' (' + KS.note + ')', KS.total]);
+    KS.items.forEach(function (x) { lines.push(['    ' + x.label, x.n]); });
+    lines.push([]);
     lines.push(['HỒ SƠ ĐỆ TRÌNH THEO CHUYÊN VIÊN']);
     lines.push(['Chuyên viên', 'Đệ trình'].concat(types.map(function (t) { return t.label; }), sts.map(function (st) { return st.short; })));
     var ownerRow = function (label, l) {
