@@ -22,7 +22,9 @@
   var ICON_ADD = {
     box: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
     upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/>',
-    link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>'
+    link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
+    briefcase: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M3 13h18"/>',
+    users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>'
   };
   Object.keys(ICON_ADD).forEach(function (k) { A.ICONS[k] = ICON_ADD[k]; });
 
@@ -196,32 +198,48 @@
 
   function khmsParamsCard() {
     var k = S.khms;
-    var last = k.project ? S.planLast[k.project] : null;
-    var pi = k.project ? khInfoOf(k.project) : null;
-    var owners = k.project ? '<div class="kh-info kh-own-info">' + ic('user') + '<span>Chuyên viên phụ trách: ' +
-        (khOwners(k.project).length ? '<b>' + esc(khOwnersText(k.project)) + '</b>' : '<span class="muted">chưa phân công</span>') +
-        ' · Giám đốc dự án: ' + (pi.director ? '<b>' + esc(pi.director) + '</b>' : '<span class="muted">chưa nhập</span>') +
-        ' · BOM phụ trách: ' + (pi.bom ? '<b>' + esc(pi.bom) + '</b>' : '<span class="muted">chưa nhập</span>') + '</span>' +
-        (S.me.isManager ? '<button class="link-btn" data-act="kh-asg-open" data-code="' + esc(k.project) + '">Phân công</button>' : '') +
-        '<button class="link-btn" data-act="kh-inf-open" data-code="' + esc(k.project) + '">Cập nhật GĐ dự án / BOM</button></div>' : '';
-    var info = k.project ? '<div class="kh-info">' + (last
-      ? ic('report') + '<span>KHMS cập nhật <b>' + fmtDate(last.date) + '</b>' + (last.rev ? ' · <b>' + esc(last.rev) + '</b>' : '') +
-        ' · ' + esc(userName(last.actor)) + (last.fileName ? ' · <span class="muted">' + esc(last.fileName) + '</span>' : '') + '</span>' +
-        (S.me.isManager ? '<button class="link-btn danger" data-act="kh-delete-plan" data-code="' + esc(k.project) + '">Xóa KHMS dự án này</button>' : '')
-      : ic('report') + '<span>Dự án này chưa có KHMS — bấm <b>Tải KHMS (Excel)</b> để tải lên.</span>') + '</div>' + owners : '';
     var body = '<div class="params">' +
       '<div class="field kh-proj"><div class="fbody"><label for="kh-project">Dự án</label>' + khmsProjectSelect('kh-project', k.project) + '</div></div>' +
       '<div class="field"><div class="fbody"><label for="kh-state">Tình trạng</label><select id="kh-state" data-change="kh-state">' +
         KH_STATES.map(function (s) { return '<option value="' + s[0] + '"' + (s[0] === k.state ? ' selected' : '') + '>' + esc(s[1]) + '</option>'; }).join('') + '</select></div></div>' +
       '<div class="field"><div class="fbody"><label for="kh-q">Gói thầu / hồ sơ</label>' +
-        '<input type="text" id="kh-q" data-input="kh-q" placeholder="Nhập để tìm…" value="' + esc(k.q) + '"></div></div></div>' + info;
-    var tools = (S.me.isManager ? '<button class="secondary-btn" data-act="kh-asg-open" title="Gán chuyên viên phụ trách cho từng dự án">' + ic('user') + 'Phân công chuyên viên</button>' : '') +
-      '<button class="secondary-btn" data-act="kh-inf-open" title="Nhập Giám đốc dự án / BOM phụ trách cho các dự án">' + ic('edit') + 'Thông tin dự án</button>' +
-      (S.khExportAll ? '<button class="secondary-btn" data-act="kh-export-all" title="1 file Excel: sheet Tổng hợp + mỗi dự án 1 sheet">' +
-        ic('download') + 'Xuất tất cả dự án</button>' : '') +
-      '<button class="secondary-btn" data-act="kh-export">' + ic('download') + 'Xuất Excel</button>' +
-      '<button class="primary-btn kh-upload" data-act="kh-upload">' + ic('upload') + 'Tải KHMS (Excel)</button>';
+        '<input type="text" id="kh-q" data-input="kh-q" placeholder="Nhập để tìm…" value="' + esc(k.q) + '"></div></div></div>' +
+      khmsProjectInfo() + khmsActionTiles();
+    var tools = '<button class="primary-btn kh-upload" data-act="kh-upload">' + ic('upload') + 'Tải KHMS (Excel)</button>';
     return card('khms-params', 'Kế hoạch mua sắm', body, { tools: tools, collapsible: true });
+  }
+  /** Thông tin dự án đang chọn: 4 ô (KHMS cập nhật, chuyên viên phụ trách, GĐ dự án, BOM), mỗi ô có thao tác riêng. */
+  function khmsProjectInfo() {
+    var code = S.khms.project;
+    if (!code) return '';
+    var last = S.planLast[code], pi = khInfoOf(code), own = khOwners(code);
+    var cell = function (icon, label, value, act) {
+      return '<div class="kh-pi"><span class="kh-pi-l">' + ic(icon) + esc(label) + '</span><div class="kh-pi-v">' + value + '</div>' + (act ? '<div class="kh-pi-a">' + act + '</div>' : '') + '</div>';
+    };
+    var none = function (t) { return '<span class="muted">' + t + '</span>'; };
+    var edit = '<button class="link-btn" data-act="kh-inf-open" data-code="' + esc(code) + '">' + ic('edit') + 'Cập nhật</button>';
+    return '<div class="kh-pinfo">' +
+      cell('report', 'KHMS cập nhật', last
+        ? '<b>' + fmtDate(last.date) + '</b>' + (last.rev ? ' · ' + esc(last.rev) : '') + '<small>' + esc(userName(last.actor)) + (last.fileName ? ' · ' + esc(last.fileName) : '') + '</small>'
+        : none('Chưa có KHMS — bấm Tải KHMS (Excel)'),
+        last && S.me.isManager ? '<button class="link-btn danger" data-act="kh-delete-plan" data-code="' + esc(code) + '">Xóa KHMS dự án này</button>' : '') +
+      cell('user', 'Chuyên viên phụ trách', own.length ? '<b>' + esc(khOwnersText(code)) + '</b>' : none('Chưa phân công'),
+        S.me.isManager ? '<button class="link-btn" data-act="kh-asg-open" data-code="' + esc(code) + '">' + ic('user') + 'Phân công</button>' : '') +
+      cell('briefcase', 'Giám đốc dự án', pi.director ? '<b>' + esc(pi.director) + '</b>' : none('Chưa nhập'), edit) +
+      cell('users', 'BOM phụ trách', pi.bom ? '<b>' + esc(pi.bom) + '</b>' : none('Chưa nhập'), edit) +
+      '</div>';
+  }
+  /** Vùng thao tác: ô nhỏ chia nhóm Xuất báo cáo / Quản lý dự án (theo người dùng: "để thành những ô nhỏ nằm ở vùng riêng"). */
+  function khmsActionTiles() {
+    var tile = function (act, icon, title, sub, extra) {
+      return '<button class="kh-tile" data-act="' + act + '"' + (extra || '') + '>' + ic(icon) + '<span><b>' + esc(title) + '</b><small>' + esc(sub) + '</small></span></button>';
+    };
+    var exp = tile('kh-export', 'download', 'Xuất Excel', 'Danh sách gói đang xem') +
+      (S.khExportAll ? tile('kh-export-all', 'download', 'Xuất tất cả dự án', 'Mỗi dự án 1 sheet + tổng hợp') : '');
+    var mng = (S.me.isManager ? tile('kh-asg-open', 'user', 'Phân công chuyên viên', 'Gán người phụ trách dự án') : '') +
+      tile('kh-inf-open', 'edit', 'Thông tin dự án', 'Giám đốc dự án / BOM');
+    return '<div class="kh-actions"><div class="kh-act-g"><span class="kh-act-h">Xuất báo cáo</span><div class="kh-act-row">' + exp + '</div></div>' +
+      '<div class="kh-act-g"><span class="kh-act-h">Quản lý dự án</span><div class="kh-act-row">' + mng + '</div></div></div>';
   }
 
   function khmsOverviewCard(scope) {

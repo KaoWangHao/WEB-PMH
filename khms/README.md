@@ -127,6 +127,11 @@ Phần lõi không chứa code KHMS, chỉ có các "điểm gắn" — không c
    Gói ẩn còn sót từ cách cũ (`active` = FALSE) được `purgeInactivePackages_` dọn khi mở web (`khmsBootstrap_`). Bỏ ô tích
    "Hiện gói không còn trong KHMS mới" ở bảng gói thầu.
 
+17. **Khu vực đầu trang KHMS chi tiết gọn lại** (theo người dùng: "chỗ xuất báo cáo để thành những ô nhỏ nằm ở vùng riêng"): góc thẻ chỉ còn
+   **Tải KHMS (Excel)**; dự án đang chọn hiện 4 ô thông tin (KHMS cập nhật · Chuyên viên phụ trách · GĐ dự án · BOM, mỗi ô có thao tác riêng —
+   `khmsProjectInfo`); vùng thao tác riêng gồm ô nhỏ theo nhóm **Xuất báo cáo** (Xuất Excel, Xuất tất cả dự án) và **Quản lý dự án**
+   (Phân công chuyên viên, Thông tin dự án) — `khmsActionTiles`.
+
 ## Chi tiết hoạt động
 - **Đọc file** (`parseKhmsSheet`, ExcelJS ở trình duyệt, chỉ .xlsx/.xlsm): tìm dòng tiêu đề có cột tên gói ("Tên vật tư/ gói thầu" ưu tiên hơn "Hạng mục"…),
   STT, "Giá trị gói thầu" và nhóm cột **Ngày mời thầu / Ngày chọn thầu / Ngày ký (kết) hợp đồng / Ngày bắt đầu thi công** (ưu tiên tiêu đề bắt đầu
