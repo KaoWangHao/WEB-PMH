@@ -4,17 +4,25 @@ name: Deploy Apps Script
 # và cập nhật đúng deployment đang dùng nên link web app không đổi.
 # Chạy tay (tab Actions → Run workflow) với "Chỉ đẩy bản thử" = true: chỉ đẩy code của nhánh đã chọn lên
 # bản nháp (HEAD) để thử ở link Test deployment (/dev, chỉ chủ sở hữu mở được); link chính giữ nguyên.
+# Chức năng chạy thử ở thư mục khms/ (Kế hoạch mua sắm) chỉ được chép vào src/ cho bản /dev; bản chính không có,
+# trừ khi chạy tay với "Đưa KHMS lên bản chính" = true. Sau khi cập nhật bản chính, HEAD được đẩy lại kèm khms/
+# để link /dev vẫn có KHMS.
 on:
   push:
     branches: [main]
     paths:
       - 'src/**'
       - '.clasp.json'
+      - 'khms/**'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
     inputs:
       test_only:
         description: 'Chỉ đẩy bản thử (link /dev), không cập nhật link chính'
+        type: boolean
+        default: false
+      include_khms:
+        description: 'Đưa Kế hoạch mua sắm (khms/) lên bản chính'
         type: boolean
         default: false
 
@@ -52,12 +60,32 @@ jobs:
           printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
           chmod 600 "$HOME/.clasprc.json"
 
+      - name: Chép chức năng chạy thử (khms/) vào src/
+        if: ${{ inputs.test_only || inputs.include_khms }}
+        run: cp khms/src/* src/
+
       - name: Đẩy code lên Apps Script
         run: clasp push --force
 
       - name: Cập nhật deployment web app
         if: ${{ !inputs.test_only }}
         run: clasp update-deployment "$DEPLOYMENT_ID" --description "GitHub ${GITHUB_SHA::7}"
+
+      - name: Đẩy lại bản nháp kèm khms/ cho link /dev
+        if: ${{ !inputs.test_only && !inputs.include_khms }}
+        run: |
+          cp khms/src/* src/
+          clasp push --force
+
+      - name: In link bản thử (/dev)
+        if: ${{ inputs.test_only }}
+        run: |
+          clasp list-deployments | tee /tmp/deployments.txt
+          HEAD_ID=$(grep '@HEAD' /tmp/deployments.txt | grep -o 'AKfy[A-Za-z0-9_-]*' | head -1)
+          if [ -n "$HEAD_ID" ]; then
+            echo "Link bản thử: https://script.google.com/macros/s/$HEAD_ID/dev"
+            echo "Link bản thử (chỉ chủ sở hữu mở được): https://script.google.com/macros/s/$HEAD_ID/dev" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Xóa thông tin đăng nhập
         if: always()

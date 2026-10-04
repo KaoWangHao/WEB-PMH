@@ -17,6 +17,11 @@ function include(name) {
   return HtmlService.createHtmlOutputFromFile(name).getContent();
 }
 
+/** Nạp file nếu có (chức năng chạy thử như khms/ chỉ có trên bản /dev); không có → chuỗi rỗng. */
+function includeIf(name) {
+  try { return include(name); } catch (e) { return ''; }
+}
+
 var API_ACTIONS_ = {
   bootstrap:      function (user) { return bootstrap_(user); },
   createSub:      function (user, p) { return createSubmission_(user, p); },
@@ -39,7 +44,9 @@ function api(action, token, payload) {
     if (action === 'login') return { ok: true, data: login_(payload) };
     if (action === 'logout') return { ok: true, data: logout_(token) };
 
-    var handler = API_ACTIONS_[action];
+    var handler = API_ACTIONS_[action] ||
+      // Chức năng chạy thử (Kế hoạch mua sắm, khms/src/Procurement.gs — chỉ có trên bản /dev).
+      (typeof KHMS_ACTIONS_ !== 'undefined' && KHMS_ACTIONS_[action]);
     if (!handler) throw appError_('Chức năng không tồn tại.');
     var user = requireSession_(token);
     if (user.mustChangePassword && action !== 'changePassword') {
