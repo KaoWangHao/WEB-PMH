@@ -85,6 +85,16 @@ Phần lõi không chứa code KHMS, chỉ có các "điểm gắn" — không c
    trễ, sắp đến hạn, đã ký HĐ…, có link tới sheet) + **mỗi dự án 1 sheet** (tên `STT_Tên dự án`, bố cục như "Xuất Excel"), gói còn trong KHMS,
    không theo bộ lọc đang xem (`khmsExportAll`).
 
+11. **Menu 2 cấp + Dashboard báo cáo KHMS** (theo người dùng: "dashboard báo cáo về tình trạng chọn thầu tổng thể nhiều dự án hoặc từng dự án,
+   có thể lựa chọn các dự án nào để tổng hợp số liệu. Trong mục chức năng KHMS chia nhỏ ra 2 cấp dưới, 1 là KHMS chi tiết các dự án và dashboard
+   báo cáo KHMS"): menu **Kế hoạch mua sắm** → **KHMS chi tiết dự án** (view `khms`) / **Dashboard báo cáo KHMS** (view `khms-dash`, `viewKhmsDash`).
+   Dashboard: **Chọn dự án** (ô tích, tìm, chọn tất cả / bỏ chọn; không chọn = tất cả; nhớ ở localStorage `hs_khdash_sel`), năm cho biểu đồ theo tháng;
+   TỔNG QUAN 6 ô (gói thầu + giá trị, đã chọn thầu % gói / % giá trị, tỷ lệ chọn thầu đúng hạn, trễ, sắp đến hạn, đã ký HĐ / chờ ký);
+   biểu đồ: tình trạng chọn thầu (doughnut), tiến độ theo mốc (mời thầu / chọn thầu / ký HĐ / khởi công), chọn thầu theo tháng (kế hoạch hiện hành
+   vs thực tế + lũy kế, trục phải), tình trạng theo dự án; bảng **Tổng hợp theo dự án** (thanh tiến độ, dòng tổng; bấm → KHMS chi tiết đã lọc);
+   **Danh sách gói thầu**: trễ chọn thầu / sắp đến hạn / đã chọn thầu – chưa ký HĐ / tất cả. Phần lõi chỉ thêm hỗ trợ chung: mục menu có
+   `children` (`App.html` `navGroupOpen`, action `nav-group`, CSS `.nav-sub`) và `chartBox` / `emptyBox` / `barConfig` trong `window.APP`.
+
 ## Chi tiết hoạt động
 - **Đọc file** (`parseKhmsSheet`, ExcelJS ở trình duyệt, chỉ .xlsx/.xlsm): tìm dòng tiêu đề có cột tên gói ("Tên vật tư/ gói thầu" ưu tiên hơn "Hạng mục"…),
   STT, "Giá trị gói thầu" và nhóm cột **Ngày mời thầu / Ngày chọn thầu / Ngày ký (kết) hợp đồng / Ngày bắt đầu thi công** (ưu tiên tiêu đề bắt đầu

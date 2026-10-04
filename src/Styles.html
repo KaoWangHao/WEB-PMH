@@ -260,6 +260,13 @@ svg.ic { width: 22px; height: 22px; flex: none; stroke: currentColor; fill: none
 .nav-item.active > svg.ic:first-child { color: #FF9B45; }
 .nav-item .lbl { flex: 1; }
 .nav-item .chev { opacity: .55; width: 18px; height: 18px; }
+/* Menu 2 cấp (mục có children) */
+.nav-item.has-active { color: #fff; }
+.nav-item.has-active > svg.ic:first-child { color: #FF9B45; }
+.nav-sub { margin: -2px 0 6px 25px; padding-left: 10px; border-left: 1px solid rgba(255, 255, 255, .16); }
+.nav-item.sub { padding: 10px 12px; font-size: 14.5px; gap: 11px; }
+.nav-item.sub > svg.ic:first-child { width: 18px; height: 18px; }
+.nav-item.sub.active::before { left: -11px; }
 .nav-count { background: var(--grad-accent); border-radius: 11px; padding: 1px 8px; font-size: 12px; font-weight: 700; box-shadow: 0 0 10px rgba(241, 99, 20, .5); }
 .nav-sep { height: 1px; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .18), transparent); margin: 12px 8px; }
 

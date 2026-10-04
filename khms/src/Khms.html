@@ -1311,22 +1311,268 @@
       (p.selectPlan ? ' · KH chọn thầu ' + fmtDate(p.selectPlan) : '') + '</div>';
   }
 
+  /* =====================================================================
+   * Dashboard báo cáo KHMS (theo người dùng: "dashboard báo cáo về tình trạng chọn thầu tổng thể nhiều dự án hoặc từng dự án,
+   * có thể lựa chọn các dự án nào để tổng hợp số liệu"). Tính ở client từ S.packages (gói còn trong KHMS).
+   * ===================================================================== */
+  var KHD_STATES = [
+    ['done', 'Đã chọn – đúng hạn'], ['lateDone', 'Đã chọn – trễ hạn'], ['late', 'Trễ hạn (chưa chọn)'],
+    ['soon', 'Sắp đến hạn (≤ ' + KHMS_SOON_DAYS + ' ngày)'], ['todo', 'Chưa đến hạn'], ['none', 'Chưa có kế hoạch']
+  ];
+  var KHD_LISTS = [['late', 'Trễ chọn thầu'], ['soon', 'Sắp đến hạn chọn thầu'], ['wait', 'Đã chọn thầu – chưa ký HĐ'], ['all', 'Tất cả gói']];
+  S.khDash = { sel: [], pick: false, pq: '', year: S.today ? +S.today.slice(0, 4) : new Date().getFullYear(), list: 'late' };
+  try { S.khDash.sel = JSON.parse(A.store.get('hs_khdash_sel') || '[]') || []; } catch (e) { S.khDash.sel = []; }
+
+  /** Dự án có KHMS → { code: [gói còn trong KHMS] }. */
+  function khdByProject() {
+    var by = {};
+    S.packages.forEach(function (p) { if (p.active) (by[p.project] = by[p.project] || []).push(p); });
+    return by;
+  }
+  /** Dự án đang tổng hợp: các dự án được chọn (còn KHMS); chưa chọn dự án nào = tất cả. */
+  function khdCodes(by) {
+    var all = Object.keys(by).sort(projectSort);
+    var sel = S.khDash.sel.filter(function (c) { return by[c]; });
+    return { all: all, codes: sel.length ? all.filter(function (c) { return sel.indexOf(c) >= 0; }) : all, picked: sel.length > 0 };
+  }
+  function khdSaveSel() { A.store.set('hs_khdash_sel', JSON.stringify(S.khDash.sel)); }
+  function khdStats(list) {
+    var st = khmsStats(list);
+    st.ms = {}; st.valDone = 0;
+    KHD_STATES.forEach(function (s) { st.ms[s[0]] = 0; });
+    list.forEach(function (p) {
+      var c = p._ms.select.code;
+      st.ms[c]++;
+      if (c === 'done' || c === 'lateDone') st.valDone += p.value || 0;
+    });
+    st.onTime = st.ms.done + st.ms.lateDone ? Math.round(st.ms.done * 100 / (st.ms.done + st.ms.lateDone)) : null;
+    return st;
+  }
+  function pctOf(n, d) { return d ? Math.round(n * 100 / d) : 0; }
+
+  function viewKhmsDash() {
+    var by = khdByProject(), sc = khdCodes(by);
+    var list = [];
+    sc.codes.forEach(function (c) { list = list.concat(by[c]); });
+    if (!sc.all.length) {
+      return card('khd-params', 'Dashboard báo cáo KHMS', '<div class="empty">Chưa có KHMS nào. Vào <b>KHMS chi tiết dự án</b> → <b>Tải KHMS (Excel)</b> để tải kế hoạch mua sắm.</div>');
+    }
+    return khdParamsCard(by, sc) + khdOverviewCard(list, sc) + khdChartsCard(by, sc, list) + khdProjectsCard(by, sc) + khdListCard(list, sc);
+  }
+
+  function khdParamsCard(by, sc) {
+    var d = S.khDash;
+    var chips = sc.picked
+      ? sc.codes.map(function (c) { return '<span class="khd-chip">' + esc(projectLabel(c)) + '<button data-act="kh-dash-unsel" data-code="' + esc(c) + '" aria-label="Bỏ ' + esc(c) + '">×</button></span>'; }).join('')
+      : '<span class="muted">Tất cả dự án có KHMS (' + sc.all.length + ')</span>';
+    var years = {};
+    S.packages.forEach(function (p) { ['selectPlan', 'selectPlan0'].forEach(function (k) { if (p[k]) years[p[k].slice(0, 4)] = 1; }); if (p._actual && p._actual.select) years[p._actual.select.slice(0, 4)] = 1; });
+    years[String(d.year)] = 1;
+    var yearSel = '<div class="field khd-year"><div class="fbody"><label for="khd-year">Năm (biểu đồ theo tháng)</label><select id="khd-year" data-change="kh-dash-year">' +
+      Object.keys(years).sort().map(function (y) { return '<option value="' + y + '"' + (+y === d.year ? ' selected' : '') + '>' + y + '</option>'; }).join('') + '</select></div></div>';
+    var picker = '';
+    if (d.pick) {
+      var q = norm(d.pq).trim();
+      var opts = sc.all.filter(function (c) { return !q || norm(projectLabel(c)).indexOf(q) >= 0; }).map(function (c) {
+        var on = S.khDash.sel.indexOf(c) >= 0;
+        return '<label class="khd-opt' + (on ? ' on' : '') + '"><input type="checkbox" data-change="kh-dash-sel" data-code="' + esc(c) + '"' + (on ? ' checked' : '') + '>' +
+          '<span>' + esc(projectLabel(c)) + '</span><small>' + by[c].length + ' gói</small></label>';
+      }).join('');
+      picker = '<div class="khd-picker"><div class="khd-picker-bar"><input type="search" id="khd-pq" data-input="kh-dash-q" placeholder="Tìm dự án…" value="' + esc(d.pq) + '">' +
+        '<button class="secondary-btn" data-act="kh-dash-all">Chọn tất cả' + (q ? ' (đang lọc)' : '') + '</button><button class="secondary-btn" data-act="kh-dash-none">Bỏ chọn</button>' +
+        '<button class="primary-btn" data-act="kh-dash-pick">Xong</button></div>' +
+        '<div class="khd-opts">' + (opts || '<span class="muted">Không có dự án phù hợp.</span>') + '</div>' +
+        '<p class="muted kh-note">Không chọn dự án nào = tổng hợp tất cả dự án có KHMS.</p></div>';
+    }
+    var body = '<div class="params khd-params"><div class="field khd-projects"><div class="fbody"><label>Dự án tổng hợp</label><div class="khd-chips">' + chips + '</div></div>' +
+      '<button class="secondary-btn" data-act="kh-dash-pick">' + ic('box') + (d.pick ? 'Đóng' : 'Chọn dự án') + (sc.picked ? ' (' + sc.codes.length + '/' + sc.all.length + ')' : '') + '</button></div>' +
+      yearSel + '</div>' + picker;
+    var tools = '<button class="secondary-btn" data-act="nav" data-view="khms">' + ic('clipboard') + 'KHMS chi tiết</button>';
+    return card('khd-params', 'Dashboard báo cáo KHMS', body, { tools: tools, collapsible: true });
+  }
+
+  function khdOverviewCard(list, sc) {
+    var st = khdStats(list), d = S.khDash;
+    var tile = function (key, color, label, n, note) {
+      return '<button class="rep-kpi' + (key && d.list === key ? ' on' : '') + '" style="--c:' + color + '"' + (key ? ' data-act="kh-dash-list" data-list="' + key + '"' : ' data-act="kh-dash-list" data-list="all"') + '>' +
+        '<span class="rk-l">' + esc(label) + '</span><b>' + n + '</b><span class="rk-n">' + esc(note) + '</span></button>';
+    };
+    var body = '<div class="rep-kpis">' +
+      tile('', '#1E2B59', 'Gói thầu', fmtNum(st.n), sc.codes.length + ' dự án' + (st.value ? ' · ' + fmtBil(st.value) : '')) +
+      tile('', MS_COLORS.done, 'Đã chọn thầu', fmtNum(st.done), pctOf(st.done, st.n) + '% số gói' + (st.value ? ' · ' + pctOf(st.valDone, st.value) + '% giá trị' : '')) +
+      tile('', '#2B9E8F', 'Chọn thầu đúng hạn', st.onTime == null ? '—' : st.onTime + '%', st.ms.done + ' đúng hạn · ' + st.ms.lateDone + ' trễ') +
+      tile('late', MS_COLORS.late, 'Trễ chọn thầu', fmtNum(st.late), 'chưa chọn, quá ngày kế hoạch') +
+      tile('soon', MS_COLORS.soon, 'Sắp đến hạn', fmtNum(st.soon), 'chọn thầu trong ' + KHMS_SOON_DAYS + ' ngày tới') +
+      tile('wait', '#2B4396', 'Đã ký hợp đồng', fmtNum(st.contract), st.waitContract + ' gói đã chọn thầu chờ ký') +
+      '</div><p class="muted kh-note">Ngày chọn thầu thực tế = ngày duyệt hồ sơ gắn với gói (hoặc ngày nhập / từ file). Bấm ô để xem danh sách gói bên dưới.</p>';
+    return card('khd-overview', 'Tổng quan' + (sc.picked ? ' <span class="ov-period">' + sc.codes.length + ' dự án</span>' : ' <span class="ov-period">Tất cả dự án</span>'), body, { collapsible: true });
+  }
+
+  function khdDoughnut(labels, data, colors) {
+    var total = data.reduce(function (a, b) { return a + b; }, 0);
+    return {
+      type: 'doughnut',
+      data: { labels: labels, datasets: [{ data: data, backgroundColor: colors, borderColor: '#fff', borderWidth: 2 }] },
+      options: {
+        animation: false, responsive: true, maintainAspectRatio: false, cutout: '62%',
+        plugins: {
+          legend: { position: 'right', labels: { usePointStyle: true, pointStyle: 'circle', boxWidth: 8, boxHeight: 8, color: '#44506A',
+            generateLabels: function (ch) {
+              return ch.data.labels.map(function (l, i) {
+                return { text: l + ': ' + fmtNum(data[i]) + ' (' + pctOf(data[i], total) + '%)', fillStyle: colors[i], strokeStyle: colors[i], pointStyle: 'circle', index: i, hidden: !ch.getDataVisibility(i) };
+              });
+            } } },
+          tooltip: { backgroundColor: 'rgba(16, 26, 51, .92)', padding: 10, cornerRadius: 10,
+            callbacks: { label: function (ctx) { return ' ' + ctx.label + ': ' + fmtNum(ctx.raw) + ' gói (' + pctOf(ctx.raw, total) + '%)'; } } }
+        }
+      }
+    };
+  }
+
+  function khdChartsCard(by, sc, list) {
+    if (typeof Chart === 'undefined') {
+      return card('khd-charts', 'Biểu đồ', '<div class="empty">Không tải được thư viện biểu đồ (kiểm tra kết nối mạng).</div>', { collapsible: true });
+    }
+    var st = khdStats(list), boxes = [], d = S.khDash;
+    var keys = KHD_STATES.map(function (s) { return s[0]; }), names = KHD_STATES.map(function (s) { return s[1]; });
+    var colors = keys.map(function (k) { return MS_COLORS[k]; });
+    // 1. Tình trạng chọn thầu
+    if (st.n) {
+      boxes.push(A.chartBox('khd-ch-state', 'Tình trạng chọn thầu (' + fmtNum(st.n) + ' gói)', 300));
+      S.pendingCharts.push({ id: 'khd-ch-state', config: khdDoughnut(names, keys.map(function (k) { return st.ms[k]; }), colors) });
+    } else boxes.push(A.emptyBox('Tình trạng chọn thầu', 'Không có gói thầu.'));
+    // 2. Theo mốc: mời thầu / chọn thầu / ký HĐ / khởi công
+    var msDs = keys.map(function (k, i) {
+      return { label: names[i], backgroundColor: colors[i], stack: 's', data: MILESTONES.map(function (m) { return list.filter(function (p) { return p._ms[m.key].code === k; }).length; }) };
+    });
+    boxes.push(A.chartBox('khd-ch-ms', 'Tiến độ theo mốc', 300));
+    S.pendingCharts.push({ id: 'khd-ch-ms', config: A.barConfig(MILESTONES.map(function (m) { return m.label; }), msDs, { horizontal: true, stacked: true, legend: true, unit: ' gói' }) });
+    // 3. Chọn thầu theo tháng trong năm: số gói kế hoạch / thực tế + lũy kế
+    var y = String(d.year), plan = [], act = [], cp = [], ca = [], sp = 0, sa = 0;
+    for (var mth = 1; mth <= 12; mth++) {
+      var key = y + '-' + ('0' + mth).slice(-2);
+      var np = list.filter(function (p) { return p.selectPlan && p.selectPlan.slice(0, 7) === key; }).length;
+      var na = list.filter(function (p) { return p._actual.select && p._actual.select.slice(0, 7) === key; }).length;
+      plan.push(np); act.push(na); sp += np; sa += na;
+      cp.push(sp); ca.push(key <= S.today.slice(0, 7) ? sa : null);
+    }
+    var mcfg = A.barConfig(['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12'], [
+      { label: 'Kế hoạch chọn thầu', data: plan, backgroundColor: '#9DB4E0', order: 2 },
+      { label: 'Thực tế chọn thầu', data: act, backgroundColor: MS_COLORS.done, order: 2 }
+    ], { legend: true, unit: ' gói' });
+    // Lũy kế trong năm vẽ theo trục phải (để cột theo tháng không bị nhỏ).
+    mcfg.data.datasets.push({ type: 'line', label: 'Lũy kế kế hoạch (trục phải)', data: cp, yAxisID: 'y1', borderColor: '#2B4396', backgroundColor: '#2B4396', borderDash: [6, 4], pointRadius: 2, tension: .25, order: 1 },
+      { type: 'line', label: 'Lũy kế thực tế (trục phải)', data: ca, yAxisID: 'y1', borderColor: '#2E8B3E', backgroundColor: '#2E8B3E', pointRadius: 2, tension: .25, order: 1, spanGaps: false });
+    mcfg.options.scales.y1 = { position: 'right', beginAtZero: true, grid: { display: false }, border: { display: false }, ticks: { precision: 0, color: '#76829B' } };
+    boxes.push(A.chartBox('khd-ch-month', 'Chọn thầu theo tháng – năm ' + y + ' (kế hoạch hiện hành / thực tế)', 300));
+    S.pendingCharts.push({ id: 'khd-ch-month', config: mcfg });
+    // 4. Theo dự án (xếp chồng theo tình trạng chọn thầu)
+    if (sc.codes.length > 1) {
+      var codes = sc.codes.slice().sort(function (a, b) { return by[b].length - by[a].length; });
+      var pds = keys.map(function (k, i) {
+        return { label: names[i], backgroundColor: colors[i], stack: 's', data: codes.map(function (c) { return by[c].filter(function (p) { return p._ms.select.code === k; }).length; }) };
+      });
+      var h = Math.max(300, codes.length * 26 + 80);
+      boxes.push('<div class="khd-wide">' + A.chartBox('khd-ch-proj', 'Tình trạng chọn thầu theo dự án', h) + '</div>');
+      S.pendingCharts.push({ id: 'khd-ch-proj', config: A.barConfig(codes.map(function (c) { return projectLabel(c); }), pds, { horizontal: true, stacked: true, legend: true, unit: ' gói' }) });
+    }
+    return card('khd-charts', 'Biểu đồ', '<div class="charts">' + boxes.join('') + '</div>', { collapsible: true });
+  }
+
+  function khdProjectsCard(by, sc) {
+    var go = function (c, state, n, cls) {
+      return n ? '<button class="link-btn' + (cls ? ' ' + cls : '') + '" data-act="kh-dash-go" data-code="' + esc(c) + '" data-state="' + state + '">' + fmtNum(n) + '</button>' : '<span class="muted">0</span>';
+    };
+    var tot = [];
+    var rows = sc.codes.map(function (c) {
+      var st = khdStats(by[c]), pct = pctOf(st.done, st.n), last = S.planLast[c];
+      tot = tot.concat(by[c]);
+      return '<tr><td><button class="link-btn" data-act="kh-dash-go" data-code="' + esc(c) + '" data-state="">' + projectCell(c) + '</button></td>' +
+        '<td class="nowrap">' + (last ? fmtDate(last.date) : '—') + '</td>' +
+        '<td class="num">' + go(c, '', st.n) + '</td><td class="num nowrap">' + (st.value ? fmtBil(st.value) : '—') + '</td>' +
+        '<td class="num">' + go(c, 'done', st.done) + '</td>' +
+        '<td><div class="khd-bar" title="' + pct + '% gói đã chọn thầu"><span style="width:' + pct + '%"></span></div><small>' + pct + '%</small></td>' +
+        '<td class="num">' + (st.onTime == null ? '<span class="muted">—</span>' : st.onTime + '%') + '</td>' +
+        '<td class="num">' + go(c, 'late', st.late, 'bad') + '</td><td class="num">' + go(c, 'soon', st.soon, 'warn') + '</td>' +
+        '<td class="num">' + go(c, 'contract', st.contract) + '</td><td class="num">' + go(c, 'wait-contract', st.waitContract) + '</td></tr>';
+    }).join('');
+    var t = khdStats(tot), tp = pctOf(t.done, t.n);
+    var foot = sc.codes.length > 1 ? '<tfoot><tr><td>Tổng cộng (' + sc.codes.length + ' dự án)</td><td></td><td class="num">' + fmtNum(t.n) + '</td><td class="num nowrap">' + (t.value ? fmtBil(t.value) : '—') + '</td>' +
+      '<td class="num">' + fmtNum(t.done) + '</td><td><div class="khd-bar"><span style="width:' + tp + '%"></span></div><small>' + tp + '%</small></td>' +
+      '<td class="num">' + (t.onTime == null ? '—' : t.onTime + '%') + '</td><td class="num">' + fmtNum(t.late) + '</td><td class="num">' + fmtNum(t.soon) + '</td>' +
+      '<td class="num">' + fmtNum(t.contract) + '</td><td class="num">' + fmtNum(t.waitContract) + '</td></tr></tfoot>' : '';
+    return card('khd-projects', 'Tổng hợp theo dự án', '<div class="table-wrap"><table class="grid kh-sum khd-sum"><thead><tr><th>Dự án</th><th>KHMS cập nhật</th>' +
+      '<th class="num">Gói thầu</th><th class="num">Giá trị</th><th class="num">Đã chọn thầu</th><th>Tiến độ chọn thầu</th><th class="num" title="Đã chọn thầu đúng hạn / tổng đã chọn">Đúng hạn</th>' +
+      '<th class="num">Trễ chọn thầu</th><th class="num">Sắp đến hạn</th><th class="num">Đã ký HĐ</th><th class="num">Chờ ký HĐ</th></tr></thead><tbody>' + rows + '</tbody>' + foot + '</table></div>' +
+      '<p class="muted kh-note">Bấm tên dự án / số để mở KHMS chi tiết của dự án (đã lọc theo tình trạng).</p>', { collapsible: true });
+  }
+
+  function khdListCard(list, sc) {
+    var d = S.khDash, mode = d.list;
+    var rows = list.filter(function (p) {
+      var c = p._ms.select.code;
+      if (mode === 'late') return c === 'late';
+      if (mode === 'soon') return c === 'soon';
+      if (mode === 'wait') return (c === 'done' || c === 'lateDone') && !p._actual.contract;
+      return true;
+    });
+    rows.sort(function (a, b) {
+      if (mode === 'late') return b._ms.select.days - a._ms.select.days;
+      if (mode === 'soon') return a._ms.select.days - b._ms.select.days;
+      return projectSort(a.project, b.project) || a.order - b.order;
+    });
+    var seg = '<div class="seg" role="group" aria-label="Danh sách">' + KHD_LISTS.map(function (l) {
+      return '<button class="' + (mode === l[0] ? 'on' : '') + '" data-act="kh-dash-list" data-list="' + l[0] + '">' + l[1] + '</button>';
+    }).join('') + '</div>';
+    var body = rows.length ? '<div class="table-scroll" id="scroll-khd"><table class="grid"><thead><tr><th>Dự án</th><th>Gói thầu</th><th class="num">Giá trị</th>' +
+      '<th>KH chọn thầu</th><th>Thực tế</th><th>Tình trạng chọn thầu</th><th>Ký HĐ</th><th>Hồ sơ</th></tr></thead><tbody>' +
+      rows.map(function (p) {
+        return '<tr><td>' + projectCell(p.project) + '</td><td class="title-cell"><button class="link-btn" data-act="kh-edit" data-id="' + esc(p.id) + '">' + esc(p.name) + '</button></td>' +
+          '<td class="num nowrap">' + (p.value != null ? fmtMoney(p.value) : '—') + '</td><td class="nowrap">' + (p.selectPlan ? fmtDate(p.selectPlan) : '—') + '</td>' +
+          '<td class="nowrap">' + (p._actual.select ? fmtDate(p._actual.select) : '—') + '</td><td>' + msBadge(p._ms.select) + '</td><td>' + msBadge(p._ms.contract) + '</td>' +
+          '<td class="nowrap">' + (p._sub ? statusBadge(p._sub.status) + ' <span class="code">' + esc(p._sub.id) + '</span>' : '<span class="muted">Chưa gắn</span>') + '</td></tr>';
+      }).join('') + '</tbody></table></div>' : '<div class="empty">Không có gói thầu.</div>';
+    return card('khd-list', 'Danh sách gói thầu', '<div class="khd-list-bar">' + seg + '</div>' + body +
+      '<div class="range-bar">' + fmtNum(rows.length) + ' gói thầu · ' + (sc.picked ? sc.codes.length + ' dự án được chọn' : 'tất cả dự án') + '</div>', { collapsible: true });
+  }
+
   /* ---------- Gắn vào ứng dụng ---------- */
   EXT.data.push(function (d) { S.packages = d.packages || []; S.planUploads = d.planUploads || []; S.khExportAll = !!d.khmsExportAll; });
   EXT.derive.push(khmsDerive);
-  EXT.nav.push(function () { return { view: 'khms', icon: 'box', label: 'Kế hoạch mua sắm' }; });
+  // Menu 2 cấp: Kế hoạch mua sắm → KHMS chi tiết dự án / Dashboard báo cáo KHMS.
+  EXT.nav.push(function () {
+    return { group: 'khms', icon: 'box', label: 'Kế hoạch mua sắm', children: [
+      { view: 'khms', icon: 'clipboard', label: 'KHMS chi tiết dự án' },
+      { view: 'khms-dash', icon: 'chart', label: 'Dashboard báo cáo KHMS' }
+    ] };
+  });
   EXT.views.khms = viewKhms;
+  EXT.views['khms-dash'] = viewKhmsDash;
   EXT.subInfo.push(subPackageInfo);
   EXT.busy.push(function () { return !!S.khEdit; }); // không tự làm mới 3 phút khi đang sửa bảng
   EXT.help.push('<li><b>Kế hoạch mua sắm</b>: bấm <b>Tải KHMS (Excel)</b> và chọn file KHMS của dự án (cột STT, Hạng mục, Giá trị gói thầu, các nhóm Ngày mời thầu / chọn thầu / ký kết hợp đồng / bắt đầu thi công) — web đọc ngày kế hoạch. ' +
         'Mỗi gói thầu gắn với 1 hồ sơ phê duyệt (web gợi ý theo tên hồ sơ cùng dự án, bấm <b>Xác nhận</b>); hồ sơ được duyệt → ngày duyệt là <b>ngày chọn thầu thực tế</b>. ' +
         'Ngày mời thầu, ký hợp đồng, khởi công thực tế: bấm <b>Cập nhật bảng</b> để nhập cho cả bảng rồi <b>Lưu thay đổi</b> (hoặc bấm tên gói để sửa 1 gói). Tải lại KHMS (Rev mới): cập nhật kế hoạch, giữ kế hoạch gốc, ngày thực tế và hồ sơ đã gắn. ' +
-        'File tổng hợp nhiều sheet đặt tên <b>"STT_Tên dự án"</b> (vd KHMS cả phòng) → web tải <b>nhiều dự án một lần</b>, mỗi sheet vào dự án theo số đầu tên sheet.</li>');
+        'File tổng hợp nhiều sheet đặt tên <b>"STT_Tên dự án"</b> (vd KHMS cả phòng) → web tải <b>nhiều dự án một lần</b>, mỗi sheet vào dự án theo số đầu tên sheet. ' +
+        '<b>Dashboard báo cáo KHMS</b>: bấm <b>Chọn dự án</b> để tổng hợp 1, vài hoặc tất cả dự án — tình trạng chọn thầu, tiến độ theo mốc, chọn thầu theo tháng, bảng theo dự án, danh sách gói trễ / sắp đến hạn.</li>');
 
   var ACTIONS_ADD = {
     'kh-upload': function () { khmsUpload(); },
     'kh-export': function (el) { khmsExport(el); },
     'kh-export-all': function (el) { khmsExportAll(el); },
+    'kh-dash-pick': function () { S.khDash.pick = !S.khDash.pick; render(); },
+    'kh-dash-all': function () {
+      var by = khdByProject(), q = norm(S.khDash.pq).trim();
+      Object.keys(by).forEach(function (c) { if ((!q || norm(projectLabel(c)).indexOf(q) >= 0) && S.khDash.sel.indexOf(c) < 0) S.khDash.sel.push(c); });
+      khdSaveSel(); render();
+    },
+    'kh-dash-none': function () { S.khDash.sel = []; khdSaveSel(); render(); },
+    'kh-dash-unsel': function (el) { S.khDash.sel = S.khDash.sel.filter(function (c) { return c !== el.dataset.code; }); khdSaveSel(); render(); },
+    'kh-dash-list': function (el) { S.khDash.list = el.dataset.list; S.scrollReset = { 'scroll-khd': true }; render(); },
+    'kh-dash-go': function (el) {
+      S.view = 'khms'; S.khms.project = el.dataset.code; S.khms.state = el.dataset.state || ''; S.khms.q = '';
+      S.scrollReset = { 'scroll-khms': true }; render(); window.scrollTo(0, 0);
+    },
     'kh-state': function (el) { S.khms.state = el.dataset.state; S.scrollReset = { 'scroll-khms': true }; render(); },
     'kh-pick-project': function (el) {
       S.khms.project = el.dataset.code; S.khms.state = el.dataset.state || '';
@@ -1396,6 +1642,12 @@
     'kh-inactive': function (el) {
       S.khms.inactive = el.checked; render();
     },
+    'kh-dash-sel': function (el) {
+      var c = el.dataset.code, sel = S.khDash.sel.filter(function (x) { return x !== c; });
+      if (el.checked) sel.push(c);
+      S.khDash.sel = sel; khdSaveSel(); render();
+    },
+    'kh-dash-year': function (el) { S.khDash.year = +el.value; render(); },
     'kh-imp-project': function (el) {
       S.khImport.project = el.value; keepModalScroll(openKhmsImport);
     },
@@ -1442,6 +1694,7 @@
       if (el.dataset.f !== 'note' && /[\/\-.]{2}/.test(el.value)) el.value = el.value.replace(/([\/\-.])[\/\-.]+/g, '$1');
       khEditStore(el);
     },
+    'kh-dash-q': function (el) { S.khDash.pq = el.value; render(); },
     'kh-q': function (el) {
       clearTimeout(qTimer);
       qTimer = setTimeout(function () { S.khms.q = el.value; S.scrollReset = { 'scroll-khms': true }; render(); }, 250);

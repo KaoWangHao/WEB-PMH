@@ -423,13 +423,27 @@
     return items;
   }
 
+  /** Nhóm menu mở khi người dùng mở, mặc định mở nếu đang ở 1 mục con. */
+  function navGroupOpen(n) {
+    var st = S.navOpen && S.navOpen[n.group];
+    return st != null ? st : n.children.some(function (c) { return c.view === S.view; });
+  }
+
   function renderShell() {
     var unread = notifUnread();
     var me = S.me;
-    var nav = navItems().map(function (n) {
-      return '<button class="nav-item' + (S.view === n.view ? ' active' : '') + '" data-act="nav" data-view="' + n.view + '">' +
+    var navBtn = function (n, sub) {
+      return '<button class="nav-item' + (sub ? ' sub' : '') + (S.view === n.view ? ' active' : '') + '" data-act="nav" data-view="' + n.view + '">' +
         ic(n.icon) + '<span class="lbl">' + esc(n.label) + '</span>' +
-        (n.count ? '<span class="nav-count">' + n.count + '</span>' : '') + ic('chevRight', 'chev') + '</button>';
+        (n.count ? '<span class="nav-count">' + n.count + '</span>' : '') + (sub ? '' : ic('chevRight', 'chev')) + '</button>';
+    };
+    // Mục có children (vd Kế hoạch mua sắm → KHMS chi tiết dự án / Dashboard báo cáo KHMS): nhóm mở/đóng, mục con thụt vào.
+    var nav = navItems().map(function (n) {
+      if (!n.children) return navBtn(n);
+      var open = navGroupOpen(n), cur = n.children.some(function (c) { return c.view === S.view; });
+      return '<button class="nav-item nav-group' + (cur ? ' has-active' : '') + '" data-act="nav-group" data-group="' + esc(n.group) + '" aria-expanded="' + open + '">' +
+        ic(n.icon) + '<span class="lbl">' + esc(n.label) + '</span>' + ic(open ? 'chevDown' : 'chevRight', 'chev') + '</button>' +
+        (open ? '<div class="nav-sub">' + n.children.map(function (c) { return navBtn(c, true); }).join('') + '</div>' : '');
     }).join('');
 
 
@@ -2884,6 +2898,15 @@
       if (window.innerWidth <= 1000) S.collapsed = true;
       closeModal(); render(); window.scrollTo(0, 0);
     },
+    'nav-group': function (el) {
+      var n = navItems().filter(function (x) { return x.group === el.dataset.group; })[0];
+      if (!n) return;
+      S.navOpen = S.navOpen || {};
+      var open = navGroupOpen(n), cur = n.children.some(function (c) { return c.view === S.view; });
+      // Nhóm đang đóng và chưa ở mục con nào → mở nhóm và vào mục con đầu tiên.
+      if (!open && !cur) { S.navOpen[n.group] = true; ACTIONS.nav({ dataset: { view: n.children[0].view } }); return; }
+      S.navOpen[n.group] = !open; render();
+    },
     'go-dashboard': function () { ACTIONS.nav({ dataset: { view: S.me.isManager ? 'manager' : 'home' } }); },
     'toggle-side': function () { S.collapsed = !S.collapsed; render(); setTimeout(function () { S.charts.forEach(function (c) { c.resize(); }); }, 250); },
     'toggle-dd': function (el) {
@@ -3273,7 +3296,8 @@
     statusOf: statusOf, statusBadge: statusBadge, userName: userName, card: card,
     projectLabel: projectLabel, projectCell: projectCell, projectSort: projectSort, projectCodesOf: projectCodesOf,
     openModal: openModal, closeModal: closeModal, modalHead: modalHead, modalError: modalError, keepModalScroll: keepModalScroll,
-    syncSection: syncSection, loadExcelJs: loadExcelJs, downloadBlob: downloadBlob
+    syncSection: syncSection, loadExcelJs: loadExcelJs, downloadBlob: downloadBlob,
+    chartBox: chartBox, emptyBox: emptyBox, barConfig: barConfig
   };
 
   boot();
