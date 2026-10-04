@@ -54,6 +54,7 @@ Phần lõi không chứa code KHMS, chỉ có các "điểm gắn" — không c
    tình trạng tính theo bản mới nhất.
 5. Cập nhật: thay vì từng dòng, **1 nút "Cập nhật bảng"** cho cả bảng, điều chỉnh toàn bảng một lúc rồi **Lưu thay đổi** một lần.
 6. **Tạm thời chỉ chạy trên `/dev`**, code và trao đổi để riêng thư mục này; deploy sau.
+7. **STT gói thầu do hệ thống tự đánh 1, 2, 3…** theo thứ tự các gói (được tích) trong file, **không dùng STT có trong file Excel** (STT trong file chỉ dùng để nhận ra dòng nhóm I, II… không phải gói thầu).
 
 ## Chi tiết hoạt động
 - **Đọc file** (`parseKhmsSheet`, ExcelJS ở trình duyệt, chỉ .xlsx/.xlsm): tìm dòng tiêu đề có cột tên gói ("Hạng mục", "Tên vật tư/ gói thầu"…),
