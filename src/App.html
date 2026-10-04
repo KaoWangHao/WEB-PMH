@@ -3003,13 +3003,14 @@
             '"Ngày mời thầu / Ngày chọn thầu / Ngày ký kết hợp đồng" (dưới mỗi nhóm có cột Kế hoạch, Thực tế).');
         }
         var guess = projectCodesOf(file.name).filter(function (c) { return S.projMap[c]; })[0] || S.khms.project || '';
-        // Nhiều sheet có bảng KHMS: ưu tiên sheet đang hiện, không phải bản sao "… (2)", rồi sheet nhiều gói nhất.
-        var rank = function (s) { return (s.visible ? 2 : 0) + (/\(\d+\)\s*$/.test(s.name) ? 0 : 1); };
+        // Nhiều sheet có bảng KHMS: ưu tiên sheet đang hiện, rồi bản có số "(n)" lớn nhất — theo người dùng, file KHMSGT
+        // dùng "KHMSGT (2)" (bản mới) thay cho "KHMSGT" — rồi sheet nhiều gói nhất.
+        var copyNo = function (s) { var m = s.name.match(/\((\d+)\)\s*$/); return m ? +m[1] : 0; };
+        var better = function (a, b) {
+          return (a.visible - b.visible) || (copyNo(a) - copyNo(b)) || (a.rows.length - b.rows.length);
+        };
         var best = 0;
-        sheets.forEach(function (s, i) {
-          var b = sheets[best];
-          if (rank(s) > rank(b) || (rank(s) === rank(b) && s.rows.length > b.rows.length)) best = i;
-        });
+        sheets.forEach(function (s, i) { if (better(s, sheets[best]) > 0) best = i; });
         S.khImport = { fileName: file.name, sheets: sheets, sheet: best, project: guess, skip: {}, useProgress: true };
         sheets[best].rows.forEach(function (r, i) { if (r.hidden) S.khImport.skip[i] = true; });
         openKhmsImport();

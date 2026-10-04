@@ -59,6 +59,16 @@ jobs:
         if: ${{ !inputs.test_only }}
         run: clasp update-deployment "$DEPLOYMENT_ID" --description "GitHub ${GITHUB_SHA::7}"
 
+      - name: In link bản thử (/dev)
+        if: ${{ inputs.test_only }}
+        run: |
+          clasp list-deployments | tee /tmp/deployments.txt
+          HEAD_ID=$(grep '@HEAD' /tmp/deployments.txt | grep -o 'AKfy[A-Za-z0-9_-]*' | head -1)
+          if [ -n "$HEAD_ID" ]; then
+            echo "Link bản thử: https://script.google.com/macros/s/$HEAD_ID/dev"
+            echo "Link bản thử (chỉ chủ sở hữu mở được): https://script.google.com/macros/s/$HEAD_ID/dev" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Xóa thông tin đăng nhập
         if: always()
         run: rm -f "$HOME/.clasprc.json"
