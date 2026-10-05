@@ -55,7 +55,9 @@
    * Điểm gắn chức năng mở rộng (vd Kế hoạch mua sắm ở thư mục khms/, workflow chép vào src/ khi deploy): file mở rộng nạp sau App.html,
    * dùng window.APP (khai báo cuối file) để thêm menu, trang, action, xử lý sự kiện, dữ liệu. Không có file mở rộng thì các danh sách rỗng.
    */
-  var EXT = { nav: [], views: {}, change: {}, input: {}, derive: [], data: [], subInfo: [], help: [], busy: [] };
+  // names: tên hiển thị tài khoản hệ thống (vd 'auto-sync'); syncNotes: hàm trả thêm câu cho chú thích nút "Đồng bộ thư mục";
+  // adminCards: hàm trả thẻ HTML thêm vào trang Quản trị.
+  var EXT = { nav: [], views: {}, change: {}, input: {}, derive: [], data: [], subInfo: [], help: [], busy: [], names: {}, syncNotes: [], adminCards: [] };
   var root = document.getElementById('root');
   var modalRoot = document.getElementById('modal-root');
 
@@ -129,7 +131,7 @@
     var p = (S.cfg.positions || []).filter(function (x) { return x.code === code; })[0];
     return p ? p.label : code;
   }
-  function userName(u) { return S.userMap[u] ? S.userMap[u].displayName : u; }
+  function userName(u) { return S.userMap[u] ? S.userMap[u].displayName : EXT.names[u] || u; }
   function initials(name) {
     var parts = String(name || '?').trim().split(/\s+/);
     return ((parts.length > 1 ? parts[parts.length - 2][0] : '') + parts[parts.length - 1][0]).toUpperCase();
@@ -1026,6 +1028,7 @@
         (last.reassigned ? ', ' + last.reassigned + ' đổi chuyên viên' : '') + (last.created ? ', ' + last.created + ' tạo mới' : '') + '). '
                  : 'Chưa đồng bộ lần nào. ') +
       'Kết nối VPN, bấm nút rồi chọn thư mục ' + S.cfg.folderSync.rootName + ' trên ổ chia sẻ; web chỉ đọc tên file và cho xem trước trước khi cập nhật.' +
+      EXT.syncNotes.map(function (fn) { return fn() || ''; }).join('') +
       (S.me.isManager ? '' : ' Bạn chỉ cập nhật được hồ sơ của mình.');
   }
   /** TỔNG QUAN gọn: 1 hàng ô số liệu chính của kỳ (bấm để xem hồ sơ); lọc tình trạng/loại ở THAM SỐ. */
@@ -2610,7 +2613,7 @@
       '<p class="muted" style="margin:12px 0 0">Chỉ quản trị viên tạo được tài khoản. Người dùng mới phải đổi mật khẩu tạm ở lần đăng nhập đầu tiên. ' +
       'Chuyên viên chỉ sửa được hồ sơ của mình; TP.MH, TP.C&amp;C, GĐTM và quản trị viên sửa được mọi hồ sơ. ' +
       'Xóa tài khoản: bấm <b>Sửa</b> → <b>Xóa tài khoản</b> (có thể chuyển hồ sơ của người đó cho tài khoản khác).</p>';
-    return card('admin-users', 'Danh sách tài khoản', body, { tools: tools }) + adminProjectsCard();
+    return card('admin-users', 'Danh sách tài khoản', body, { tools: tools }) + EXT.adminCards.map(function (fn) { return fn() || ''; }).join('') + adminProjectsCard();
   }
 
   function adminProjectsCard() {

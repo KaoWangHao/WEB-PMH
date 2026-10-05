@@ -4,7 +4,8 @@ name: Deploy Apps Script
 # và cập nhật đúng deployment đang dùng nên link web app không đổi.
 # Chạy tay (tab Actions → Run workflow) với "Chỉ đẩy bản thử" = true: chỉ đẩy code của nhánh đã chọn lên
 # bản nháp (HEAD) để thử ở link Test deployment (/dev, chỉ chủ sở hữu mở được); link chính giữ nguyên.
-# Kế hoạch mua sắm (KHMS) nằm ở thư mục khms/ và được chép vào src/ trước khi đẩy — có trên cả bản chính và /dev.
+# Chức năng mở rộng ở thư mục riêng — Kế hoạch mua sắm (khms/), đồng bộ thư mục tự động (autosync/) — được chép vào src/
+# trước khi đẩy (cả bản chính và /dev). Xóa thư mục là gỡ chức năng; thư mục không có thì bỏ qua.
 on:
   push:
     branches: [main]
@@ -12,6 +13,7 @@ on:
       - 'src/**'
       - '.clasp.json'
       - 'khms/**'
+      - 'autosync/**'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
     inputs:
@@ -54,8 +56,11 @@ jobs:
           printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
           chmod 600 "$HOME/.clasprc.json"
 
-      - name: Chép Kế hoạch mua sắm (khms/) vào src/
-        run: cp khms/src/* src/
+      - name: Chép chức năng mở rộng (khms/, autosync/) vào src/
+        run: |
+          for d in khms autosync; do
+            if [ -d "$d/src" ]; then cp "$d"/src/* src/; echo "Đã chép $d/src"; fi
+          done
 
       - name: Đẩy code lên Apps Script
         run: clasp push --force

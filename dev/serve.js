@@ -9,8 +9,12 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
 const SRC = path.join(ROOT, 'src');
-// Chức năng chạy thử (Kế hoạch mua sắm) ở khms/src — giống bản /dev. Chạy giống bản chính: KHMS=0 node dev/serve.js
-const DIRS = [SRC].concat(process.env.KHMS === '0' ? [] : [path.join(ROOT, 'khms', 'src')]);
+// Chức năng mở rộng (thư mục riêng, workflow chép vào src/ khi deploy): Kế hoạch mua sắm khms/src, đồng bộ tự động autosync/src.
+// Tắt từng phần khi chạy thử: KHMS=0 / AUTOSYNC=0 node dev/serve.js
+const DIRS = [SRC]
+  .concat(process.env.KHMS === '0' ? [] : [path.join(ROOT, 'khms', 'src')])
+  .concat(process.env.AUTOSYNC === '0' ? [] : [path.join(ROOT, 'autosync', 'src')])
+  .filter((d) => fs.existsSync(d));
 const PORT = Number(process.env.PORT) || 5173;
 
 function findFile(name) {

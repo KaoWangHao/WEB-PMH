@@ -13,6 +13,15 @@ function doGet() {
   return out;
 }
 
+/**
+ * Nhận dữ liệu gửi từ ngoài (POST) — chỉ dùng cho chức năng mở rộng: đồng bộ thư mục tự động (thư mục autosync/).
+ * Không có chức năng mở rộng → trả lời "không hỗ trợ".
+ */
+function doPost(e) {
+  if (typeof autoSyncPost_ === 'function') return autoSyncPost_(e);
+  return ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'Không hỗ trợ.' })).setMimeType(ContentService.MimeType.JSON);
+}
+
 function include(name) {
   return HtmlService.createHtmlOutputFromFile(name).getContent();
 }
@@ -46,8 +55,9 @@ function api(action, token, payload) {
     if (action === 'logout') return { ok: true, data: logout_(token) };
 
     var handler = API_ACTIONS_[action] ||
-      // Chức năng chạy thử (Kế hoạch mua sắm, khms/src/Procurement.gs — chỉ có trên bản /dev).
-      (typeof KHMS_ACTIONS_ !== 'undefined' && KHMS_ACTIONS_[action]);
+      // Chức năng mở rộng (thư mục riêng, workflow chép vào src/ khi deploy): Kế hoạch mua sắm (khms/), đồng bộ tự động (autosync/).
+      (typeof KHMS_ACTIONS_ !== 'undefined' && KHMS_ACTIONS_[action]) ||
+      (typeof AUTO_SYNC_ACTIONS_ !== 'undefined' && AUTO_SYNC_ACTIONS_[action]);
     if (!handler) throw appError_('Chức năng không tồn tại.');
     var user = requireSession_(token);
     if (user.mustChangePassword && action !== 'changePassword') {
