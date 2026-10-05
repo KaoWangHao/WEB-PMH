@@ -18,7 +18,8 @@ var AUTO_SYNC_WEB_APP_URL_ = 'https://script.google.com/macros/s/AKfycbzvKv467-Z
 
 /** Action của chức năng (Code.gs tra thêm bảng này). */
 var AUTO_SYNC_ACTIONS_ = {
-  autoSyncKey: function (user) { return rotateAutoSyncKey_(user); }
+  autoSyncKey:    function (user) { return rotateAutoSyncKey_(user); },
+  autoSyncForget: function (user, p) { return forgetAutoSyncMachine_(user, p); }
 };
 
 /** Dữ liệu gửi kèm bootstrap_ (Submissions.gs gọi nếu có hàm này). */
@@ -27,6 +28,12 @@ function autoSyncBootstrap_() {
 }
 var AUTO_SYNC_KEY_PROP_ = 'AUTO_SYNC_KEY_HASH';
 var AUTO_SYNC_LAST_PROP_ = 'LAST_AUTO_SYNC';
+// Nhiều máy cùng chạy script (dự phòng): lần chạy gần nhất của TỪNG máy, { tênMáy: info }.
+// Máy không gửi dữ liệu quá 30 ngày tự bị xóa khỏi danh sách; tối đa 20 máy.
+var AUTO_SYNC_MACHINES_PROP_ = 'AUTO_SYNC_MACHINES';
+var AUTO_SYNC_FORGET_DAYS_ = 30;
+var AUTO_SYNC_MAX_MACHINES_ = 20;
+var AUTO_SYNC_NONAME_ = '(không rõ tên máy)';
 
 function autoSyncHash_(key) {
   return bytesToHex_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, 'auto-sync|' + String(key), Utilities.Charset.UTF_8));
@@ -37,12 +44,60 @@ function autoSyncUser_() {
   return { username: AUTO_SYNC_USER_, displayName: 'Đồng bộ tự động', position: '', isAdmin: false, isManager: true, active: true };
 }
 
-/** Trạng thái gửi cho client (bootstrap): đã cấu hình chưa + lần chạy gần nhất. */
+/** Trạng thái gửi cho client (bootstrap): đã cấu hình chưa, lần chạy gần nhất (mọi máy) và lần chạy gần nhất của từng máy. */
 function autoSyncStatus_() {
   var props = PropertiesService.getScriptProperties();
   var last = null;
   try { last = JSON.parse(props.getProperty(AUTO_SYNC_LAST_PROP_) || 'null'); } catch (e) { last = null; }
-  return { configured: !!props.getProperty(AUTO_SYNC_KEY_PROP_), last: last };
+  var map = autoSyncMachineMap_(props);
+  var machines = Object.keys(map).map(function (k) { var m = map[k]; m.name = k; return m; });
+  machines.sort(function (a, b) { return a.name.localeCompare(b.name); });
+  return { configured: !!props.getProperty(AUTO_SYNC_KEY_PROP_), last: last, machines: machines };
+}
+
+function autoSyncMachineMap_(props) {
+  var map;
+  try { map = JSON.parse(props.getProperty(AUTO_SYNC_MACHINES_PROP_) || '{}'); } catch (e) { map = {}; }
+  return map && typeof map === 'object' && !(map instanceof Array) ? map : {};
+}
+
+/** Ghi kết quả 1 lần chạy: LAST_AUTO_SYNC (mọi máy) + bản ghi của máy đó (giữ thời điểm thành công gần nhất). */
+function recordAutoSyncRun_(props, info) {
+  props.setProperty(AUTO_SYNC_LAST_PROP_, JSON.stringify(info));
+  try {
+    withLock_(function () {
+      var map = autoSyncMachineMap_(props);
+      var name = info.machine || AUTO_SYNC_NONAME_;
+      var prev = map[name] || {};
+      var rec = {};
+      for (var k in info) if (k !== 'machine') rec[k] = info[k];
+      rec.lastOkAt = info.ok ? info.at : (prev.lastOkAt || '');
+      rec.lastOkTs = info.ok ? info.ts : (prev.lastOkTs || 0);
+      map[name] = rec;
+      var minTs = info.ts - AUTO_SYNC_FORGET_DAYS_ * 86400000;
+      var names = Object.keys(map).filter(function (n) { return (map[n].ts || 0) >= minTs; });
+      names.sort(function (a, b) { return (map[b].ts || 0) - (map[a].ts || 0); });
+      var kept = {};
+      names.slice(0, AUTO_SYNC_MAX_MACHINES_).forEach(function (n) { kept[n] = map[n]; });
+      props.setProperty(AUTO_SYNC_MACHINES_PROP_, JSON.stringify(kept));
+    });
+  } catch (e) {
+    console.error('Không ghi được trạng thái máy đồng bộ: ' + (e && e.message));
+  }
+}
+
+/** Admin xóa 1 máy khỏi danh sách (máy đã gỡ script / thay máy khác). Máy còn chạy thì lần gửi sau sẽ hiện lại. */
+function forgetAutoSyncMachine_(user, p) {
+  requireAdmin_(user);
+  var name = String((p && p.machine) || '');
+  var props = PropertiesService.getScriptProperties();
+  withLock_(function () {
+    var map = autoSyncMachineMap_(props);
+    if (!map[name]) throw appError_('Không tìm thấy máy "' + name + '" trong danh sách.');
+    delete map[name];
+    props.setProperty(AUTO_SYNC_MACHINES_PROP_, JSON.stringify(map));
+  });
+  return { status: autoSyncStatus_() };
 }
 
 /** Admin tạo khóa mới cho máy chạy đồng bộ tự động (khóa cũ hết hiệu lực). Chỉ trả khóa 1 lần. */
@@ -64,7 +119,9 @@ function autoSyncPost_(e) {
   try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) { return autoSyncJson_({ ok: false, error: 'Dữ liệu không hợp lệ.' }); }
   var hash = props.getProperty(AUTO_SYNC_KEY_PROP_);
   if (!hash || !body.key || autoSyncHash_(body.key) !== hash) return autoSyncJson_({ ok: false, error: 'Khóa đồng bộ tự động không đúng.' });
-  var info = { at: Utilities.formatDate(new Date(), APP_CONFIG.TIMEZONE, 'dd/MM/yyyy HH:mm'), machine: String(body.machine || '').slice(0, 60) };
+  var now = new Date();
+  var info = { at: Utilities.formatDate(now, APP_CONFIG.TIMEZONE, 'dd/MM/yyyy HH:mm'), ts: now.getTime(),
+               machine: String(body.machine || '').trim().slice(0, 60) };
   try {
     if (body.error) throw appError_(String(body.error).slice(0, 300));
     var files = body.files;
@@ -76,12 +133,12 @@ function autoSyncPost_(e) {
     info.files = plan.total; info.changed = res.folderSync ? res.folderSync.changed : 0; info.created = res.folderSync ? res.folderSync.created : 0;
     info.skipped = (res.skipped || []).length + plan.conflicts + plan.dupWeb;
     info.ok = true;
-    props.setProperty(AUTO_SYNC_LAST_PROP_, JSON.stringify(info));
+    recordAutoSyncRun_(props, info);
     return autoSyncJson_({ ok: true, info: info });
   } catch (err) {
     info.ok = false;
     info.error = err && err.message ? String(err.message).slice(0, 300) : String(err);
-    props.setProperty(AUTO_SYNC_LAST_PROP_, JSON.stringify(info));
+    recordAutoSyncRun_(props, info);
     if (!err.appCode) console.error(err && err.stack ? err.stack : err);
     return autoSyncJson_({ ok: false, error: info.error });
   }
