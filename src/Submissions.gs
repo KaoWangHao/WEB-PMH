@@ -146,11 +146,11 @@ function updateSubmission_(user, payload) {
 }
 
 function deleteSubmission_(user, payload) {
-  requireAdmin_(user);
   var id = String((payload && payload.id) || '');
   return withLock_(function () {
     var rec = findSubmission_(id);
     if (!rec) throw appError_('Không tìm thấy hồ sơ ' + id + '.');
+    if (!canDeleteSubmission_(user, rec)) throw appError_('Bạn chỉ được xóa hồ sơ của chính mình.', 'FORBIDDEN');
     var histRows = readTable_('History')
       .filter(function (h) { return String(h.submissionId) === id; })
       .map(function (h) { return h._row; });

@@ -135,6 +135,8 @@
     return ((parts.length > 1 ? parts[parts.length - 2][0] : '') + parts[parts.length - 1][0]).toUpperCase();
   }
   function canEdit(sub) { return S.me.isManager || sub.owner === S.me.username; }
+  /** Xóa hồ sơ: quản trị viên xóa mọi hồ sơ, mỗi người xóa được hồ sơ của mình (server kiểm tra lại). */
+  function canDelete(sub) { return S.me.isAdmin || sub.owner === S.me.username; }
   function isManagerPos() { return (S.cfg.positions || []).some(function (p) { return p.code === S.me.position && p.manager; }); }
   function statusBadge(code) {
     var st = statusOf(code);
@@ -2692,7 +2694,7 @@
       '<div class="form-row"><label>Tình trạng</label>' + statusPicker(s.status) + '</div>' +
       '<div class="form-row"><label for="m-note">Ghi chú (không bắt buộc)</label><textarea id="m-note" placeholder="Ví dụ: lý do trả lại, nội dung cần bổ sung…"></textarea></div>' +
       '<div class="info-box">Ngày ghi nhận thay đổi: <b>' + fmtDate(S.today) + '</b> (tự động theo ngày hệ thống)</div></div>' +
-      '<div class="modal-foot">' + (S.me.isAdmin ? '<button class="danger-btn left" data-act="delete-sub" data-id="' + esc(s.id) + '">Xóa hồ sơ</button>' : '') +
+      '<div class="modal-foot">' + (canDelete(s) ? '<button class="danger-btn left" data-act="delete-sub" data-id="' + esc(s.id) + '">Xóa hồ sơ</button>' : '') +
       '<button class="secondary-btn" data-act="open-history" data-id="' + esc(s.id) + '">' + ic('history') + 'Lịch sử</button>' +
       '<button class="secondary-btn" data-act="close-modal">Hủy</button>' +
       '<button class="primary-btn" style="min-height:42px;font-size:16px" data-act="submit-update" data-id="' + esc(s.id) + '">' + ic('check') + 'Lưu</button></div>', true);
@@ -2784,7 +2786,8 @@
       '<li>Ngày trình là ngày đầu tiên hồ sơ chuyển sang một tình trạng "Đang trình …" (hồ sơ chuyển thẳng sang Đã duyệt/Trả lại: ngày đầu tiên rời ổ Chuyên viên).</li>' +
       '<li><b>Báo cáo tổng hợp</b> (Dashboard Trưởng phòng; chuyên viên: mục "Báo cáo tổng hợp"): chọn kỳ <b>Tuần / Tháng / Quý / Năm</b> ở THAM SỐ, bấm ‹ › để lùi/tiến kỳ, "Hiện tại" để về kỳ này. ' +
       'Mỗi ô báo cáo có nút <b>Biểu đồ / Bảng</b>; bấm vào số, cột hoặc miếng biểu đồ để xem danh sách hồ sơ. "Xuất báo cáo (Excel)" tải file .xlsx gồm trang Dashboard (ô số liệu, biểu đồ, bảng dữ liệu) và các trang danh sách hồ sơ (lọc/sắp xếp được).</li>' +
-      '<li>Chuyên viên xem được mọi hồ sơ nhưng chỉ sửa hồ sơ của mình. TP.MH, TP.C&amp;C, GĐTM sửa được mọi hồ sơ.</li>' +
+      '<li>Chuyên viên xem được mọi hồ sơ nhưng chỉ sửa hồ sơ của mình. TP.MH, TP.C&amp;C, GĐTM sửa được mọi hồ sơ. ' +
+      'Mỗi người <b>xóa được hồ sơ của mình</b> (nút "Xóa hồ sơ" trong hộp Cập nhật, bấm 2 lần để xác nhận); quản trị viên xóa được mọi hồ sơ.</li>' +
       '<li><b>Chuông thông báo</b>: chuyên viên được báo khi hồ sơ của mình đổi tình trạng do người khác cập nhật hoặc do <b>đồng bộ thư mục</b> (kể cả khi chính bạn bấm đồng bộ); ' +
       'TP.MH / TP.C&amp;C / GĐTM được báo khi có hồ sơ mới đệ trình đến mình. Bấm chuông mở <b>cửa sổ Thông báo cập nhật</b>: bảng hồ sơ thay đổi (tình trạng trước → hiện tại, ngày, ai thay đổi), bấm <b>Lịch sử</b> để xem chi tiết rồi "‹ Thông báo" để quay lại. Số trên chuông giữ nguyên cho tới khi bạn mở xem (kể cả khi đăng nhập máy khác); web tự cập nhật mỗi 3 phút.</li>' +
       EXT.help.join('') +

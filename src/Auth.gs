@@ -150,6 +150,11 @@ function canEditSubmission_(user, sub) {
   return user.isManager || normalizeUsername_(sub.owner) === user.username;
 }
 
+/** Xóa hồ sơ: quản trị viên xóa mọi hồ sơ; chuyên viên (mọi tài khoản) xóa được hồ sơ của chính mình. */
+function canDeleteSubmission_(user, sub) {
+  return user.isAdmin || normalizeUsername_(sub.owner) === user.username;
+}
+
 function changePassword_(user, payload) {
   var oldPw = String((payload && payload.oldPassword) || '');
   var newPw = String((payload && payload.newPassword) || '');
