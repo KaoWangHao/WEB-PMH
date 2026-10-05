@@ -136,3 +136,46 @@ function resetUserPassword_(user, payload) {
     return adminUserView_(rec);
   });
 }
+
+/**
+ * Xóa hẳn tài khoản (chỉ admin; theo người dùng: "cấp quyền xóa tài khoản cho admin"). payload: { username, transferTo? }.
+ * - Không xóa được chính mình (nên luôn còn ít nhất 1 admin).
+ * - Hồ sơ của tài khoản bị xóa: transferTo = tài khoản đang hoạt động → chuyển chuyên viên phụ trách sang người đó (mỗi hồ sơ ghi
+ *   1 dòng History); bỏ trống → giữ nguyên (hồ sơ vẫn ghi tên đăng nhập cũ, Trưởng phòng / admin vẫn sửa được).
+ * - Phiên đăng nhập của tài khoản bị xóa hết hiệu lực ở lần gọi tiếp theo (requireSession_ không còn thấy tài khoản).
+ */
+function deleteUser_(user, payload) {
+  requireAdmin_(user);
+  var username = normalizeUsername_(payload && payload.username);
+  var transferTo = normalizeUsername_(payload && payload.transferTo);
+  if (!username) throw appError_('Thiếu tài khoản cần xóa.');
+  if (username === user.username) throw appError_('Bạn không thể tự xóa tài khoản của mình.');
+  if (transferTo === username) throw appError_('Hãy chọn tài khoản khác để chuyển hồ sơ.');
+  return withLock_(function () {
+    var rec = findUserRecord_(username);
+    if (!rec) throw appError_('Không tìm thấy tài khoản "' + username + '".');
+    var target = null;
+    if (transferTo) {
+      target = findUserRecord_(transferTo);
+      if (!target || !toBool_(target.active)) throw appError_('Tài khoản nhận hồ sơ "' + transferTo + '" không tồn tại hoặc đã khóa.');
+    }
+    var moved = [];
+    if (target) {
+      var date = today_(), hist = [];
+      var note = 'Xóa tài khoản ' + String(rec.displayName || username) + ': đổi chuyên viên → ' + String(target.displayName || transferTo);
+      readTable_('Submissions').forEach(function (s) {
+        if (normalizeUsername_(s.owner) !== username) return;
+        s.owner = transferTo; s.updatedAt = date;
+        writeObj_('Submissions', s._row, s);
+        moved.push(s.id);
+        hist.push({ submissionId: s.id, fromStatus: s.status, toStatus: s.status, actor: user.username, note: note, date: date });
+      });
+      appendRows_('History', hist);
+    }
+    deleteRows_('Users', [rec._row]);
+    PropertiesService.getScriptProperties().deleteProperty(NOTIF_PREFIX_ + username);
+    // KHMS: bỏ / thay tài khoản này trong phân công chuyên viên phụ trách dự án.
+    if (typeof replaceAssignOwner_ === 'function') replaceAssignOwner_(username, target ? transferTo : '');
+    return { username: username, transferred: moved.length };
+  });
+}

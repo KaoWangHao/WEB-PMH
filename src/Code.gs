@@ -35,7 +35,8 @@ var API_ACTIONS_ = {
   listUsers:      function (user) { return listUsers_(user); },
   createUser:     function (user, p) { return createUser_(user, p); },
   updateUser:     function (user, p) { return updateUser_(user, p); },
-  resetPassword:  function (user, p) { return resetUserPassword_(user, p); }
+  resetPassword:  function (user, p) { return resetUserPassword_(user, p); },
+  deleteUser:     function (user, p) { return deleteUser_(user, p); }
 };
 
 function api(action, token, payload) {
