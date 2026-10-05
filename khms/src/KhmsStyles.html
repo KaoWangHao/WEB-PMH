@@ -186,4 +186,20 @@ table.grid.kh-table { font-size: 13.5px; }
 .kh-pi-users { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px 14px; max-height: 220px; overflow: auto;
   padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--page); }
 .kh-plan0 { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line); }
+/* Hoàn thành chọn thầu – chờ xác nhận */
+.kh-pend-bar { display: flex; align-items: center; gap: 12px; width: 100%; margin: 0 0 18px; padding: 14px 18px; text-align: left; cursor: pointer;
+  background: var(--accent-soft); color: var(--ink); border: 1px solid #F7C3A3; border-radius: var(--radius); font: inherit; font-size: 14px; line-height: 1.5;
+  box-shadow: var(--shadow); }
+.kh-pend-bar:hover { border-color: var(--accent); }
+.kh-pend-bar > svg { flex: none; width: 22px; height: 22px; color: var(--accent); }
+.kh-pend-bar b { color: var(--accent-dark); }
+.kh-pend-go { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 4px; font-weight: 700; color: var(--navy-900); white-space: nowrap; }
+.kh-pend-go svg { width: 16px; height: 16px; }
+.kh-pend-chip { display: block; margin-top: 4px; padding: 2px 8px; border: 1px dashed var(--accent); border-radius: 999px; background: #fff;
+  color: var(--accent-dark); font: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.kh-pend td { vertical-align: middle; }
+.kh-pend .kh-pend-sel select { width: 100%; min-width: 220px; max-width: 420px; }
+.kh-pend-chg { display: block; margin-top: 4px; color: var(--accent-dark); font-weight: 700; }
+.kh-pend tr.muted-row td { opacity: .55; }
+@media (max-width: 640px) { .kh-pend-bar { flex-wrap: wrap; } .kh-pend-go { margin-left: 0; } }
 </style>

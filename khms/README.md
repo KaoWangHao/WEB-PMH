@@ -178,3 +178,14 @@ Phần lõi không chứa code KHMS, chỉ có các "điểm gắn" — không c
     trong danh mục, Phạm vi: Tất cả / Có KHMS / Chưa có KHMS; bỏ cột "Cập nhật" (xem ở tooltip nút Sửa). Nút **Phân công chuyên viên** (bảng dự án × chuyên viên)
     và **Khai báo GĐDA / BOM** (nhiều dự án) trên trang, mặc định hiện mọi dự án. **Phân công chuyên viên mở cho mọi tài khoản** (`assignProjects_` bỏ
     `requireManager_`; `saveKhmsProject_` không còn giới hạn "chỉ tự nhận / bỏ mình"); đổi tên dự án vẫn chỉ Trưởng phòng / admin.
+21. **Hoàn thành chọn thầu – chờ xác nhận** (theo người dùng: "khi có 1 hồ sơ mới được duyệt là link qua KHMS, mình muốn khi vào KHMS dự án đó, sẽ có chỗ thông báo
+    là có bnhieu gói thầu được hoàn thành chọn thầu, rồi ấn vô đó sẽ hiện ra cửa sổ thông báo trước là hồ sơ đã duyệt đó tương ứng với gói thầu nào trong KHMS để
+    chuyên viên kiểm tra trước khi đồng ý xác nhận cho đồng bộ qua, hoặc có cần điều chỉnh lại không"):
+    - Cột mới `Packages.selectConfirmed` (ngày duyệt đã xác nhận) + `skipSubs` (hồ sơ đã xác nhận "không thuộc gói này"). Ngày chọn thầu thực tế chỉ lấy theo hồ sơ
+      khi `selectConfirmed` = ngày duyệt hiện tại; không thì gói **chờ xác nhận** (`p._pending`). Gói chưa gắn mà web gợi ý 1 hồ sơ **đã duyệt** cũng chờ xác nhận.
+    - KHMS chi tiết: thanh "N gói thầu đã hoàn thành chọn thầu" (theo dự án đang xem / mọi dự án) + ô chọn thầu thực tế "dd/mm · chờ xác nhận" + nút "Xác nhận chọn thầu";
+      menu "Kế hoạch mua sắm" / "KHMS chi tiết dự án" có số đếm. Cửa sổ: hồ sơ đã duyệt → gói thầu tương ứng (đổi được, hoặc "Không thuộc gói thầu nào"),
+      KH chọn thầu, ngày duyệt (đúng hạn / trễ N ngày); tích dòng đồng ý → **Xác nhận & đồng bộ** (action `confirmSelections`: gắn + xác nhận; hồ sơ đang gắn gói
+      khác thì chuyển sang; "không thuộc" → gỡ + thêm vào `skipSubs`). Dòng bỏ tích vẫn chờ lần sau.
+    - Người dùng tự gắn hồ sơ đã duyệt (nút Xác nhận gợi ý, "Cập nhật bảng", form 1 gói) = đã xác nhận. Dữ liệu cũ: 1 lần (cờ `KHMS_SELECT_CONFIRM_V1`, `migrateSelectConfirm_`)
+      gói đã gắn hồ sơ đã duyệt được coi là đã xác nhận.
