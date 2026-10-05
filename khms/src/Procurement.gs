@@ -7,6 +7,9 @@
  * - Ngày chọn thầu thực tế = ngày duyệt của hồ sơ gắn với gói (tính ở client, luôn khớp hồ sơ); cột selectActual chỉ là
  *   ngày lấy từ file / nhập tay cho gói chưa có hồ sơ được duyệt trên web.
  * - Ngày mời thầu / ký hợp đồng / khởi công thực tế: chuyên viên tự cập nhật (updatePackage_).
+ * - Ngày kế hoạch (…Plan0 gốc, …Plan hiện hành): chuyên viên cũng sửa được như ngày thực tế (theo người dùng: "các data trong cột
+ *   kế hoạch, chuyên viên được quyền cập nhật lại"); tải lại file KHMS vẫn cập nhật kế hoạch hiện hành theo file.
+ * - Thông tin dự án (mã số, tên, chuyên viên phụ trách, GĐ dự án, BOM): saveKhmsProject_ — mọi tài khoản thêm được dự án mới.
  * - Gắn hồ sơ với gói thầu: web gợi ý theo tên, người dùng xác nhận (linkPackages_) hoặc chọn hồ sơ khác.
  * Mọi tài khoản được tải KHMS và cập nhật gói thầu; Trưởng phòng/admin được xóa KHMS của một dự án.
  */
@@ -36,7 +39,8 @@ var KHMS_ACTIONS_ = {
   linkPackages:   function (user, p) { return linkPackages_(user, p); },
   deletePlan:     function (user, p) { return deletePlan_(user, p); },
   assignProjects: function (user, p) { return assignProjects_(user, p); },
-  updateProjectInfo: function (user, p) { return updateProjectInfo_(user, p); }
+  updateProjectInfo: function (user, p) { return updateProjectInfo_(user, p); },
+  saveKhmsProject: function (user, p) { return saveKhmsProject_(user, p); }
 };
 
 /**
@@ -136,6 +140,69 @@ function updateProjectInfo_(user, payload) {
     });
     rewriteTable_('KhmsAssign', keepAssignRows_(byCode));
     return { assign: listAssign_() };
+  });
+}
+
+/**
+ * Trang "Thông tin dự án" của KHMS (theo người dùng: "thông tin mã số dự án, tên dự án, chuyên viên phụ trách, GDDA và BOM phụ trách …
+ * cho phép chuyên viên có thể tự cập nhật thêm dự án khi cần"). payload: { code, isNew, name?, owners?: [username], director?, bom? }.
+ * - Thêm dự án (isNew): mọi tài khoản; mã chưa có trong danh mục (số STT, mã phụ STT.n hoặc chữ), tên bắt buộc.
+ * - Đổi tên dự án đã có: Trưởng phòng / admin.
+ * - Chuyên viên phụ trách: Trưởng phòng / admin chọn bất kỳ ai; tài khoản khác chỉ thêm / bỏ chính mình.
+ * - GĐ dự án / BOM: mọi tài khoản (như updateProjectInfo_).
+ */
+function saveKhmsProject_(user, payload) {
+  payload = payload || {};
+  var code = normalizeProjectCode_(payload.code);
+  if (!code) throw appError_('Mã dự án là số (vd 231, mã phụ 260.1) hoặc chữ không dấu, có thể có & (vd D&B).');
+  var isNew = !!payload.isNew;
+  var name = payload.name == null ? null : String(payload.name).replace(/\s+/g, ' ').trim();
+  if (isNew && !name) throw appError_('Vui lòng nhập tên dự án.');
+  if (name && name.length > 150) throw appError_('Tên dự án quá dài (tối đa 150 ký tự).');
+  var clip = function (v) { return v === undefined || v === null ? null : String(v).replace(/\s+/g, ' ').trim().slice(0, 150); };
+  var director = clip(payload.director), bom = clip(payload.bom);
+  var users = {};
+  readTable_('Users').forEach(function (u) { if (toBool_(u.active)) users[normalizeUsername_(u.username)] = true; });
+  var owners = null;
+  if (payload.owners) {
+    owners = [];
+    payload.owners.forEach(function (u) {
+      u = normalizeUsername_(u);
+      if (!users[u]) throw appError_('Tài khoản "' + u + '" không tồn tại hoặc đã khóa.');
+      if (owners.indexOf(u) < 0) owners.push(u);
+    });
+    if (owners.length > 20) throw appError_('Tối đa 20 chuyên viên mỗi dự án.');
+  }
+  ensureProjectsSheet_();
+  ensureSheet_('KhmsAssign');
+  return withLock_(function () {
+    var date = today_(), proj = null;
+    readTable_('Projects').forEach(function (p) { if (normalizeProjectCode_(p.code) === code) proj = p; });
+    if (isNew && proj) throw appError_('Dự án ' + code + ' đã có trong danh mục: ' + proj.name + '.');
+    if (!isNew && !proj) throw appError_('Dự án "' + code + '" không có trong danh mục.');
+    var byCode = {};
+    readTable_('KhmsAssign').forEach(function (r) { byCode[normalizeProjectCode_(r.projectCode)] = r; });
+    var r = byCode[code] || (byCode[code] = { projectCode: code, owners: '', director: '', bom: '' });
+    var oldOwners = String(r.owners || '').split(',').map(normalizeUsername_).filter(Boolean);
+    if (owners && !user.isManager) {
+      // Chuyên viên chỉ thêm / bỏ chính mình; người khác giữ nguyên như trên sheet.
+      var others = function (list) { return list.filter(function (u) { return u !== user.username; }).sort().join(','); };
+      if (others(owners) !== others(oldOwners)) throw appError_('Chỉ Trưởng phòng được phân công chuyên viên khác; bạn chỉ thêm / bỏ được chính mình.', 'FORBIDDEN');
+    }
+    if (isNew) {
+      appendObj_('Projects', { code: code, name: name, active: true, createdAt: date });
+    } else if (name && name !== String(proj.name)) {
+      if (!user.isManager) throw appError_('Chỉ Trưởng phòng / quản trị viên được đổi tên dự án.', 'FORBIDDEN');
+      proj.name = name;
+      writeObj_('Projects', proj._row, proj);
+    }
+    var changed = false;
+    if (owners && owners.join(',') !== oldOwners.join(',')) { r.owners = owners.join(','); changed = true; }
+    if (director !== null && director !== String(r.director || '')) { r.director = director; changed = true; }
+    if (bom !== null && bom !== String(r.bom || '')) { r.bom = bom; changed = true; }
+    if (changed) { r.updatedAt = date; r.updatedBy = user.username; }
+    rewriteTable_('KhmsAssign', keepAssignRows_(byCode));
+    return { projects: listProjects_(), assign: listAssign_() };
   });
 }
 
@@ -470,9 +537,18 @@ function checkPackageLink_(rows, rec, submissionId, subs) {
   });
 }
 
-/** Áp 1 thay đổi vào gói (chưa ghi sheet): ngày thực tế (ISO, '' = xóa; không sau hôm nay), ghi chú, hồ sơ gắn ('' = bỏ gắn). */
+/**
+ * Áp 1 thay đổi vào gói (chưa ghi sheet): ngày kế hoạch …Plan0 / …Plan (ISO, '' = xóa), ngày thực tế (ISO, '' = xóa; không sau hôm nay),
+ * ghi chú, hồ sơ gắn ('' = bỏ gắn).
+ */
 function applyPackageEdit_(rec, it, todayIso) {
   PLAN_MILESTONES_.forEach(function (m) {
+    [m + 'Plan0', m + 'Plan'].forEach(function (k) {
+      if (it[k] === undefined) return;
+      var v = it[k] ? isoToDmy_(it[k]) : '';
+      if (it[k] && !v) throw appError_('ngày kế hoạch không hợp lệ');
+      rec[k] = v;
+    });
     var k = m + 'Actual';
     if (it[k] === undefined) return;
     var v = it[k] ? isoToDmy_(it[k]) : '';
@@ -504,8 +580,8 @@ function checkPackageLinks_(rows, changed, subs) {
 }
 
 /**
- * Lưu nhiều gói một lần (nút "Cập nhật bảng" và form 1 gói). payload: { items: [{ id, inviteActual?, selectActual?, contractActual?,
- * startActual?, note?, submissionId? }] }. Có lỗi ở bất kỳ gói nào → không lưu gì, báo lỗi.
+ * Lưu nhiều gói một lần (nút "Cập nhật bảng" và form 1 gói). payload: { items: [{ id, <mốc>Plan0?, <mốc>Plan?, <mốc>Actual?,
+ * note?, submissionId? }] } (mốc: invite, select, contract, start). Có lỗi ở bất kỳ gói nào → không lưu gì, báo lỗi.
  */
 function updatePackages_(user, payload) {
   var items = (payload && payload.items) || [];
