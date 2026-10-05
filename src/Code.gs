@@ -13,6 +13,11 @@ function doGet() {
   return out;
 }
 
+/** Đồng bộ thư mục tự động: máy trong mạng công ty gửi danh sách file lên (xem AutoSync.gs, tools/auto-sync/). */
+function doPost(e) {
+  return autoSyncPost_(e);
+}
+
 function include(name) {
   return HtmlService.createHtmlOutputFromFile(name).getContent();
 }
@@ -36,7 +41,8 @@ var API_ACTIONS_ = {
   createUser:     function (user, p) { return createUser_(user, p); },
   updateUser:     function (user, p) { return updateUser_(user, p); },
   resetPassword:  function (user, p) { return resetUserPassword_(user, p); },
-  deleteUser:     function (user, p) { return deleteUser_(user, p); }
+  deleteUser:     function (user, p) { return deleteUser_(user, p); },
+  autoSyncKey:    function (user) { return rotateAutoSyncKey_(user); }
 };
 
 function api(action, token, payload) {

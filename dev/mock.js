@@ -56,6 +56,14 @@
     return out;
   }
 
+  /* ---------- ContentService (doPost của đồng bộ tự động) ---------- */
+  window.ContentService = {
+    MimeType: { JSON: 'JSON', TEXT: 'TEXT' },
+    createTextOutput: function (text) {
+      return { _text: String(text), setMimeType: function () { return this; }, getContent: function () { return this._text; } };
+    }
+  };
+
   /* ---------- Utilities ---------- */
   window.Utilities = {
     DigestAlgorithm: { SHA_256: 'SHA_256' },

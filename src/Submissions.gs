@@ -45,6 +45,7 @@ function bootstrap_(user) {
     history: readTable_('History').map(serializeHistory_),
     projects: listProjects_(),
     folderSync: lastFolderSync_(),
+    autoSync: autoSyncStatus_(),
     notifSeen: notifSeen_(user)
   };
   // Chức năng chạy thử (Kế hoạch mua sắm, chỉ có trên bản /dev) thêm dữ liệu của nó.

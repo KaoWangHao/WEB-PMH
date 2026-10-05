@@ -11,6 +11,8 @@ var APP_CONFIG = {
   FAVICON_URL: 'https://raw.githubusercontent.com/KaoWangHao/WEB-PMH/main/assets/favicon.png',
   // Trang cài icon lên màn hình điện thoại (GitHub Pages từ thư mục docs/ của repo).
   INSTALL_URL: 'https://kaowanghao.github.io/WEB-PMH/',
+  // Link web app (deployment cố định) — script đồng bộ tự động (tools/auto-sync) gửi dữ liệu lên địa chỉ này.
+  WEB_APP_URL: 'https://script.google.com/macros/s/AKfycbzvKv467-ZX34kCYKkMZPRqIgeP1jVzEJB7qK2FWqB7eIznVwrSxnVLKwn3djB_JBSW8Q/exec',
   // Nội dung hiện khi bấm "Helpdesk" ở trang đăng nhập.
   HELPDESK: 'Vui lòng liên hệ quản trị viên hệ thống để được hỗ trợ.',
   TIMEZONE: 'Asia/Ho_Chi_Minh',
@@ -119,6 +121,7 @@ function publicConfig_() {
     logoUrl: APP_CONFIG.LOGO_URL,
     helpdesk: APP_CONFIG.HELPDESK,
     installUrl: APP_CONFIG.INSTALL_URL,
+    webAppUrl: APP_CONFIG.WEB_APP_URL,
     statuses: STATUSES,
     docTypes: DOC_TYPES,
     reportKeywords: REPORT_KEYWORDS,
