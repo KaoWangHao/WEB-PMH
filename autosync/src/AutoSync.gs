@@ -1,8 +1,10 @@
 /**
  * Đồng bộ thư mục TỰ ĐỘNG (theo người dùng: "đồng bộ tự động 1 tiếng 1 lần trong khung giờ từ 7h30 sáng đến 17h30 chiều, ngoài ra vẫn giữ
  * tính năng đồng bộ thủ công").
+ * CHỨC NĂNG MỞ RỘNG ở thư mục autosync/ (workflow deploy chép autosync/src/* vào src/): xóa thư mục autosync/ là gỡ hẳn tính năng,
+ * phần lõi chỉ có điểm gắn (doPost, AUTO_SYNC_ACTIONS_, autoSyncBootstrap_, includeIf('AutoSync'), EXT.* trong App.html).
  * Máy chủ Google không vào được ổ \\HCM-FS01 (mạng nội bộ / VPN), nên một máy tính trong mạng công ty chạy script
- * tools/auto-sync/auto-sync.ps1 (Task Scheduler, mỗi giờ 7:30–17:30): đọc danh sách file trong thư mục 12_HoSo_TrinhKy
+ * autosync/tools/auto-sync.ps1 (Task Scheduler, mỗi giờ 7:30–17:30): đọc danh sách file trong thư mục 12_HoSo_TrinhKy
  * rồi POST lên web app (doPost) kèm khóa bí mật. Server lập kế hoạch y như bảng xem trước của đồng bộ thủ công với lựa chọn mặc định:
  * đổi tình trạng theo thư mục, tạo mới file có ký hiệu chuyên viên, KHÔNG đổi chuyên viên phụ trách, bỏ qua file ở nhiều thư mục /
  * hồ sơ trùng tên trên web; hồ sơ Đã duyệt giữ nguyên; ngày ghi nhận = ngày sửa đổi của file. Ghi bằng applyFolderSync_ (tài khoản hệ thống
@@ -11,6 +13,18 @@
  */
 
 var AUTO_SYNC_USER_ = 'auto-sync';
+// Link web app chính (deployment cố định) — script trên máy Windows gửi dữ liệu lên địa chỉ này.
+var AUTO_SYNC_WEB_APP_URL_ = 'https://script.google.com/macros/s/AKfycbzvKv467-ZX34kCYKkMZPRqIgeP1jVzEJB7qK2FWqB7eIznVwrSxnVLKwn3djB_JBSW8Q/exec';
+
+/** Action của chức năng (Code.gs tra thêm bảng này). */
+var AUTO_SYNC_ACTIONS_ = {
+  autoSyncKey: function (user) { return rotateAutoSyncKey_(user); }
+};
+
+/** Dữ liệu gửi kèm bootstrap_ (Submissions.gs gọi nếu có hàm này). */
+function autoSyncBootstrap_() {
+  return { autoSync: autoSyncStatus_() };
+}
 var AUTO_SYNC_KEY_PROP_ = 'AUTO_SYNC_KEY_HASH';
 var AUTO_SYNC_LAST_PROP_ = 'LAST_AUTO_SYNC';
 
@@ -36,7 +50,7 @@ function rotateAutoSyncKey_(user) {
   requireAdmin_(user);
   var key = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
   PropertiesService.getScriptProperties().setProperty(AUTO_SYNC_KEY_PROP_, autoSyncHash_(key));
-  return { key: key, status: autoSyncStatus_() };
+  return { key: key, url: AUTO_SYNC_WEB_APP_URL_, status: autoSyncStatus_() };
 }
 
 function autoSyncJson_(obj) {

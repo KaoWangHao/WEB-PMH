@@ -15,7 +15,7 @@ Nút đồng bộ thủ công trên web vẫn dùng bình thường.
 
 ## Cài đặt (1 lần, trên máy luôn bật trong giờ làm việc)
 1. Máy chạy Windows, đăng nhập bằng tài khoản mở được ổ `\\HCM-FS01` (có VPN / mạng công ty trong giờ làm việc).
-2. Tải 4 file trong thư mục này (`auto-sync.ps1`, `cai-dat.ps1`, `auto-sync.config.example.json`, `README.md`) về một thư mục, vd `C:\CENTRAL-PMH\auto-sync`.
+2. Tải 4 file trong thư mục `autosync/tools/` trên GitHub (`auto-sync.ps1`, `cai-dat.ps1`, `auto-sync.config.example.json`, `README.md`) về một thư mục, vd `C:\CENTRAL-PMH\auto-sync`.
 3. Trên web: **Quản trị tài khoản → thẻ "Đồng bộ thư mục tự động" → Tạo khóa**, sao chép khóa.
 4. Chép `auto-sync.config.example.json` thành **`auto-sync.config.json`**, mở bằng Notepad, dán khóa vào ô `"key"`.
    Kiểm tra `"root"` đúng đường dẫn thư mục `12_HoSo_TrinhKy` (dấu `\` viết thành `\\`).

@@ -45,14 +45,15 @@ function bootstrap_(user) {
     history: readTable_('History').map(serializeHistory_),
     projects: listProjects_(),
     folderSync: lastFolderSync_(),
-    autoSync: autoSyncStatus_(),
     notifSeen: notifSeen_(user)
   };
-  // Chức năng chạy thử (Kế hoạch mua sắm, chỉ có trên bản /dev) thêm dữ liệu của nó.
-  if (typeof khmsBootstrap_ === 'function') {
-    var extra = khmsBootstrap_(user);
+  // Chức năng mở rộng (Kế hoạch mua sắm khms/, đồng bộ tự động autosync/) thêm dữ liệu của nó.
+  [typeof khmsBootstrap_ === 'function' ? khmsBootstrap_ : null,
+   typeof autoSyncBootstrap_ === 'function' ? autoSyncBootstrap_ : null].forEach(function (fn) {
+    if (!fn) return;
+    var extra = fn(user);
     for (var k in extra) out[k] = extra[k];
-  }
+  });
   return out;
 }
 

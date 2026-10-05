@@ -55,7 +55,9 @@
    * Điểm gắn chức năng mở rộng (vd Kế hoạch mua sắm ở thư mục khms/, workflow chép vào src/ khi deploy): file mở rộng nạp sau App.html,
    * dùng window.APP (khai báo cuối file) để thêm menu, trang, action, xử lý sự kiện, dữ liệu. Không có file mở rộng thì các danh sách rỗng.
    */
-  var EXT = { nav: [], views: {}, change: {}, input: {}, derive: [], data: [], subInfo: [], help: [], busy: [] };
+  // names: tên hiển thị tài khoản hệ thống (vd 'auto-sync'); syncNotes: hàm trả thêm câu cho chú thích nút "Đồng bộ thư mục";
+  // adminCards: hàm trả thẻ HTML thêm vào trang Quản trị.
+  var EXT = { nav: [], views: {}, change: {}, input: {}, derive: [], data: [], subInfo: [], help: [], busy: [], names: {}, syncNotes: [], adminCards: [] };
   var root = document.getElementById('root');
   var modalRoot = document.getElementById('modal-root');
 
@@ -129,7 +131,7 @@
     var p = (S.cfg.positions || []).filter(function (x) { return x.code === code; })[0];
     return p ? p.label : code;
   }
-  function userName(u) { return S.userMap[u] ? S.userMap[u].displayName : u === 'auto-sync' ? 'Đồng bộ tự động' : u; }
+  function userName(u) { return S.userMap[u] ? S.userMap[u].displayName : EXT.names[u] || u; }
   function initials(name) {
     var parts = String(name || '?').trim().split(/\s+/);
     return ((parts.length > 1 ? parts[parts.length - 2][0] : '') + parts[parts.length - 1][0]).toUpperCase();
@@ -1026,8 +1028,7 @@
         (last.reassigned ? ', ' + last.reassigned + ' đổi chuyên viên' : '') + (last.created ? ', ' + last.created + ' tạo mới' : '') + '). '
                  : 'Chưa đồng bộ lần nào. ') +
       'Kết nối VPN, bấm nút rồi chọn thư mục ' + S.cfg.folderSync.rootName + ' trên ổ chia sẻ; web chỉ đọc tên file và cho xem trước trước khi cập nhật.' +
-      (S.autoSync && S.autoSync.configured ? ' Đồng bộ tự động: mỗi giờ 7:30–17:30' + (S.autoSync.last ? ' (lần chạy gần nhất ' + S.autoSync.last.at +
-        (S.autoSync.last.ok ? ': ' + (S.autoSync.last.changed || 0) + ' đổi tình trạng, ' + (S.autoSync.last.created || 0) + ' tạo mới)' : ': lỗi — ' + S.autoSync.last.error + ')') : '') + '.' : '') +
+      EXT.syncNotes.map(function (fn) { return fn() || ''; }).join('') +
       (S.me.isManager ? '' : ' Bạn chỉ cập nhật được hồ sơ của mình.');
   }
   /** TỔNG QUAN gọn: 1 hàng ô số liệu chính của kỳ (bấm để xem hồ sơ); lọc tình trạng/loại ở THAM SỐ. */
@@ -2612,27 +2613,7 @@
       '<p class="muted" style="margin:12px 0 0">Chỉ quản trị viên tạo được tài khoản. Người dùng mới phải đổi mật khẩu tạm ở lần đăng nhập đầu tiên. ' +
       'Chuyên viên chỉ sửa được hồ sơ của mình; TP.MH, TP.C&amp;C, GĐTM và quản trị viên sửa được mọi hồ sơ. ' +
       'Xóa tài khoản: bấm <b>Sửa</b> → <b>Xóa tài khoản</b> (có thể chuyển hồ sơ của người đó cho tài khoản khác).</p>';
-    return card('admin-users', 'Danh sách tài khoản', body, { tools: tools }) + adminAutoSyncCard() + adminProjectsCard();
-  }
-
-  /** Đồng bộ tự động (admin): trạng thái lần chạy gần nhất + tạo khóa cho máy chạy script tools/auto-sync. */
-  function adminAutoSyncCard() {
-    var a = S.autoSync || {}, l = a.last;
-    var state = !a.configured ? '<span class="status-badge"><span class="dot" style="background:#9AA0AE"></span>Chưa cài đặt</span>'
-      : !l ? '<span class="status-badge"><span class="dot" style="background:#E9A23B"></span>Đã tạo khóa, chưa chạy lần nào</span>'
-      : l.ok ? '<span class="status-badge"><span class="dot" style="background:#7CB342"></span>Hoạt động</span>'
-      : '<span class="status-badge"><span class="dot" style="background:#DD5A4C"></span>Lần gần nhất bị lỗi</span>';
-    var body = '<div class="meta-grid">' +
-      '<div><small>Trạng thái</small>' + state + '</div>' +
-      '<div><small>Lịch chạy</small>Mỗi giờ 7:30 – 17:30 (Task Scheduler trên máy trong mạng công ty)</div>' +
-      '<div><small>Lần chạy gần nhất</small>' + (l ? esc(l.at) + (l.machine ? ' · máy ' + esc(l.machine) : '') : '—') + '</div>' +
-      '<div><small>Kết quả</small>' + (!l ? '—' : l.ok ? fmtNum(l.files || 0) + ' file · ' + (l.changed || 0) + ' đổi tình trạng · ' + (l.created || 0) + ' tạo mới' +
-        (l.skipped ? ' · ' + l.skipped + ' bỏ qua' : '') : '<span style="color:var(--danger)">' + esc(l.error || 'Lỗi') + '</span>') + '</div></div>' +
-      '<p class="muted" style="margin:12px 0 0">Máy chủ Google không vào được ổ chia sẻ nội bộ, nên đồng bộ tự động chạy bằng script trên một máy tính luôn mở trong giờ làm việc ' +
-        '(có VPN / mạng công ty). Cài đặt: xem <b>tools/auto-sync/README.md</b> trên GitHub, bấm <b>Tạo khóa</b> và dán khóa vào file cấu hình của script. ' +
-        'Đồng bộ thủ công (nút "Đồng bộ thư mục") vẫn dùng bình thường; tự động chỉ áp dụng lựa chọn mặc định (đổi tình trạng, tạo hồ sơ có ký hiệu), không đổi chuyên viên phụ trách.</p>';
-    var tools = '<button class="secondary-btn" data-act="auto-sync-key">' + ic('key') + (a.configured ? 'Tạo khóa mới' : 'Tạo khóa') + '</button>';
-    return card('admin-autosync', 'Đồng bộ thư mục tự động', body, { tools: tools, collapsible: true });
+    return card('admin-users', 'Danh sách tài khoản', body, { tools: tools }) + EXT.adminCards.map(function (fn) { return fn() || ''; }).join('') + adminProjectsCard();
   }
 
   function adminProjectsCard() {
@@ -2911,7 +2892,6 @@
       S.users = d.users; S.subs = d.submissions; S.hist = d.history; S.projects = d.projects || [];
       EXT.data.forEach(function (fn) { fn(d); });
       S.folderSync = d.folderSync || null;
-      S.autoSync = d.autoSync || null;
       S.notifSeen = sameUser ? Math.max(S.notifSeen, d.notifSeen || 0) : (d.notifSeen || 0);
       // Mở lại trang (F5): Trưởng phòng vào thẳng Dashboard Trưởng phòng như lúc đăng nhập.
       if (!S.viewInit) { S.viewInit = true; if (d.me.isManager && d.me.position !== 'CV' && S.view === 'home') S.view = 'manager'; }
@@ -3180,22 +3160,6 @@
         .catch(function (err) { busy(el, false); if (err.code === 'AUTH') handleErr(err); else modalError(err.message); });
     },
     'new-user': function () { openUserForm(null); },
-    'auto-sync-key': function (el) {
-      if (S.autoSync && S.autoSync.configured && !el.dataset.confirm) {
-        el.dataset.confirm = '1'; el.lastChild.textContent = 'Bấm lần nữa: khóa cũ sẽ hết hiệu lực'; return;
-      }
-      busy(el, true);
-      call('autoSyncKey').then(function (r) {
-        S.autoSync = r.status; render();
-        openModal(modalHead('Khóa đồng bộ tự động') + '<div class="modal-body">' +
-          '<p style="margin-top:0">Dán khóa này vào ô <b>"key"</b> trong file <b>auto-sync.config.json</b> trên máy chạy đồng bộ (xem tools/auto-sync/README.md). ' +
-          'Khóa chỉ hiện <b>1 lần</b>; tạo khóa mới thì khóa cũ hết hiệu lực.</p>' +
-          '<div class="form-row"><label for="m-ask">Khóa</label><input type="text" id="m-ask" readonly value="' + esc(r.key) + '" onclick="this.select()"></div>' +
-          '<div class="form-row"><label for="m-asu">Địa chỉ web app (ô "webAppUrl")</label><input type="text" id="m-asu" readonly value="' + esc(S.cfg.webAppUrl || '') + '" onclick="this.select()"></div>' +
-          '</div><div class="modal-foot"><button class="primary-btn" data-act="close-modal">Đã lưu khóa</button></div>');
-        var k = document.getElementById('m-ask'); if (k) k.select();
-      }).catch(function (err) { busy(el, false); handleErr(err); });
-    },
     'new-project': function () { openProjectForm(null); },
     'edit-project': function (el) { openProjectForm(el.dataset.code); },
     'import-projects': function () { openProjectImport(); },

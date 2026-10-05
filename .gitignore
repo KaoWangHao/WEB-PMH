@@ -7,5 +7,5 @@ node_modules/
 Thumbs.db
 
 # Đồng bộ tự động: file cấu hình chứa khóa + nhật ký trên máy chạy script
-tools/auto-sync/auto-sync.config.json
-tools/auto-sync/*.log
+autosync/tools/auto-sync.config.json
+autosync/tools/*.log

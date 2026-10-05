@@ -13,9 +13,13 @@ function doGet() {
   return out;
 }
 
-/** Đồng bộ thư mục tự động: máy trong mạng công ty gửi danh sách file lên (xem AutoSync.gs, tools/auto-sync/). */
+/**
+ * Nhận dữ liệu gửi từ ngoài (POST) — chỉ dùng cho chức năng mở rộng: đồng bộ thư mục tự động (thư mục autosync/).
+ * Không có chức năng mở rộng → trả lời "không hỗ trợ".
+ */
 function doPost(e) {
-  return autoSyncPost_(e);
+  if (typeof autoSyncPost_ === 'function') return autoSyncPost_(e);
+  return ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'Không hỗ trợ.' })).setMimeType(ContentService.MimeType.JSON);
 }
 
 function include(name) {
@@ -41,8 +45,7 @@ var API_ACTIONS_ = {
   createUser:     function (user, p) { return createUser_(user, p); },
   updateUser:     function (user, p) { return updateUser_(user, p); },
   resetPassword:  function (user, p) { return resetUserPassword_(user, p); },
-  deleteUser:     function (user, p) { return deleteUser_(user, p); },
-  autoSyncKey:    function (user) { return rotateAutoSyncKey_(user); }
+  deleteUser:     function (user, p) { return deleteUser_(user, p); }
 };
 
 function api(action, token, payload) {
@@ -52,8 +55,9 @@ function api(action, token, payload) {
     if (action === 'logout') return { ok: true, data: logout_(token) };
 
     var handler = API_ACTIONS_[action] ||
-      // Chức năng chạy thử (Kế hoạch mua sắm, khms/src/Procurement.gs — chỉ có trên bản /dev).
-      (typeof KHMS_ACTIONS_ !== 'undefined' && KHMS_ACTIONS_[action]);
+      // Chức năng mở rộng (thư mục riêng, workflow chép vào src/ khi deploy): Kế hoạch mua sắm (khms/), đồng bộ tự động (autosync/).
+      (typeof KHMS_ACTIONS_ !== 'undefined' && KHMS_ACTIONS_[action]) ||
+      (typeof AUTO_SYNC_ACTIONS_ !== 'undefined' && AUTO_SYNC_ACTIONS_[action]);
     if (!handler) throw appError_('Chức năng không tồn tại.');
     var user = requireSession_(token);
     if (user.mustChangePassword && action !== 'changePassword') {
