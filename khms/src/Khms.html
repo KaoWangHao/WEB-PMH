@@ -1,7 +1,7 @@
 <script>
 /*
- * Kế hoạch mua sắm (KHMS) — CHỨC NĂNG CHẠY THỬ, thư mục khms/ (xem khms/README.md).
- * Chỉ được đưa lên bản thử /dev (workflow deploy chép khms/src/* vào src/ khi chạy thử); bản chính không có file này.
+ * Kế hoạch mua sắm (KHMS), thư mục khms/ (xem khms/README.md).
+ * Workflow deploy chép khms/src/* vào src/ trước khi đẩy lên Apps Script (bản chính và /dev).
  * Gắn vào App.html qua window.APP: thêm menu, trang `khms`, action, xử lý sự kiện, dữ liệu bootstrap (packages, planUploads).
  */
 (function (A) {
@@ -17,12 +17,14 @@
   var qTimer = null;
 
   S.packages = []; S.planUploads = [];
-  S.khms = { project: '', state: '', q: '', inactive: false }; S.khEdit = null;
+  S.khms = { project: '', state: '', q: '' }; S.khEdit = null;
 
   var ICON_ADD = {
     box: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
     upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/>',
-    link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>'
+    link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
+    briefcase: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M3 13h18"/>',
+    users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>'
   };
   Object.keys(ICON_ADD).forEach(function (k) { A.ICONS[k] = ICON_ADD[k]; });
 
@@ -134,7 +136,8 @@
     return out;
   }
 
-  function khmsProjectSelect(id, sel, mode) {
+  /** extra: { code, name } — dự án chưa có trong danh mục, sẽ tạo mới khi tải KHMS nhiều dự án. */
+  function khmsProjectSelect(id, sel, mode, attrs, extra) {
     var have = {};
     S.packages.forEach(function (p) { if (p.active) have[p.project] = (have[p.project] || 0) + 1; });
     var list = (S.projects || []).slice();
@@ -145,8 +148,9 @@
     };
     var withPlan = list.filter(function (p) { return have[p.code]; });
     var others = list.filter(function (p) { return !have[p.code] && (p.active || p.code === sel); });
-    return '<select id="' + id + '" data-change="' + (mode === 'import' ? 'kh-imp-project' : 'kh-project') + '">' +
-      (mode === 'import' ? '<option value="">— Chọn dự án —</option>' : '<option value="">Tất cả dự án có KHMS (' + withPlan.length + ')</option>') +
+    return '<select id="' + id + '" data-change="' + (mode === 'import' ? 'kh-imp-project' : mode === 'batch' ? 'kh-bimp-project' : 'kh-project') + '"' + (attrs || '') + '>' +
+      (mode !== 'filter' && mode ? '<option value="">— Chọn dự án —</option>' : '<option value="">Tất cả dự án có KHMS (' + withPlan.length + ')</option>') +
+      (extra ? '<option value="' + esc(extra.code) + '"' + (extra.code === sel ? ' selected' : '') + '>' + esc(extra.code + '_' + extra.name) + ' (tạo mới)</option>' : '') +
       (withPlan.length ? '<optgroup label="Đã có KHMS">' + withPlan.map(opt).join('') + '</optgroup>' : '') +
       (others.length ? '<optgroup label="Chưa có KHMS">' + others.map(opt).join('') + '</optgroup>' : '') + '</select>';
   }
@@ -166,7 +170,7 @@
     var k = S.khms, q = norm(k.q).trim();
     return S.packages.filter(function (p) {
       if (k.project && p.project !== k.project) return false;
-      if (!k.inactive && !p.active) return false;
+      if (!p.active) return false;
       if (!khmsMatchState(p, k.state)) return false;
       if (q && norm(p.stt + ' ' + p.name + ' ' + p.project + ' ' + (p._sub ? p._sub.id + ' ' + p._sub.title : '')).indexOf(q) < 0) return false;
       return true;
@@ -194,21 +198,48 @@
 
   function khmsParamsCard() {
     var k = S.khms;
-    var last = k.project ? S.planLast[k.project] : null;
-    var info = k.project ? '<div class="kh-info">' + (last
-      ? ic('report') + '<span>KHMS cập nhật <b>' + fmtDate(last.date) + '</b>' + (last.rev ? ' · <b>' + esc(last.rev) + '</b>' : '') +
-        ' · ' + esc(userName(last.actor)) + (last.fileName ? ' · <span class="muted">' + esc(last.fileName) + '</span>' : '') + '</span>' +
-        (S.me.isManager ? '<button class="link-btn danger" data-act="kh-delete-plan" data-code="' + esc(k.project) + '">Xóa KHMS dự án này</button>' : '')
-      : ic('report') + '<span>Dự án này chưa có KHMS — bấm <b>Tải KHMS (Excel)</b> để tải lên.</span>') + '</div>' : '';
     var body = '<div class="params">' +
       '<div class="field kh-proj"><div class="fbody"><label for="kh-project">Dự án</label>' + khmsProjectSelect('kh-project', k.project) + '</div></div>' +
       '<div class="field"><div class="fbody"><label for="kh-state">Tình trạng</label><select id="kh-state" data-change="kh-state">' +
         KH_STATES.map(function (s) { return '<option value="' + s[0] + '"' + (s[0] === k.state ? ' selected' : '') + '>' + esc(s[1]) + '</option>'; }).join('') + '</select></div></div>' +
       '<div class="field"><div class="fbody"><label for="kh-q">Gói thầu / hồ sơ</label>' +
-        '<input type="text" id="kh-q" data-input="kh-q" placeholder="Nhập để tìm…" value="' + esc(k.q) + '"></div></div></div>' + info;
-    var tools = '<button class="secondary-btn" data-act="kh-export">' + ic('download') + 'Xuất Excel</button>' +
-      '<button class="primary-btn kh-upload" data-act="kh-upload">' + ic('upload') + 'Tải KHMS (Excel)</button>';
+        '<input type="text" id="kh-q" data-input="kh-q" placeholder="Nhập để tìm…" value="' + esc(k.q) + '"></div></div></div>' +
+      khmsProjectInfo() + khmsActionTiles();
+    var tools = '<button class="primary-btn kh-upload" data-act="kh-upload">' + ic('upload') + 'Tải KHMS (Excel)</button>';
     return card('khms-params', 'Kế hoạch mua sắm', body, { tools: tools, collapsible: true });
+  }
+  /** Thông tin dự án đang chọn: 4 ô (KHMS cập nhật, chuyên viên phụ trách, GĐ dự án, BOM), mỗi ô có thao tác riêng. */
+  function khmsProjectInfo() {
+    var code = S.khms.project;
+    if (!code) return '';
+    var last = S.planLast[code], pi = khInfoOf(code), own = khOwners(code);
+    var cell = function (icon, label, value, act) {
+      return '<div class="kh-pi"><span class="kh-pi-l">' + ic(icon) + esc(label) + '</span><div class="kh-pi-v">' + value + '</div>' + (act ? '<div class="kh-pi-a">' + act + '</div>' : '') + '</div>';
+    };
+    var none = function (t) { return '<span class="muted">' + t + '</span>'; };
+    var edit = '<button class="link-btn" data-act="kh-inf-open" data-code="' + esc(code) + '">' + ic('edit') + 'Cập nhật</button>';
+    return '<div class="kh-pinfo">' +
+      cell('report', 'KHMS cập nhật', last
+        ? '<b>' + fmtDate(last.date) + '</b>' + (last.rev ? ' · ' + esc(last.rev) : '') + '<small>' + esc(userName(last.actor)) + (last.fileName ? ' · ' + esc(last.fileName) : '') + '</small>'
+        : none('Chưa có KHMS — bấm Tải KHMS (Excel)'),
+        last && S.me.isManager ? '<button class="link-btn danger" data-act="kh-delete-plan" data-code="' + esc(code) + '">Xóa KHMS dự án này</button>' : '') +
+      cell('user', 'Chuyên viên phụ trách', own.length ? '<b>' + esc(khOwnersText(code)) + '</b>' : none('Chưa phân công'),
+        S.me.isManager ? '<button class="link-btn" data-act="kh-asg-open" data-code="' + esc(code) + '">' + ic('user') + 'Phân công</button>' : '') +
+      cell('briefcase', 'Giám đốc dự án', pi.director ? '<b>' + esc(pi.director) + '</b>' : none('Chưa nhập'), edit) +
+      cell('users', 'BOM phụ trách', pi.bom ? '<b>' + esc(pi.bom) + '</b>' : none('Chưa nhập'), edit) +
+      '</div>';
+  }
+  /** Vùng thao tác: ô nhỏ chia nhóm Xuất báo cáo / Quản lý dự án (theo người dùng: "để thành những ô nhỏ nằm ở vùng riêng"). */
+  function khmsActionTiles() {
+    var tile = function (act, icon, title, sub, extra) {
+      return '<button class="kh-tile" data-act="' + act + '"' + (extra || '') + '>' + ic(icon) + '<span><b>' + esc(title) + '</b><small>' + esc(sub) + '</small></span></button>';
+    };
+    var exp = tile('kh-export', 'download', 'Xuất Excel', 'Danh sách gói đang xem') +
+      (S.khExportAll ? tile('kh-export-all', 'download', 'Xuất tất cả dự án', 'Mỗi dự án 1 sheet + tổng hợp') : '');
+    var mng = (S.me.isManager ? tile('kh-asg-open', 'user', 'Phân công chuyên viên', 'Gán người phụ trách dự án') : '') +
+      tile('kh-inf-open', 'edit', 'Thông tin dự án', 'Giám đốc dự án / BOM');
+    return '<div class="kh-actions"><div class="kh-act-g"><span class="kh-act-h">Xuất báo cáo</span><div class="kh-act-row">' + exp + '</div></div>' +
+      '<div class="kh-act-g"><span class="kh-act-h">Quản lý dự án</span><div class="kh-act-row">' + mng + '</div></div></div>';
   }
 
   function khmsOverviewCard(scope) {
@@ -240,13 +271,14 @@
     var rows = codes.map(function (c) {
       var st = khmsStats(by[c]), last = S.planLast[c];
       return '<tr><td><button class="link-btn" data-act="kh-pick-project" data-code="' + esc(c) + '" data-state="">' + projectCell(c) + '</button></td>' +
+        '<td>' + khOwnersCell(c) + '</td><td>' + khInfoCell(c, 'director') + '</td><td>' + khInfoCell(c, 'bom') + '</td>' +
         '<td class="nowrap">' + (last ? fmtDate(last.date) + (last.rev ? ' <span class="proj-code">' + esc(last.rev) + '</span>' : '') : '—') + '</td>' +
         '<td class="num">' + num(c, '', st.n) + '</td><td class="num">' + (st.value ? fmtBil(st.value) : '—') + '</td>' +
         '<td class="num">' + num(c, 'done', st.done) + '</td><td class="num">' + num(c, 'late', st.late, 'bad') + '</td>' +
         '<td class="num">' + num(c, 'soon', st.soon, 'warn') + '</td><td class="num">' + num(c, 'contract', st.contract) + '</td>' +
         '<td class="num">' + num(c, 'nolink', st.nolink) + '</td></tr>';
     }).join('');
-    return card('khms-projects', 'Theo dự án', '<div class="table-wrap"><table class="grid kh-sum"><thead><tr><th>Dự án</th><th>KHMS cập nhật</th>' +
+    return card('khms-projects', 'Theo dự án', '<div class="table-wrap"><table class="grid kh-sum"><thead><tr><th>Dự án</th><th>Chuyên viên</th><th>GĐ dự án</th><th>BOM</th><th>KHMS cập nhật</th>' +
       '<th class="num">Gói thầu</th><th class="num">Giá trị</th><th class="num">Đã chọn thầu</th><th class="num">Trễ chọn thầu</th>' +
       '<th class="num">Sắp đến hạn</th><th class="num">Đã ký HĐ</th><th class="num">Chưa gắn hồ sơ</th></tr></thead><tbody>' + rows + '</tbody></table></div>',
       { collapsible: true });
@@ -399,7 +431,6 @@
     var rows = khmsRows();
     S.lastKhRows = rows;
     var showProj = !k.project;
-    var inactive = S.packages.filter(function (p) { return !p.active && (!k.project || p.project === k.project); }).length;
     var sugg = rows.filter(function (p) { return S.khSugg[p.id]; }).length;
     var pc = khPlanCols(rows), np = pc.two ? 2 : 1;
     var groups = MILESTONES.map(function (m) {
@@ -417,11 +448,11 @@
         return khPlanCell(p, m.key, pc) + khActualCell(p, m.key) + (m.key === 'start' ? '' : '<td>' + msBadge(p._ms[m.key]) + '</td>');
       }).join('');
       var nameCell = S.khEdit
-        ? '<b>' + esc(p.name) + '</b>' + (p.active ? '' : ' <span class="kh-tag">Không còn trong KHMS mới</span>') +
+        ? '<b>' + esc(p.name) + '</b>' +
           '<input type="text" class="kh-in kh-note-in' + khEditCls(p, 'note') + '" id="khe-' + esc(p.id) + '-note" data-input="kh-cell" data-id="' + esc(p.id) + '" data-f="note"' +
           ' maxlength="500" placeholder="Ghi chú…" value="' + esc(khEditVal(p, 'note')) + '">'
         : '<button class="link-btn kh-open" data-act="kh-edit" data-id="' + esc(p.id) + '" title="Xem chi tiết / cập nhật gói này">' + esc(p.name) + '</button>' +
-          (p.active ? '' : ' <span class="kh-tag">Không còn trong KHMS mới</span>') + (p.note ? '<div class="kh-pnote">' + esc(p.note) + '</div>' : '');
+          (p.note ? '<div class="kh-pnote">' + esc(p.note) + '</div>' : '');
       return '<tr' + (p.active ? '' : ' class="inactive"') + '><td class="center code">' + esc(p.stt) + '</td>' +
         '<td class="kh-name">' + nameCell + '</td>' +
         (showProj ? '<td class="nowrap"><span class="proj-code">' + esc(p.project) + '</span></td>' : '') +
@@ -437,7 +468,6 @@
     var editing = !!S.khEdit;
     var fill = editing ? rows.filter(function (p) { return S.khSugg[p.id] && !khEditVal(p, 'submissionId'); }).length : 0;
     var tools = '<div class="table-tools"><span class="muted"><b>' + fmtNum(rows.length) + '</b> gói thầu</span><div class="grow"></div>' +
-      (inactive ? '<label class="check kh-inact"><input type="checkbox" data-change="kh-inactive"' + (k.inactive ? ' checked' : '') + '>Hiện gói không còn trong KHMS mới (' + inactive + ')</label>' : '') +
       (editing
         ? (fill ? '<button class="secondary-btn" data-act="kh-fill-sugg">' + ic('link') + 'Điền hồ sơ gợi ý (' + fill + ')</button>' : '') +
           '<button class="secondary-btn" data-act="kh-edit-cancel">Hủy</button>' +
@@ -484,7 +514,7 @@
         (plan0 && plan0 !== plan ? '<div class="help">' + esc(p.rev0 && p.rev0 !== p.rev ? p.rev0 : 'Gốc') + ': ' + fmtDate(plan0) + '</div>' : '') + '</td><td>' + actual + '</td><td>' + msBadge(p._ms[m.key]) + '</td></tr>';
     }).join('');
     openModal(modalHead('Cập nhật gói thầu') + '<div class="modal-body"><div id="m-err"></div>' +
-      '<h3 style="margin:0 0 10px">' + esc(p.name) + (p.active ? '' : ' <span class="kh-tag">Không còn trong KHMS mới</span>') + '</h3>' +
+      '<h3 style="margin:0 0 10px">' + esc(p.name) + '</h3>' +
       '<div class="meta-grid"><div><small>Dự án</small>' + esc(projectLabel(p.project)) + '</div><div><small>STT</small>' + esc(p.stt || '—') + '</div>' +
       '<div><small>Giá trị gói thầu</small>' + (p.value != null ? fmtMoney(p.value) : '—') + '</div><div><small>KHMS</small>' + esc((p.rev0 && p.rev0 !== p.rev ? p.rev0 + ' → ' : '') + (p.rev || '—')) + '</div>' +
       '<div><small>Cập nhật</small>' + fmtDate(p.updatedAt) + (p.updatedBy ? ' · ' + esc(userName(p.updatedBy)) : '') + '</div></div>' +
@@ -522,8 +552,11 @@
   ];
   /** Ô tiêu đề cột tên gói: "Hạng mục", "Tên vật tư/ gói thầu", "Tên gói thầu", "Nội dung". */
   function khNameHead(t) {
-    return t.length <= 40 && /hang muc|goi thau|ten vat tu|noi dung/.test(t) && !/gia tri|hinh thuc|ngay|ty trong|trach nhiem|^goi thau \w+ \w+ \w+/.test(t);
+    return t.length <= 40 && /hang muc|goi thau|ten vat tu|noi dung/.test(t) && !/gia tri|hinh thuc|ngay|ty trong|trach nhiem|tinh trang|^goi thau \w+ \w+ \w+/.test(t);
   }
+  /** Ô "Thực tế" ghi chữ thay cho ngày: đã xong (HT, Hoàn thành, Done, HĐNT…) / không thực hiện (Không làm, CĐT cấp…). */
+  var KH_DONE_RE = /^(ht|hoan thanh|done|xong|hdnt|da (ky|xong|hoan thanh))\b/;
+  var KH_NA_RE = /^(khong (lam|dung|thi cong|thuc hien|mua)|ngung|cdt cap|bao gom)\b/;
   function xlValue(v) {
     if (v && typeof v === 'object' && !(v instanceof Date)) {
       if (v.richText) return v.richText.map(function (t) { return t.text; }).join('');
@@ -537,15 +570,31 @@
     v = xlValue(v);
     return v == null || v instanceof Date ? '' : String(v).trim();
   }
-  /** Ô ngày Excel → ISO: kiểu Date (ExcelJS đọc theo UTC), số serial, hoặc chữ "15-1-26", "15/01/2026". */
-  function xlDate(v) {
+  var XL_TEXT_DATE = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2}|\d{4})$/;
+  /** Ngày dạng chữ "a/b/yyyy": 'dmy' / 'mdy' nếu chỉ hiểu được 1 cách (một số > 12), '' nếu cả hai đều được. */
+  function xlDateOrder(s) {
+    var m = String(s).trim().match(XL_TEXT_DATE);
+    if (!m) return '';
+    var a = +m[1], b = +m[2];
+    return a > 12 && b <= 12 ? 'dmy' : b > 12 && a <= 12 ? 'mdy' : '';
+  }
+  /**
+   * Ô ngày Excel → ISO: kiểu Date (ExcelJS đọc theo UTC), số serial, hoặc chữ "15-1-26", "15/01/2026".
+   * mdy: ngày dạng chữ mơ hồ (vd 05/06/2026) hiểu là tháng/ngày — file ghi "(mm/dd/yy)" hoặc đa số ngày chữ trong sheet là tháng/ngày.
+   */
+  function xlDate(v, mdy) {
     v = xlValue(v);
     var d = null;
     if (v instanceof Date) d = v;
     else if (typeof v === 'number' && v > 20000 && v < 80000) d = new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000);
     else if (typeof v === 'string') {
-      var m = v.trim().match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2}|\d{4})$/);
-      if (m) return parseDmy(m[1] + '/' + m[2] + '/' + (m[3].length === 2 ? '20' + m[3] : m[3])) || '';
+      var m = v.trim().match(XL_TEXT_DATE);
+      if (m) {
+        var ord = xlDateOrder(v) || (mdy ? 'mdy' : 'dmy');
+        var dd = ord === 'mdy' ? m[2] : m[1], mo = ord === 'mdy' ? m[1] : m[2];
+        var iso = parseDmy(dd + '/' + mo + '/' + (m[3].length === 2 ? '20' + m[3] : m[3])) || '';
+        return iso && iso >= '1990' && iso < '2101' ? iso : '';
+      }
       m = v.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
       if (m) return parseDmy(m[3] + '/' + m[2] + '/' + m[1]) || '';
       return '';
@@ -565,19 +614,31 @@
     return null;
   }
 
-  /** Tìm bảng KHMS trong 1 sheet: dòng tiêu đề có "Hạng mục", nhóm cột ngày, dòng dưới có "Kế hoạch (Rev..)" / "Thực tế". */
+  /**
+   * Tìm bảng KHMS trong 1 sheet: dòng tiêu đề có cột tên gói, nhóm cột ngày, dòng dưới có "Kế hoạch (Rev..)" / "Thực tế".
+   * Chỉ lấy các trường có trên web: tên gói, giá trị, ngày kế hoạch (gốc Rev00 + bản mới nhất) và thực tế của 4 mốc.
+   */
   function parseKhmsSheet(ws) {
     var maxR = Math.min(ws.rowCount, 40), maxC = Math.min(ws.columnCount, 150);
     var cell = function (r, c) { return ws.getCell(r, c); };
     var isSlave = function (cl) { return cl.isMerged && cl.master && cl.master.address !== cl.address; };
-    var hr = 0, nameCol = 0;
-    for (var r = 1; r <= maxR && !hr; r++) {
-      for (var c = 1; c <= maxC; c++) {
-        var t = khKey(xlText(cell(r, c).value));
-        if (t && khNameHead(t)) { hr = r; nameCol = c; break; }
+    var hr = 0, nameCol = 0, altCol = 0, r, c, t;
+    for (r = 1; r <= maxR && !hr; r++) {
+      for (c = 1; c <= maxC; c++) {
+        t = khKey(xlText(cell(r, c).value));
+        if (t && khNameHead(t)) { hr = r; break; }
       }
     }
     if (!hr) return null;
+    // Có cả "Hạng mục" và "Tên vật tư/ gói thầu" → tên gói lấy cột "Tên vật tư/ gói thầu" (cột "Hạng mục" chỉ là nhóm vật tư).
+    var names = [];
+    for (c = 1; c <= maxC; c++) {
+      t = khKey(xlText(cell(hr, c).value));
+      if (t && !isSlave(cell(hr, c)) && khNameHead(t)) names.push({ col: c, pri: /ten (vat tu|goi thau)|^goi thau/.test(t) ? 2 : 1 });
+    }
+    names.sort(function (a, b) { return (b.pri - a.pri) || (a.col - b.col); });
+    nameCol = names[0].col; altCol = names[1] ? names[1].col : 0;
+    var firstName = Math.min(nameCol, altCol || nameCol);
     var sttCol = 0, valueCol = 0, starts = [], heads = [];
     for (c = 1; c <= maxC; c++) {
       var cl = cell(hr, c);
@@ -585,9 +646,9 @@
       t = khKey(xlText(cl.value));
       if (!t) continue;
       heads.push(c);
-      if (!sttCol && c < nameCol && /^(s )?tt$|^stt$|^so tt$/.test(t)) sttCol = c;
-      else if (!valueCol && c > nameCol && /gia tri|gia goi thau|du toan/.test(t)) valueCol = c;
-      else if (c > nameCol) {
+      if (!sttCol && c < firstName && /^(s )?tt$|^stt$|^so tt$/.test(t)) sttCol = c;
+      else if (!valueCol && c > firstName && /gia tri|gia goi thau|du toan/.test(t)) valueCol = c;
+      else if (c > firstName) {
         KH_GROUPS.forEach(function (g) {
           if (g.test.test(t) && !(g.not && g.not.test(t))) starts.push({ key: g.key, col: c, ngay: /^ngay\b/.test(t) });
         });
@@ -599,50 +660,69 @@
       .filter(function (s) { if (seen[s.key]) return false; seen[s.key] = true; return true; });
     if (!starts.length) return null;
     // Nhóm cột kéo dài tới trước ô tiêu đề kế tiếp (vd "Ngày mời thầu" W–X, "Ngày BCH gửi SSG" Y–Z là nhóm khác).
-    var nextHead = function (c) { for (var i = 0; i < heads.length; i++) if (heads[i] > c) return heads[i]; return 0; };
-    var hidden = function (c) { return !!ws.getColumn(c).hidden; };
-    var revOf = function (t) { var m = t.match(/rev\s*0*(\d+)/); return m ? +m[1] : -1; };
-    var groups = {}, subRow = 0, maxRev = -1;
+    var nextHead = function (cc) { for (var i = 0; i < heads.length; i++) if (heads[i] > cc) return heads[i]; return 0; };
+    var revOf = function (s) { var m = s.match(/re[vc]\s*0*(\d+)/); return m ? +m[1] : -1; }; // "Rec01" = gõ nhầm Rev01
+    var groups = {}, subRow = 0;
     starts.sort(function (a, b) { return a.col - b.col; });
     starts.forEach(function (s) {
       var nh = nextHead(s.col);
-      var end = Math.min(nh ? nh - 1 : s.col + 7, s.col + 7, maxC);
+      var end = Math.min(nh ? nh - 1 : s.col + 7, s.col + 9, maxC);
       var plans = [], actual = 0;
-      for (var rr = hr + 1; rr <= hr + 2; rr++) {
-        for (var cc = s.col; cc <= end; cc++) {
+      for (var cc = s.col; cc <= end; cc++) {
+        for (var rr = hr + 1; rr <= hr + 2; rr++) {
           var cl = cell(rr, cc);
           if (isSlave(cl) && cl.master.row <= hr) continue;
           var t = khKey(xlText(cl.value));
-          if (/ke hoach|^kh\b/.test(t)) { plans.push({ col: cc, rev: revOf(t), hidden: hidden(cc) }); subRow = Math.max(subRow, rr); }
-          else if (!actual && /thuc te|^tt$/.test(t)) { actual = cc; subRow = Math.max(subRow, rr); }
+          if (/cham tre|so voi|tinh trang/.test(t)) break; // "Chậm trễ so với Thực tế chọn thầu" không phải cột Thực tế
+          if (/ke hoach|^kh\b/.test(t)) { plans.push({ col: cc, rev: revOf(t) }); subRow = Math.max(subRow, rr); break; }
+          if (!actual && /thuc te|^tt$/.test(t)) { actual = cc; subRow = Math.max(subRow, rr); break; }
         }
       }
-      if (!plans.length) plans.push({ col: s.col, rev: -1, hidden: hidden(s.col) });
-      // Kế hoạch hiện hành = bản Rev lớn nhất (cùng Rev: ưu tiên cột không ẩn); có thêm cột Rev00 → kế hoạch gốc.
-      plans.sort(function (a, b) { return (b.rev - a.rev) || (a.hidden - b.hidden) || (b.col - a.col); });
-      var cur = plans[0], base = plans.filter(function (p) { return p.rev === 0 && p.col !== cur.col; })[0];
-      groups[s.key] = { plan: cur.col, plan0: base ? base.col : 0, actual: actual, rev: cur.rev };
-      maxRev = Math.max(maxRev, cur.rev);
+      if (!plans.length) plans.push({ col: s.col, rev: -1 });
+      // Nhiều cột kế hoạch (Rev00, Rev01, "Kế hoạch 03/09/2026", "Kế hoạch tuần 11"…): cột Rev00 là kế hoạch gốc;
+      // kế hoạch hiện hành của từng gói = cột kế hoạch có ngày nằm bên phải nhất (bản cập nhật sau cùng của gói đó).
+      var base = plans.length > 1 ? plans.filter(function (p) { return p.rev === 0; })[0] : null;
+      groups[s.key] = { plans: plans, plan: plans[plans.length - 1].col, plan0: base ? base.col : 0, actual: actual,
+                        rev: Math.max.apply(null, plans.map(function (p) { return p.rev; })) };
     });
     var start = Math.max(hr, subRow) + 1;
+    var used = {};
+    Object.keys(groups).forEach(function (k) {
+      var g = groups[k];
+      g.plans.forEach(function (p) { used[p.col] = 1; });
+      used[g.actual] = 1;
+    });
+    // Ngày dạng chữ: tháng/ngày hay ngày/tháng — theo đa số ngày chữ không mơ hồ trong sheet, không rõ thì theo ghi chú "(mm/dd/yy)" ở đầu sheet.
+    var ord = { dmy: 0, mdy: 0 }, hint = false;
+    for (r = 1; r < hr; r++) for (c = 1; c <= Math.min(maxC, 40); c++) if (/mm\W?dd/i.test(xlText(cell(r, c).value))) hint = true;
+    for (r = start; r <= ws.rowCount; r++) {
+      Object.keys(used).forEach(function (cc) {
+        if (!+cc) return;
+        var v = xlValue(cell(r, +cc).value);
+        if (typeof v === 'string') { var o = xlDateOrder(v); if (o) ord[o]++; }
+      });
+    }
+    var mdy = ord.mdy > ord.dmy || (ord.mdy === ord.dmy && hint);
     // Cột tình trạng (có thể không có tiêu đề, vd cột ẩn ghi "Đã ký HĐ" / "Đang ký HĐ" / "Đang chọn thầu").
-    var used = {}, progCol = 0, progMax = 0;
-    Object.keys(groups).forEach(function (k) { var g = groups[k]; used[g.plan] = used[g.plan0] = used[g.actual] = 1; });
-    for (c = nameCol + 1; c <= maxC; c++) {
+    var progCol = 0, progMax = 0;
+    for (c = firstName + 1; c <= maxC; c++) {
       if (used[c]) continue;
       var hits = 0;
       for (r = start; r <= Math.min(ws.rowCount, start + 400); r++) if (/^(da|dang) (ky|chon)\b/.test(khKey(xlText(cell(r, c).value)))) hits++;
       if (hits > progMax) { progMax = hits; progCol = c; }
     }
-    var rows = [], headKey = khKey(xlText(cell(hr, nameCol).value));
+    var rows = [], headKey = khKey(xlText(cell(hr, nameCol).value)), maxUsed = -1, newer = false, hasBase = false;
     for (r = start; r <= ws.rowCount; r++) {
       var name = xlText(cell(r, nameCol).value).replace(/\s+/g, ' ');
+      if (!name && altCol) name = xlText(cell(r, altCol).value).replace(/\s+/g, ' ');
       var nk = khKey(name);
-      if (!nk || nk === headKey || /^tong cong\b|^(tong|cong)$/.test(nk)) continue;
+      // Bỏ dòng tiêu đề lặp lại, "Tổng cộng" và dòng đánh số cột (1, 2, 7, 8…).
+      if (!nk || nk === headKey || /^tong cong\b|^(tong|cong)$/.test(nk) || /^\d+$/.test(nk)) continue;
       var stt = sttCol ? xlText(cell(r, sttCol).value) : '';
       // fileStt: STT trong file — chỉ dùng để nhận dòng nhóm; STT của gói do web tự đánh 1, 2, 3… (khAutoStt).
-      var item = { row: r, fileStt: stt, name: name, value: valueCol ? xlMoney(cell(r, valueCol).value) : null, plan: {}, plan0: {}, actual: {},
-                   hidden: !!ws.getRow(r).hidden, progress: 0, progressText: '' };
+      var item = { row: r, sheet: ws.name, fileStt: stt, name: name, value: valueCol ? xlMoney(cell(r, valueCol).value) : null,
+                   plan: {}, plan0: {}, actual: {}, done: {}, hidden: !!ws.getRow(r).hidden, progress: 0, progressText: '',
+                   na: /\((khong su dung|khong dung|khong thuc hien|huy)\)/.test(norm(name)) ? 'Không sử dụng' : '' }; // vd "Cẩu thùng (Không sử dụng)"
       if (progCol) {
         item.progressText = xlText(cell(r, progCol).value);
         var pk = khKey(item.progressText);
@@ -652,28 +732,49 @@
       MILESTONES.forEach(function (m) {
         var g = groups[m.key];
         if (!g) return;
-        item.plan[m.key] = xlDate(cell(r, g.plan).value);
-        item.plan0[m.key] = g.plan0 ? xlDate(cell(r, g.plan0).value) : '';
-        item.actual[m.key] = g.actual ? xlDate(cell(r, g.actual).value) : '';
-        if (item.plan[m.key] || item.actual[m.key]) any = true;
+        var cur = '', from = null;
+        for (var i = g.plans.length - 1; i >= 0 && !cur; i--) { cur = xlDate(cell(r, g.plans[i].col).value, mdy); if (cur) from = g.plans[i]; }
+        item.plan[m.key] = cur;
+        item.plan0[m.key] = g.plan0 ? xlDate(cell(r, g.plan0).value, mdy) : '';
+        if (from) {
+          maxUsed = Math.max(maxUsed, from.rev);
+          if (g.plan0 && from.col !== g.plan0) { hasBase = true; if (from.rev < 0) newer = true; }
+        }
+        if (g.actual) {
+          var av = cell(r, g.actual).value;
+          item.actual[m.key] = xlDate(av, mdy);
+          var at = item.actual[m.key] ? '' : khKey(xlText(av));
+          if (KH_DONE_RE.test(at)) item.done[m.key] = true;
+          else if (KH_NA_RE.test(at) && !item.na) item.na = xlText(av);
+        } else item.actual[m.key] = '';
+        if (item.plan[m.key] || item.actual[m.key] || item.done[m.key]) any = true;
       });
-      // Dòng nhóm (vd "I. PHẦN MÓNG": STT chữ La Mã/chữ cái, không có ngày) không phải gói thầu.
-      if (!any && !/^\d+([.,]\d+)*$/.test(stt)) continue;
+      // Dòng nhóm (vd "I. PHẦN MÓNG": STT chữ La Mã/chữ cái, hoặc tên VIẾT HOA, không có ngày) không phải gói thầu.
+      if (!any && (!/^\d+([.,]\d+)*$/.test(stt) || (name === name.toUpperCase() && /[A-ZĐ]/.test(name)))) continue;
+      // Mốc sau đã xong / có ngày thực tế → các mốc trước cũng đã xong (vd đã ký HĐ thì đã mời thầu, chọn thầu).
+      var later = false;
+      ['contract', 'select', 'invite'].forEach(function (k) {
+        if (later && !item.actual[k]) item.done[k] = true;
+        if (item.actual[k] || item.done[k]) later = true;
+      });
       rows.push(item);
     }
     if (!rows.length) return null;
-    // Không có "Kế hoạch RevNN" ở tiêu đề cột → lấy Rev ở tiêu đề sheet, vd "KẾ HOẠCH MUA SẮM … (REV01)".
-    if (maxRev < 0) {
-      for (r = 1; r < hr && maxRev < 0; r++) {
+    // File chỉ có 1 bản kế hoạch (cột Rev01… trống) → không có kế hoạch gốc riêng.
+    if (!hasBase) rows.forEach(function (it) { it.plan0 = {}; });
+    // Nhãn bản kế hoạch: Rev lớn nhất đã dùng; bản cập nhật không ghi Rev (vd "Kế hoạch 03/09/2026") → không ghi nhãn ("KH hiện hành").
+    var rev = newer && maxUsed <= 0 ? -2 : maxUsed;
+    if (rev === -1) {
+      // Không có "Kế hoạch RevNN" ở tiêu đề cột → lấy Rev ở tiêu đề sheet, vd "KẾ HOẠCH MUA SẮM … (REV01)".
+      for (r = 1; r < hr && rev < 0; r++) {
         for (c = 1; c <= Math.min(maxC, 40); c++) {
           var rv = revOf(khKey(xlText(cell(r, c).value)));
-          if (rv >= 0) { maxRev = rv; break; }
+          if (rv >= 0) { rev = rv; break; }
         }
       }
     }
-    var hasBase = Object.keys(groups).some(function (k) { return groups[k].plan0; });
-    return { name: ws.name, visible: !ws.state || ws.state === 'visible', headerRow: hr, groups: groups,
-             rev: maxRev >= 0 ? 'Rev' + ('0' + maxRev).slice(-2) : '', rev0: hasBase ? 'Rev00' : '', rows: rows };
+    return { name: ws.name, visible: !ws.state || ws.state === 'visible', headerRow: hr, groups: groups, mdy: mdy,
+             rev: rev >= 0 ? 'Rev' + ('0' + rev).slice(-2) : '', rev0: hasBase ? 'Rev00' : '', rows: rows };
   }
 
   function khmsUpload() {
@@ -706,6 +807,25 @@
           throw new Error('Không tìm thấy bảng KHMS trong file: cần dòng tiêu đề có cột "Hạng mục" và các nhóm cột ' +
             '"Ngày mời thầu / Ngày chọn thầu / Ngày ký kết hợp đồng" (dưới mỗi nhóm có cột Kế hoạch, Thực tế).');
         }
+        // File tổng hợp: các sheet đặt tên "STT_Tên dự án" của ≥ 2 dự án → tải nhiều dự án một lần.
+        var codes = {};
+        sheets.forEach(function (s) { var c = khSheetCode(s.name); if (c) codes[c] = 1; });
+        if (Object.keys(codes).length >= 2) {
+          S.khImport = khBatchInit(file.name, sheets.filter(function (s) { return khSheetCode(s.name); }));
+          // Sheet không phải KHMS 1 dự án (vd "DuAn" — danh sách dự án, "Bim Hạ Long" — không có số dự án): bỏ qua.
+          S.khImport.ignored = wb.worksheets.map(function (ws) { return ws.name; })
+            .filter(function (n) { return !sheets.some(function (s) { return s.name === n && khSheetCode(n); }); });
+          // Sheet danh sách dự án (vd "DuAn": Dự án · NS phụ trách) → gợi ý phân công chuyên viên phụ trách.
+          wb.worksheets.some(function (ws) {
+            var rows = null;
+            try { rows = parseAssignSheet(ws); } catch (e) { rows = null; }
+            if (!rows) return false;
+            S.khImport.assign = khAssignFromSheet(rows, S.khImport.sheets);
+            S.khImport.assign.sheet = ws.name;
+            return true;
+          });
+          openKhmsBatch(); return;
+        }
         var guess = projectCodesOf(file.name).filter(function (c) { return S.projMap[c]; })[0] || S.khms.project || '';
         // Nhiều sheet có bảng KHMS: ưu tiên sheet đang hiện, rồi bản có số "(n)" lớn nhất — theo người dùng, file KHMSGT
         // dùng "KHMSGT (2)" (bản mới) thay cho "KHMSGT" — rồi sheet nhiều gói nhất.
@@ -716,7 +836,7 @@
         var best = 0;
         sheets.forEach(function (s, i) { if (better(s, sheets[best]) > 0) best = i; });
         S.khImport = { fileName: file.name, sheets: sheets, sheet: best, project: guess, skip: {}, useProgress: true };
-        sheets[best].rows.forEach(function (r, i) { if (r.hidden) S.khImport.skip[i] = true; });
+        sheets[best].rows.forEach(function (r, i) { if (r.na) S.khImport.skip[i] = true; });
         openKhmsImport();
       }).catch(function (err) {
         toast((err && err.message) || 'Không đọc được file Excel.', 'err');
@@ -726,22 +846,28 @@
   }
 
   /**
-   * Ngày thực tế sẽ gửi lên: theo cột Thực tế trong file; nếu bật "theo cột tình trạng": gói "Đã ký HĐ" → mời thầu, chọn thầu,
-   * ký HĐ đã xong; "Đang ký HĐ" → mời thầu, chọn thầu đã xong — ô còn trống lấy ngày kế hoạch. inferred: các mốc được suy ra.
+   * Ngày thực tế sẽ gửi lên: theo cột Thực tế trong file; nếu bật "mốc đã xong theo file": ô Thực tế ghi "HT" / "Hoàn thành" /
+   * "HĐNT"…, gói "Đã ký HĐ" (mời thầu, chọn thầu, ký HĐ đã xong), "Đang ký HĐ" (mời thầu, chọn thầu đã xong) — ô còn trống lấy
+   * ngày kế hoạch (không sau hôm nay). inferred: các mốc được suy ra.
    */
   function khImpActual(st, r) {
     var a = {}, inferred = [];
     MILESTONES.forEach(function (m) { a[m.key] = r.actual[m.key] || ''; });
-    if (st.useProgress && r.progress) {
-      var done = r.progress >= 2 ? ['invite', 'select', 'contract'] : ['invite', 'select'];
-      done.forEach(function (k) { if (!a[k] && r.plan[k] && r.plan[k] <= S.today) { a[k] = r.plan[k]; inferred.push(k); } });
+    if (st.useProgress) {
+      var done = {};
+      if (r.progress) (r.progress >= 2 ? ['invite', 'select', 'contract'] : ['invite', 'select']).forEach(function (k) { done[k] = 1; });
+      MILESTONES.forEach(function (m) { if (r.done && r.done[m.key]) done[m.key] = 1; });
+      MILESTONES.forEach(function (m) {
+        var k = m.key, d = r.plan[k] > S.today ? S.today : r.plan[k];
+        if (done[k] && !a[k] && d) { a[k] = d; inferred.push(k); }
+      });
     }
     return { actual: a, inferred: inferred };
   }
   /** STT web tự đánh (theo người dùng: không dùng STT trong file): 1, 2, 3… theo thứ tự các gói được tích; gói bỏ tích → ''. */
-  function khAutoStt(st) {
+  function khAutoStt(rows, skip) {
     var n = 0;
-    return st.sheets[st.sheet].rows.map(function (r, i) { return st.skip[i] ? '' : String(++n); });
+    return rows.map(function (r, i) { return skip[i] ? '' : String(++n); });
   }
   /** Ghép dòng file với gói đã có (giống importPlan_ ở server): cùng tên không dấu, ưu tiên cùng STT. */
   function khmsMatch(rows, existing) {
@@ -754,15 +880,16 @@
       return hit;
     });
   }
-  function khmsDiff(st) {
-    var sh = st.sheets[st.sheet];
-    var existing = st.project ? S.packages.filter(function (p) { return p.project === st.project; }) : [];
-    var auto = khAutoStt(st);
-    var picked = sh.rows.map(function (r, i) { return { name: r.name, stt: auto[i] }; }).filter(function (r, i) { return !st.skip[i]; });
+  /** So các dòng file (bỏ dòng không tích) với KHMS đang có của dự án: Mới / Cập nhật (kê trường đổi) / Không đổi / Không còn trong file (sẽ xóa). */
+  /** overwrite (Ghi đè): như server mergePlan_ — kế hoạch gốc / thực tế theo file, gói trên web không có trong file sẽ bị xóa. */
+  function khmsDiff(st, rows, skip, project, overwrite) {
+    var existing = project ? S.packages.filter(function (p) { return p.project === project; }) : [];
+    var auto = khAutoStt(rows, skip);
+    var picked = rows.map(function (r, i) { return { name: r.name, stt: auto[i] }; }).filter(function (r, i) { return !skip[i]; });
     var hits = khmsMatch(picked, existing), j = 0, matched = {};
-    var out = { add: 0, upd: 0, same: 0, info: [], removed: [] };
-    sh.rows.forEach(function (r, i) {
-      if (st.skip[i]) { out.info.push(null); return; }
+    var out = { add: 0, upd: 0, same: 0, n: picked.length, info: [], removed: [], auto: auto };
+    rows.forEach(function (r, i) {
+      if (skip[i]) { out.info.push(null); return; }
       var p = hits[j++];
       if (!p) { out.add++; out.info.push({ kind: 'new' }); return; }
       matched[p.id] = true;
@@ -770,29 +897,47 @@
       if (p.stt !== auto[i]) ch.push('STT');
       if ((p.value == null ? null : p.value) !== r.value) ch.push('giá trị');
       MILESTONES.forEach(function (m) {
-        if ((p[m.key + 'Plan'] || '') !== (r.plan[m.key] || '')) ch.push('KH ' + m.label.toLowerCase());
-        if (r.plan0[m.key] && (p[m.key + 'Plan0'] || '') !== r.plan0[m.key]) ch.push('KH Rev00 ' + m.label.toLowerCase());
-        if (eff.actual[m.key] && !p[m.key + 'Actual'] && !(m.key === 'select' && p._selectSrc === 'sub')) ch.push('TT ' + m.label.toLowerCase());
+        var k = m.key, lb = m.label.toLowerCase();
+        if ((p[k + 'Plan'] || '') !== (r.plan[k] || '')) ch.push('KH ' + lb);
+        if (overwrite) {
+          if ((p[k + 'Plan0'] || '') !== (r.plan0[k] || r.plan[k] || '')) ch.push('KH gốc ' + lb);
+          if ((p[k + 'Actual'] || '') !== (eff.actual[k] || '')) ch.push('TT ' + lb);
+          return;
+        }
+        if (r.plan0[k] && (p[k + 'Plan0'] || '') !== r.plan0[k]) ch.push('KH Rev00 ' + lb);
+        if (eff.actual[k] && !p[k + 'Actual'] && !(k === 'select' && p._selectSrc === 'sub')) ch.push('TT ' + lb);
       });
-      if (!p.active) ch.push('dùng lại');
       if (ch.length) out.upd++; else out.same++;
       out.info.push({ kind: ch.length ? 'upd' : 'same', changes: ch });
     });
-    out.removed = existing.filter(function (p) { return p.active && !matched[p.id]; });
+    out.removed = existing.filter(function (p) { return !matched[p.id]; });
+    out.overwrite = !!overwrite;
     return out;
   }
-
-  function openKhmsImport() {
-    var st = S.khImport, sh = st.sheets[st.sheet];
-    var diff = khmsDiff(st), auto = khAutoStt(st);
-    var gnames = MILESTONES.filter(function (m) { return sh.groups[m.key]; }).map(function (m) {
-      var g = sh.groups[m.key];
-      var rv = g.rev >= 0 ? 'Rev' + ('0' + g.rev).slice(-2) : '';
-      return m.label + ' (Kế hoạch' + (g.plan0 ? ' Rev00 + ' + (rv || 'bản mới') : rv ? ' ' + rv : '') + (g.actual ? ', Thực tế' : '') + ')';
+  /** Đếm mốc "đã xong" theo file trong các dòng được tích (cho ô tích "ghi nhận ngày thực tế = ngày kế hoạch"). */
+  function khProgCount(rows, skip, acc) {
+    acc = acc || { done: 0, sel: 0, ht: 0 };
+    rows.forEach(function (r, i) {
+      if (skip[i]) return;
+      if (r.progress === 2) acc.done++; else if (r.progress === 1) acc.sel++;
+      if (MILESTONES.some(function (m) { return r.done && r.done[m.key] && !r.actual[m.key]; })) acc.ht++;
     });
-    var missing = MILESTONES.filter(function (m) { return !sh.groups[m.key]; }).map(function (m) { return m.head; });
-    var n = sh.rows.length - Object.keys(st.skip).filter(function (k) { return st.skip[k]; }).length;
-    var rows = sh.rows.map(function (r, i) {
+    return acc;
+  }
+  function khProgOption(st, prog) {
+    if (!prog.done && !prog.sel && !prog.ht) return '';
+    var parts = [];
+    if (prog.ht) parts.push('<b>' + prog.ht + '</b> gói có cột Thực tế ghi "HT" / "Hoàn thành" / "HĐNT"… thay cho ngày');
+    if (prog.done) parts.push('<b>' + prog.done + '</b> gói "Đã ký HĐ" (đã mời thầu, chọn thầu, ký HĐ)');
+    if (prog.sel) parts.push('<b>' + prog.sel + '</b> gói "Đang ký HĐ" (đã mời thầu, chọn thầu)');
+    return '<label class="check sync-date-opt"><input type="checkbox" data-change="kh-imp-progress"' + (st.useProgress ? ' checked' : '') + '><span>' +
+      'Mốc đã xong theo file: ' + parts.join('; ') + ' → ghi nhận <b>ngày thực tế = ngày kế hoạch</b> (không sau hôm nay; mốc sau đã xong thì các mốc trước cũng xong; ' +
+      'chỉ điền ô còn trống, dấu *). Bỏ tích nếu không muốn.</span></label>';
+  }
+  /** Bảng các gói đọc được (xem trước): tích / bỏ từng gói. u: số thứ tự nhóm sheet khi tải nhiều dự án. */
+  function khImpTable(st, rows, skip, diff, o) {
+    var uAttr = o.u != null ? ' data-u="' + o.u + '"' : '';
+    var body = rows.map(function (r, i) {
       var inf = diff.info[i];
       var tag = !inf ? '<span class="muted">Bỏ qua</span>' : inf.kind === 'new' ? '<span class="kh-chg new">Mới</span>'
         : inf.kind === 'upd' ? '<span class="kh-chg upd">Cập nhật</span><small class="kh-chg-l">' + esc(inf.changes.join(', ')) + '</small>'
@@ -801,25 +946,56 @@
       var acts = MILESTONES.filter(function (m) { return eff.actual[m.key]; }).map(function (m) {
         return m.label + ' ' + fmtShort(eff.actual[m.key]) + (eff.inferred.indexOf(m.key) >= 0 ? '*' : '');
       });
-      return '<tr' + (st.skip[i] ? ' class="inactive"' : '') + '><td class="center"><input type="checkbox" data-change="kh-imp-row" data-i="' + i + '"' + (st.skip[i] ? '' : ' checked') + '></td>' +
-        '<td class="center code">' + (auto[i] ? esc(auto[i]) : '<span class="muted">—</span>') + '</td><td class="title-cell">' + esc(r.name) + (r.hidden ? ' <span class="kh-tag">dòng ẩn</span>' : '') + '</td>' +
+      var tags = (r.hidden ? ' <span class="kh-tag">dòng ẩn</span>' : '') + (r.na ? ' <span class="kh-tag">' + esc(r.na) + '</span>' : '') +
+        (o.multiSheet ? '<small class="kh-sheet">' + esc(r.sheet) + '</small>' : '');
+      return '<tr' + (skip[i] ? ' class="inactive"' : '') + '><td class="center"><input type="checkbox" data-change="kh-imp-row"' + uAttr + ' data-i="' + i + '"' + (skip[i] ? '' : ' checked') + '></td>' +
+        '<td class="center code">' + (diff.auto[i] ? esc(diff.auto[i]) : '<span class="muted">—</span>') + '</td><td class="title-cell">' + esc(r.name) + tags + '</td>' +
         '<td class="num nowrap">' + (r.value != null ? fmtMoney(r.value) : '—') + '</td>' +
         MILESTONES.map(function (m) {
           var a = r.plan0[m.key], b = r.plan[m.key];
-          return '<td class="nowrap">' + (sh.rev0 ? '<small class="kh-rev0x">' + (fmtShort(a) || '—') + '</small>' : '') +
-            '<span' + (sh.rev0 && a !== b ? ' class="kh-chgd"' : '') + '>' + (fmtShort(b) || '—') + '</span></td>';
+          return '<td class="nowrap">' + (o.rev0 ? '<small class="kh-rev0x">' + (fmtShort(a) || '—') + '</small>' : '') +
+            '<span' + (o.rev0 && a && a !== b ? ' class="kh-chgd"' : '') + '>' + (fmtShort(b) || '—') + '</span></td>';
         }).join('') +
         '<td class="kh-acts">' + (r.progressText ? '<b>' + esc(r.progressText) + '</b><br>' : '') +
           (acts.length ? esc(acts.join(' · ')) : '<span class="muted">—</span>') + '</td><td>' + tag + '</td></tr>';
     }).join('');
-    var removed = diff.removed.length ? syncSection('Gói không có trong file (sẽ đánh dấu "Không còn trong KHMS mới")', diff.removed.length,
-      '<ul class="sync-list">' + diff.removed.map(function (p) { return '<li>' + esc((p.stt ? p.stt + '. ' : '') + p.name) + (p.submissionId ? ' <span class="muted">(' + esc(p.submissionId) + ')</span>' : '') + '</li>'; }).join('') + '</ul>',
-      false, 'Gói vẫn được giữ cùng ngày thực tế và hồ sơ đã gắn, chỉ ẩn khỏi danh sách; tải lại file có gói này thì dùng lại.') : '';
+    return '<div class="table-wrap"><table class="grid kh-imp"><thead><tr>' +
+      '<th class="center"><input type="checkbox" data-change="kh-imp-all"' + uAttr + (diff.n === rows.length ? ' checked' : '') + ' aria-label="Chọn tất cả"></th>' +
+      '<th title="Web tự đánh số 1, 2, 3… theo thứ tự các gói được tích (không dùng STT trong file)">STT</th><th>Hạng mục</th><th class="num">Giá trị</th>' +
+      MILESTONES.map(function (m) { return '<th>KH ' + esc(m.label.toLowerCase()) + (o.rev0 ? '<small class="kh-th-rev">Rev00 / ' + esc(o.rev || 'mới') + '</small>' : '') + '</th>'; }).join('') +
+      '<th>Tình trạng / thực tế trong file</th><th>Thay đổi</th></tr></thead><tbody>' + body + '</tbody></table></div>';
+  }
+  function khRemovedSection(removed, overwrite) {
+    if (overwrite) {
+      return removed.length ? syncSection('Gói trên web không có trong file (ghi đè: sẽ XÓA)', removed.length,
+        '<ul class="sync-list">' + removed.map(function (p) { return '<li>' + esc((p.stt ? p.stt + '. ' : '') + p.name) + (p.submissionId ? ' <span class="muted">(' + esc(p.submissionId) + ')</span>' : '') + '</li>'; }).join('') + '</ul>',
+        false, 'Ghi đè: các gói này bị xóa khỏi KHMS của dự án (kể cả ngày thực tế và hồ sơ đã gắn).') : '';
+    }
+    return removed.length ? syncSection('Gói trên web không có trong file (sẽ XÓA)', removed.length,
+      '<ul class="sync-list">' + removed.map(function (p) { return '<li>' + esc((p.stt ? p.stt + '. ' : '') + p.name) + (p.submissionId ? ' <span class="muted">(' + esc(p.submissionId) + ')</span>' : '') + '</li>'; }).join('') + '</ul>',
+      false, 'Gói không còn trong file KHMS mới bị xóa khỏi KHMS của dự án (kể cả ngày thực tế và hồ sơ đã gắn). Bỏ tích dự án nếu chưa muốn tải.') : '';
+  }
+
+  /** Ô tích gói trong bảng xem trước → { rows, skip } của KHMS đang xem (1 dự án, hoặc nhóm sheet data-u khi tải nhiều dự án). */
+  function khImpTarget(el) {
+    var st = S.khImport;
+    if (st.batch) return st.units[+el.dataset.u];
+    return { rows: st.sheets[st.sheet].rows, skip: st.skip };
+  }
+  function openKhmsImport() {
+    var st = S.khImport;
+    if (st.batch) { openKhmsBatch(); return; }
+    var sh = st.sheets[st.sheet];
+    var diff = khmsDiff(st, sh.rows, st.skip, st.project);
+    var gnames = MILESTONES.filter(function (m) { return sh.groups[m.key]; }).map(function (m) {
+      var g = sh.groups[m.key];
+      var rv = g.rev >= 0 ? 'Rev' + ('0' + g.rev).slice(-2) : '';
+      return m.label + ' (Kế hoạch' + (g.plan0 ? ' Rev00 + ' + (rv && g.rev > 0 ? rv : 'bản mới') : rv ? ' ' + rv : '') + (g.actual ? ', Thực tế' : '') + ')';
+    });
+    var missing = MILESTONES.filter(function (m) { return !sh.groups[m.key]; }).map(function (m) { return m.head; });
     var sheetSel = st.sheets.length > 1 ? '<div class="form-row"><label for="m-ksheet">Sheet</label><select id="m-ksheet" data-change="kh-imp-sheet">' +
       st.sheets.map(function (s, i) { return '<option value="' + i + '"' + (i === st.sheet ? ' selected' : '') + '>' + esc(s.name) + (s.visible ? '' : ' – sheet ẩn') + ' (' + s.rows.length + ' gói)</option>'; }).join('') + '</select></div>' : '';
     var first = st.project && !S.packages.some(function (p) { return p.project === st.project; });
-    var prog = { done: 0, sel: 0 };
-    sh.rows.forEach(function (r, i) { if (!st.skip[i]) { if (r.progress === 2) prog.done++; else if (r.progress === 1) prog.sel++; } });
     openModal(modalHead('Tải KHMS: ' + esc(st.fileName)) + '<div class="modal-body"><div id="m-err"></div>' +
       '<div class="form-row"><label for="m-kproject">Dự án của KHMS</label>' + khmsProjectSelect('m-kproject', st.project, 'import') +
       '<div class="help">Tự chọn theo số đầu tên file (vd "231_KHMS….xlsx"); kiểm tra lại trước khi tải lên.</div></div>' + sheetSel +
@@ -827,29 +1003,27 @@
         ' · đọc được: ' + esc(gnames.join('; ')) + (missing.length ? '<br><span class="kh-warn">Không thấy nhóm cột: ' + esc(missing.join(', ')) + '</span>' : '') + '</div>' +
       '<div class="meta-grid" style="margin-top:12px"><div><small>Gói thầu trong file</small>' + sh.rows.length + '</div>' +
         '<div><small>Thêm mới</small>' + diff.add + '</div><div><small>Cập nhật</small>' + diff.upd + '</div><div><small>Không đổi</small>' + diff.same + '</div>' +
-        '<div><small>Không còn trong file</small>' + diff.removed.length + '</div></div>' +
-      syncSection('Gói thầu đọc được', sh.rows.length, '<div class="table-wrap"><table class="grid kh-imp"><thead><tr>' +
-        '<th class="center"><input type="checkbox" data-change="kh-imp-all" checked aria-label="Chọn tất cả"></th><th title="Web tự đánh số 1, 2, 3… theo thứ tự các gói được tích (không dùng STT trong file)">STT</th><th>Hạng mục</th><th class="num">Giá trị</th>' +
-        MILESTONES.map(function (m) { return '<th>KH ' + esc(m.label.toLowerCase()) + (sh.rev0 ? '<small class="kh-th-rev">Rev00 / ' + esc(sh.rev || 'mới') + '</small>' : '') + '</th>'; }).join('') +
-        '<th>Tình trạng / thực tế trong file</th><th>Thay đổi</th></tr></thead><tbody>' +
-        rows + '</tbody></table></div>', true) + removed +
-      (prog.done || prog.sel ? '<label class="check sync-date-opt"><input type="checkbox" data-change="kh-imp-progress"' + (st.useProgress ? ' checked' : '') + '><span>' +
-        'Theo cột tình trạng trong file: <b>' + prog.done + '</b> gói "Đã ký HĐ" (đã mời thầu, chọn thầu, ký HĐ), <b>' + prog.sel + '</b> gói "Đang ký HĐ" (đã mời thầu, chọn thầu) ' +
-        '→ ghi nhận ngày thực tế = ngày kế hoạch cho các mốc đã xong (chỉ điền ô còn trống, dấu *). Bỏ tích nếu không muốn.</span></label>' : '') +
+        '<div><small>Xóa (không còn trong file)</small>' + diff.removed.length + '</div></div>' +
+      syncSection('Gói thầu đọc được', sh.rows.length, khImpTable(st, sh.rows, st.skip, diff, { rev0: sh.rev0, rev: sh.rev }), true) +
+      khRemovedSection(diff.removed) + khProgOption(st, khProgCount(sh.rows, st.skip)) +
       '<div class="info-box" style="margin-top:14px">' + (first
         ? 'Lần tải đầu của dự án: ngày kế hoạch được lưu làm <b>kế hoạch gốc</b> để so sánh khi có bản KHMS mới.'
         : 'Tải lại: cập nhật <b>kế hoạch hiện hành</b> theo file, giữ kế hoạch gốc, ngày thực tế và hồ sơ đã gắn trên web.') +
         ' Ngày thực tế trong file chỉ điền vào ô còn trống trên web; ngày chọn thầu thực tế lấy theo ngày duyệt hồ sơ khi đã gắn hồ sơ.</div></div>' +
       '<div class="modal-foot"><button class="secondary-btn" data-act="close-modal">Hủy</button>' +
-      '<button class="primary-btn" id="m-kimp-btn" style="min-height:42px;font-size:16px" data-act="kh-submit-import">' + ic('check') + 'Tải lên ' + n + ' gói thầu</button></div>', true);
+      '<button class="primary-btn" id="m-kimp-btn" style="min-height:42px;font-size:16px" data-act="kh-submit-import">' + ic('check') + 'Tải lên ' + diff.n + ' gói thầu</button></div>', true);
   }
 
+  /** Dòng gửi lên server của 1 KHMS (bỏ dòng không tích). */
+  function khImpPayloadRows(st, rows, skip) {
+    return rows.filter(function (r, i) { return !skip[i]; }).map(function (r, i) {
+      return { stt: String(i + 1), name: r.name, value: r.value, plan: r.plan, plan0: r.plan0, actual: khImpActual(st, r).actual };
+    });
+  }
   function submitKhmsImport(btn) {
     var st = S.khImport, sh = st.sheets[st.sheet];
     if (!st.project) { modalError('Vui lòng chọn dự án của KHMS.'); return; }
-    var rows = sh.rows.filter(function (r, i) { return !st.skip[i]; }).map(function (r, i) {
-      return { stt: String(i + 1), name: r.name, value: r.value, plan: r.plan, plan0: r.plan0, actual: khImpActual(st, r).actual };
-    });
+    var rows = khImpPayloadRows(st, sh.rows, st.skip);
     if (!rows.length) { modalError('Chưa chọn gói thầu nào.'); return; }
     busy(btn, true);
     call('importPlan', { projectCode: st.project, fileName: st.fileName, rev: sh.rev, rev0: sh.rev0, rows: rows }).then(function (r) {
@@ -858,8 +1032,402 @@
       S.khms.project = st.project; S.khms.state = ''; S.khImport = null;
       derive(); render();
       toast('Đã tải KHMS dự án ' + st.project + ': ' + r.added + ' gói mới, ' + r.updated + ' cập nhật, ' + r.unchanged + ' không đổi' +
-        (r.removed ? ', ' + r.removed + ' không còn trong KHMS mới' : '') + '.');
+        (r.removed ? ', xóa ' + r.removed + ' gói không còn trong file' : '') + '.');
     }).catch(function (err) { busy(btn, false); if (err.code === 'AUTH') handleErr(err); else modalError(err.message); });
+  }
+
+  /* ---------- Tải nhiều dự án một lần: file tổng hợp, mỗi sheet "STT_Tên dự án" là KHMS của 1 dự án ---------- */
+  /**
+   * Mã dự án theo tên sheet: "260_Sky M XD" → 260; "260.1_Sky M MEP" → 260.1 — theo người dùng: sheet có ".1" là dự án riêng trên web.
+   * Không có số đầu tên → ''.
+   */
+  function khSheetCode(name) {
+    var m = String(name || '').trim().match(/^0*(\d{1,6}(?:\.\d{1,3})?)(?=[\s_\-]|$)/);
+    return m ? m[1] : '';
+  }
+  /**
+   * Gom sheet theo dự án (mã đầu tên sheet: "76_La Pura" → 76, "76.1_La Pura MEP" → 76.1 — dự án riêng; sheet trùng mã thì gộp). Mặc định bỏ tích gói "Không làm" / "CĐT cấp"…;
+   * dòng ẩn vẫn tích (theo người dùng: "cập nhật cả data trong các dòng ẩn" — file thường ẩn các gói đã xong).
+   */
+  function khBatchInit(fileName, sheets) {
+    var units = [], byCode = {};
+    sheets.forEach(function (sh, si) {
+      var code = khSheetCode(sh.name);
+      var u = code ? byCode[code] : null;
+      if (!u) {
+        u = { code: code, project: code && S.projMap[code] ? code : '', sheets: [], rows: [], skip: {}, on: false, overwrite: false };
+        units.push(u);
+        if (code) byCode[code] = u;
+      }
+      u.sheets.push(si);
+      sh.rows.forEach(function (r) {
+        if (r.na) u.skip[u.rows.length] = true;
+        u.rows.push(r);
+      });
+    });
+    units.forEach(function (u) {
+      var shs = u.sheets.map(function (si) { return sheets[si]; });
+      var revs = shs.map(function (s) { return s.rev; });
+      u.rev = revs.every(function (v) { return v === revs[0]; }) ? revs[0] : '';
+      u.rev0 = shs.some(function (s) { return s.rev0; }) ? 'Rev00' : '';
+      // Sheet chỉ có kế hoạch Rev00 gộp với sheet có Rev00 + bản mới (vd 76_La Pura + 76.1_La Pura MEP): kế hoạch gốc = chính kế hoạch Rev00.
+      if (u.rev0) shs.forEach(function (s) {
+        if (!s.rev0 && s.rev === 'Rev00') s.rows.forEach(function (r) { MILESTONES.forEach(function (m) { r.plan0[m.key] = r.plan[m.key] || ''; }); });
+      });
+      u.name = shs.map(function (s) { return s.name; }).join(' + ');
+      // STT trên tên sheet chưa có dự án trên web → tạo dự án mới theo tên sheet (Trưởng phòng / admin), vd "260.1_Sky M MEP" → 260.1_Sky M MEP.
+      if (!u.project && /^\d+(\.\d+)?$/.test(u.code)) {
+        u.createName = khSheetProjectName(shs.map(function (s) { return s.name; }));
+        if (u.createName && S.me.isManager) u.project = u.code;
+      }
+      u.on = !!u.project && shs.some(function (s) { return s.visible; });
+    });
+    // Lần tải trước gộp sheet "76.1_…" vào dự án 76 (trước khi tách mã phụ thành dự án riêng): dự án gốc đang có gói của sheet .n
+    // → tự tích "Ghi đè" (Trưởng phòng / admin) để chuyển hẳn các gói đó sang dự án .n.
+    units.forEach(function (u) {
+      if (!u.project || !/^\d+$/.test(u.code)) return;
+      var own = {}, sib = {};
+      u.rows.forEach(function (r) { own[khKey(r.name)] = 1; });
+      units.forEach(function (v) { if (v.code.indexOf(u.code + '.') === 0) v.rows.forEach(function (r) { sib[khKey(r.name)] = 1; }); });
+      u.splitN = S.packages.filter(function (p) { return p.project === u.project && p.active && sib[khKey(p.name)] && !own[khKey(p.name)]; }).length;
+      if (u.splitN && S.me.isManager) u.overwrite = true;
+    });
+    // Dự án gốc không có sheet riêng trong file (vd chỉ có "172.1_…", "172.2_…") nhưng đang giữ gói gộp từ các sheet đó ở lần tải trước
+    // → đề xuất xóa KHMS cũ của dự án gốc (gói đã chuyển sang dự án .n).
+    var orphans = [], have = {};
+    units.forEach(function (u) { if (u.code) have[u.code] = 1; });
+    var pk = {};
+    S.packages.forEach(function (p) { if (p.active) (pk[p.project] = pk[p.project] || []).push(p); });
+    Object.keys(pk).forEach(function (code) {
+      if (have[code] || !/^\d+$/.test(code)) return;
+      var subs = units.filter(function (v) { return v.code.indexOf(code + '.') === 0; });
+      if (!subs.length) return;
+      var sib = {};
+      subs.forEach(function (v) { v.rows.forEach(function (r) { sib[khKey(r.name)] = 1; }); });
+      var hit = pk[code].filter(function (p) { return sib[khKey(p.name)]; }).length;
+      if (hit) orphans.push({ code: code, n: pk[code].length, hit: hit, subs: subs.map(function (v) { return v.code; }), on: S.me.isManager && hit >= pk[code].length * 0.9 }); // ≥ 90% gói trùng tên → mặc định tích
+    });
+    return { batch: true, fileName: fileName, sheets: sheets, units: units, useProgress: true, open: -1, orphans: orphans };
+  }
+  /** Tên dự án theo tên sheet: bỏ "STT_" / "STT.n_" đầu, lấy phần chung của các sheet cùng dự án. */
+  function khSheetProjectName(names) {
+    var parts = names.map(function (n) { return n.replace(/^\d+(?:\.\d+)*\s*[_.\-\s]\s*/, '').trim(); }).filter(Boolean);
+    if (!parts.length) return '';
+    var common = parts.reduce(function (a, b) { var i = 0; while (i < a.length && a.charAt(i) === b.charAt(i)) i++; return a.slice(0, i); });
+    common = common.replace(/[\s_\-.,(]+$/, '').trim();
+    return (common.length >= 3 ? common : parts[0]).replace(/_/g, ' ').replace(/\s+/g, ' ').slice(0, 150);
+  }
+  function openKhmsBatch() {
+    var st = S.khImport;
+    var tot = { units: 0, n: 0, add: 0, upd: 0, same: 0, removed: 0, over: [] }, prog = { done: 0, sel: 0, ht: 0 }, used = {};
+    var lines = st.units.map(function (u, ui) {
+      u.has = !!u.project && S.packages.some(function (p) { return p.project === u.project; });
+      if (!u.has || !S.me.isManager) u.overwrite = false;
+      var diff = khmsDiff(st, u.rows, u.skip, u.project, u.overwrite);
+      u._diff = diff;
+      if (u.on) {
+        if (u.overwrite) tot.over.push(u.project);
+        tot.units++; tot.n += diff.n; tot.add += diff.add; tot.upd += diff.upd; tot.same += diff.same; tot.removed += diff.removed.length;
+        khProgCount(u.rows, u.skip, prog);
+        if (u.project) used[u.project] = (used[u.project] || 0) + 1;
+      }
+      var hidden = u.sheets.every(function (si) { return !st.sheets[si].visible; });
+      var warn = !u.project ? (u.code ? 'Dự án ' + u.code + ' chưa có trong danh mục' +
+        (u.createName && !S.me.isManager ? ' — Trưởng phòng / admin tải file để tự tạo' : '') : 'Chưa xác định dự án') : '';
+      var isNew = u.createName && u.project === u.code && !S.projMap[u.code];
+      return { u: u, ui: ui, diff: diff, warn: warn, hidden: hidden, isNew: isNew };
+    });
+    var dup = Object.keys(used).filter(function (c) { return used[c] > 1; });
+    var missingCodes = lines.filter(function (l) { return l.warn && l.u.code; }).map(function (l) { return l.u.code; });
+    var newCodes = lines.filter(function (l) { return l.isNew && l.u.on; }).map(function (l) { return l.u.code + '_' + l.u.createName; });
+    var body = lines.map(function (l) {
+      var u = l.u, d = l.diff, open = st.open === l.ui;
+      return '<tr' + (u.on ? '' : ' class="inactive"') + '><td class="center"><input type="checkbox" data-change="kh-bimp-on" data-u="' + l.ui + '"' + (u.on ? ' checked' : '') + '></td>' +
+        '<td class="title-cell">' + esc(u.name) + (l.hidden ? ' <span class="kh-tag">sheet ẩn</span>' : '') +
+          '<br><button class="link-btn kh-bopen" data-act="kh-bimp-open" data-u="' + l.ui + '">' + (open ? 'Ẩn danh sách gói ▴' : 'Xem gói ▾') + '</button></td>' +
+        '<td>' + khmsProjectSelect('m-kbp-' + l.ui, u.project, 'batch', ' data-u="' + l.ui + '" aria-label="Dự án của ' + esc(u.name) + '"',
+          u.createName && S.me.isManager && !S.projMap[u.code] ? { code: u.code, name: u.createName } : null) +
+          (l.isNew ? '<div class="kh-bnew">Dự án mới: tạo ' + esc(u.code + '_' + u.createName) + ' trong danh mục</div>' : '') +
+          (u.splitN ? '<div class="kh-warn kh-bwarn">Đang có ' + u.splitN + ' gói của sheet ' + esc(u.code) + '.x (gộp ở lần tải trước) — ' +
+            (u.overwrite ? 'Ghi đè để tách sang dự án riêng' : 'tích Ghi đè để tách sang dự án riêng') + '</div>' : '') +
+          (l.warn ? '<div class="kh-warn kh-bwarn">' + esc(l.warn) + '</div>' : '') + (u.on && dup.indexOf(u.project) >= 0 ? '<div class="kh-warn kh-bwarn">Trùng dự án với nhóm sheet khác</div>' : '') + '</td>' +
+        '<td class="center nowrap">' + (u.rev0 ? 'Rev00 + ' + esc(u.rev || 'mới') : esc(u.rev || '—')) + '</td>' +
+        '<td class="num">' + d.n + (d.n !== u.rows.length ? '<small class="muted"> / ' + u.rows.length + '</small>' : '') + '</td>' +
+        '<td class="num">' + (d.add || '<span class="muted">0</span>') + '</td><td class="num">' + (d.upd || '<span class="muted">0</span>') + '</td>' +
+        '<td class="num">' + (d.same || '<span class="muted">0</span>') + '</td><td class="num' + (d.removed.length ? ' kh-warn' : '') + '">' +
+          (d.removed.length ? d.removed.length : '<span class="muted">0</span>') + '</td>' +
+        '<td class="center">' + (u.has && S.me.isManager ? '<input type="checkbox" data-change="kh-bimp-over" data-u="' + l.ui + '"' + (u.overwrite ? ' checked' : '') +
+          ' aria-label="Ghi đè KHMS dự án ' + esc(u.project) + '">' : '<span class="muted">—</span>') + '</td></tr>';
+    }).join('');
+    var cur = st.open >= 0 ? st.units[st.open] : null;
+    var detail = cur ? syncSection('Gói thầu: ' + esc(cur.name) + (cur.project ? ' → dự án ' + esc(projectLabel(cur.project)) : ''), cur.rows.length,
+      khImpTable(st, cur.rows, cur.skip, cur._diff, { u: st.open, rev0: cur.rev0, rev: cur.rev, multiSheet: cur.sheets.length > 1 }), true) +
+      khRemovedSection(cur._diff.removed, cur.overwrite) : '';
+    var allOn = st.units.every(function (u) { return u.on || !u.project; });
+    openModal(modalHead('Tải KHMS nhiều dự án: ' + esc(st.fileName)) + '<div class="modal-body"><div id="m-err"></div>' +
+      '<div class="info-box">File có <b>' + st.sheets.length + '</b> sheet KHMS' +
+        (st.ignored && st.ignored.length ? ' (bỏ qua: ' + esc(st.ignored.join(', ')) + ')' : '') + '. Mỗi sheet <b>"STT_Tên dự án"</b> là KHMS của dự án có số đầu tên sheet; ' +
+        'sheet có mã phụ (vd "76.1_La Pura MEP", "260.1_Sky M MEP") là <b>dự án riêng</b> 76.1, 260.1 (chưa có trên web thì tự tạo theo tên sheet). Chỉ lấy các trường có trên web: tên gói, giá trị gói thầu, ' +
+        'ngày kế hoạch (Rev00 + bản mới nhất) và ngày thực tế của mời thầu / chọn thầu / ký hợp đồng / bắt đầu thi công.</div>' +
+      '<div class="meta-grid" style="margin-top:12px"><div><small>Dự án được chọn</small>' + tot.units + ' / ' + st.units.length + '</div>' +
+        '<div><small>Gói thầu tải lên</small>' + tot.n + '</div><div><small>Thêm mới</small>' + tot.add + '</div><div><small>Cập nhật</small>' + tot.upd + '</div>' +
+        '<div><small>Không đổi</small>' + tot.same + '</div><div><small>Xóa (không còn trong file)</small>' + tot.removed + '</div></div>' +
+      syncSection('Dự án trong file', st.units.length, '<div class="table-wrap"><table class="grid kh-imp kh-bimp"><thead><tr>' +
+        '<th class="center"><input type="checkbox" data-change="kh-bimp-all"' + (allOn ? ' checked' : '') + ' aria-label="Chọn tất cả"></th>' +
+        '<th>Sheet</th><th>Dự án trên web</th><th class="center">Kế hoạch</th><th class="num">Gói thầu</th><th class="num">Mới</th><th class="num">Cập nhật</th>' +
+        '<th class="num">Không đổi</th><th class="num" title="Gói đang có trên web mà không còn trong file — sẽ bị xóa">Xóa</th>' +
+        '<th class="center" title="Dự án đã có KHMS trên web: thay toàn bộ bằng dữ liệu trong file (kế hoạch gốc, kế hoạch, ngày thực tế, giá trị); gói không có trong file bị xóa. Trưởng phòng / admin.">Ghi đè</th></tr></thead><tbody>' + body + '</tbody></table></div>', true,
+        (newCodes.length ? 'STT chưa có dự án trên web → <b>tự tạo dự án mới</b> theo tên sheet: ' + esc(newCodes.join(', ')) + ' (đổi ở cột "Dự án trên web" nếu muốn). ' : '') +
+        (missingCodes.length ? 'Dự án chưa có trong danh mục (' + esc(missingCodes.join(', ')) + '): admin thêm ở Quản trị → Dự án rồi tải lại file, ' +
+          'hoặc chọn dự án ở cột "Dự án trên web". ' : '') + 'Bấm "Xem gói" để xem / bỏ tích từng gói.') +
+      detail + khOrphanSection(st) + khAssignSection(st) + khProgOption(st, prog) +
+      '<div class="info-box" style="margin-top:14px">Dự án tải lần đầu: ngày kế hoạch được lưu làm <b>kế hoạch gốc</b>. Dự án đã có KHMS: cập nhật <b>kế hoạch hiện hành</b>, ' +
+        'giữ kế hoạch gốc, ngày thực tế và hồ sơ đã gắn trên web. Ngày thực tế trong file chỉ điền vào ô còn trống; ngày chọn thầu thực tế lấy theo ngày duyệt hồ sơ khi đã gắn hồ sơ. ' +
+        'Tích <b>Ghi đè</b> (Trưởng phòng / admin) để thay toàn bộ KHMS đang có của dự án bằng dữ liệu trong file: kế hoạch gốc, kế hoạch, ngày thực tế, giá trị theo file; ' +
+        'gói cùng tên giữ hồ sơ đã gắn và ghi chú; gói không có trong file bị xóa.</div>' +
+      (tot.over.length ? '<div class="info-box kh-over-box">Ghi đè KHMS dự án: <b>' + esc(tot.over.join(', ')) + '</b> — dữ liệu đang có trên web của ' +
+        (tot.over.length > 1 ? 'các dự án này' : 'dự án này') + ' sẽ được thay bằng dữ liệu trong file.</div>' : '') + '</div>' +
+      '<div class="modal-foot"><button class="secondary-btn" data-act="close-modal">Hủy</button>' +
+      '<button class="primary-btn" id="m-kimp-btn" style="min-height:42px;font-size:16px" data-act="kh-submit-batch">' + ic('check') +
+        'Tải lên ' + tot.units + ' dự án (' + tot.n + ' gói thầu)</button></div>', 'xl');
+  }
+  function khOrphanSection(st) {
+    if (!st.orphans || !st.orphans.length || !S.me.isManager) return '';
+    var rows = st.orphans.map(function (o, i) {
+      return '<label class="check sync-date-opt"><input type="checkbox" data-change="kh-imp-orphan" data-i="' + i + '"' + (o.on ? ' checked' : '') + '><span>' +
+        'Xóa KHMS cũ của dự án <b>' + esc(projectLabel(o.code)) + '</b> (' + o.n + ' gói, ' + o.hit + ' gói trùng tên với sheet ' + esc(o.subs.join(', ')) +
+        ' — đã gộp ở lần tải trước, nay tách thành dự án riêng)</span></label>';
+    }).join('');
+    return syncSection('KHMS cũ đã gộp từ sheet mã phụ', st.orphans.length, rows, true,
+      'Dự án gốc không có sheet riêng trong file nhưng đang giữ gói của sheet mã phụ (.1, .2…) từ lần tải trước. Tích để xóa KHMS cũ của dự án gốc sau khi tải (gói được tạo lại ở dự án mã phụ).');
+  }
+
+  /* ---------- Chuyên viên phụ trách theo sheet danh sách dự án ("DuAn": Dự án · NS phụ trách) trong file KHMS tổng hợp ---------- */
+  /** Sheet danh sách dự án: dòng tiêu đề có cột "Dự án" và "… phụ trách" → [{ name, persons: [tên], raw }]. */
+  function parseAssignSheet(ws) {
+    var maxC = Math.min(ws.columnCount, 30);
+    for (var r = 1; r <= Math.min(ws.rowCount, 10); r++) {
+      var nameCol = 0, ownCol = 0;
+      for (var c = 1; c <= maxC; c++) {
+        var t = khKey(xlText(ws.getCell(r, c).value));
+        if (!nameCol && /^(ten )?du an$/.test(t)) nameCol = c;
+        else if (!ownCol && /phu trach/.test(t)) ownCol = c;
+      }
+      if (!nameCol || !ownCol) continue;
+      var out = [];
+      for (var rr = r + 1; rr <= ws.rowCount; rr++) {
+        var name = xlText(ws.getCell(rr, nameCol).value), raw = xlText(ws.getCell(rr, ownCol).value);
+        if (!name || !raw) continue;
+        out.push({ name: name, raw: raw, persons: raw.split(/\s*(?:[\/,;&+]|\bvà\b)\s*/i).map(function (x) { return x.trim(); }).filter(Boolean) });
+      }
+      return out.length ? out : null;
+    }
+    return null;
+  }
+  /** Tên người trong file ("Sự", "Chi Trang", "Thoai") → username: khớp họ tên, tên gọi (chữ cuối), username hoặc ký hiệu; trùng nhiều người → ''. */
+  function khMatchPerson(name) {
+    var t = norm(name).replace(/^(chi|anh|em|a|c|ms|mr)\.?\s+/, '').replace(/\s+/g, ' ').trim();
+    if (!t) return '';
+    var users = S.users.filter(function (u) { return u.active; });
+    var hit = users.filter(function (u) { return norm(u.displayName) === t || u.username === t || norm(u.initials || '') === t; });
+    if (!hit.length) hit = users.filter(function (u) { var w = norm(u.displayName).trim().split(/\s+/); return w[w.length - 1] === t; });
+    return hit.length === 1 ? hit[0].username : '';
+  }
+  /** Tên dự án trong sheet DuAn → mã dự án: khớp tên sheet KHMS (bỏ "STT_"), rồi tên trong danh mục; "(gom MEP)" → cả sheet MEP. */
+  function khAssignFromSheet(rows, sheets) {
+    var key = function (s) { return norm(s).replace(/\(.*?\)/g, '').replace(/[^a-z0-9]/g, ''); };
+    var cands = [];
+    sheets.forEach(function (sh) {
+      var code = khSheetCode(sh.name);
+      if (code) cands.push({ code: code, key: key(sh.name.replace(/^\d+(?:\.\d+)*\s*[_.\-\s]\s*/, '')), sheet: true });
+    });
+    (S.projects || []).forEach(function (p) { cands.push({ code: p.code, key: key(p.name), sheet: false }); });
+    var find = function (k) {
+      var ex = cands.filter(function (c) { return c.key && c.key === k; });
+      if (ex.length) return ex.filter(function (c) { return c.sheet; })[0] || ex[0];
+      var pre = cands.filter(function (c) { return c.key.length >= 4 && k.length >= 4 && (k.indexOf(c.key) === 0 || c.key.indexOf(k) === 0); });
+      pre.sort(function (a, b) { return (b.sheet - a.sheet) || (b.key.length - a.key.length); });
+      return pre[0] || null;
+    };
+    var by = {}, unmatched = [];
+    rows.forEach(function (r) {
+      var k = key(r.name), hit = find(k);
+      if (!hit) { unmatched.push(r.name); return; }
+      var codes = [hit.code];
+      if (/gom\s*mep/.test(norm(r.name))) { var mep = find(k + 'mep'); if (mep && mep.code !== hit.code) codes.push(mep.code); }
+      codes.forEach(function (code) {
+        var a = by[code] || (by[code] = { code: code, names: [], persons: [], owners: [], miss: [] });
+        if (a.names.indexOf(r.name) < 0) a.names.push(r.name);
+        r.persons.forEach(function (p) {
+          if (a.persons.indexOf(p) >= 0) return;
+          a.persons.push(p);
+          var u = khMatchPerson(p);
+          if (u) { if (a.owners.indexOf(u) < 0) a.owners.push(u); } else if (a.miss.indexOf(p) < 0) a.miss.push(p);
+        });
+      });
+    });
+    var list = Object.keys(by).sort(projectSort).map(function (c) {
+      var a = by[c], cur = khOwners(c).slice().sort().join(','), nw = a.owners.slice().sort().join(',');
+      a.same = cur === nw; a.on = !!a.owners.length && !a.same && !cur;
+      return a;
+    });
+    return { list: list, unmatched: unmatched };
+  }
+  /** Mục xem trước "Chuyên viên phụ trách theo sheet DuAn" trong cửa sổ tải nhiều dự án (Trưởng phòng / admin). */
+  function khAssignSection(st) {
+    var as = st.assign;
+    if (!as || !S.me.isManager) return '';
+    var n = as.list.filter(function (a) { return a.on; }).length;
+    var rows = as.list.map(function (a, i) {
+      var cur = khOwners(a.code);
+      var can = a.owners.length && !a.same;
+      return '<tr' + (a.on ? '' : ' class="inactive"') + '><td class="center">' + (can ? '<input type="checkbox" data-change="kh-imp-asg" data-i="' + i + '"' + (a.on ? ' checked' : '') + '>' : '') + '</td>' +
+        '<td class="title-cell">' + projectCell(a.code) + (S.projMap[a.code] ? '' : ' <span class="kh-tag">tạo mới khi tải</span>') + '<small class="kh-sheet">' + esc(a.names.join(' · ')) + '</small></td>' +
+        '<td>' + esc(a.persons.join(', ')) + '</td>' +
+        '<td>' + (a.owners.length ? esc(a.owners.map(userName).join(', ')) : '') + (a.miss.length ? ' <span class="kh-warn">chưa khớp tài khoản: ' + esc(a.miss.join(', ')) + '</span>' : '') + '</td>' +
+        '<td>' + (cur.length ? esc(cur.map(userName).join(', ')) : '<span class="muted">chưa phân công</span>') + '</td>' +
+        '<td>' + (a.same ? '<span class="muted">Không đổi</span>' : !a.owners.length ? '<span class="muted">Bỏ qua</span>' : cur.length ? '<span class="kh-chg upd">Thay</span>' : '<span class="kh-chg new">Mới</span>') + '</td></tr>';
+    }).join('');
+    return syncSection('Chuyên viên phụ trách theo sheet "' + esc(as.sheet) + '"', n + '/' + as.list.length,
+      '<div class="table-wrap"><table class="grid kh-imp"><thead><tr><th></th><th>Dự án</th><th>NS phụ trách (file)</th><th>Tài khoản trên web</th><th>Hiện tại trên web</th><th></th></tr></thead><tbody>' +
+      rows + '</tbody></table></div>', false,
+      'Ghi nhận phân công chuyên viên theo cột "NS phụ trách" (khớp tên gọi, vd "Hảo" → Cao Quang Hảo). Mặc định tích dự án chưa phân công; dự án đã phân công khác thì tự tích nếu muốn thay.' +
+      (as.unmatched.length ? ' Không khớp dự án: ' + esc(as.unmatched.join(', ')) + '.' : ''));
+  }
+
+  function submitKhmsBatch(btn) {
+    var st = S.khImport;
+    var units = st.units.filter(function (u) { return u.on; });
+    if (!units.length) { modalError('Chưa chọn dự án nào.'); return; }
+    var seen = {}, plans = [];
+    for (var i = 0; i < units.length; i++) {
+      var u = units[i];
+      if (!u.project) { modalError('Chọn dự án trên web cho sheet "' + u.name + '" (hoặc bỏ tích).'); return; }
+      if (seen[u.project]) { modalError('Dự án ' + u.project + ' được chọn cho 2 nhóm sheet: "' + seen[u.project] + '" và "' + u.name + '".'); return; }
+      seen[u.project] = u.name;
+      var rows = khImpPayloadRows(st, u.rows, u.skip);
+      if (!rows.length) { modalError('Sheet "' + u.name + '": chưa chọn gói thầu nào (hoặc bỏ tích dự án).'); return; }
+      plans.push({ unit: u, data: { projectCode: u.project, rev: u.rev, rev0: u.rev0, rows: rows, overwrite: !!u.overwrite,
+                                    createName: u.createName && u.project === u.code && !S.projMap[u.code] ? u.createName : '' } });
+    }
+    // Gửi nhiều lần (mỗi lần ≤ ~600 gói) để không vượt giới hạn dữ liệu của 1 lần gọi; mỗi lần ghi trọn vẹn các dự án trong lần đó.
+    var chunks = [], curChunk = [], n = 0;
+    plans.forEach(function (p) {
+      if (curChunk.length && n + p.data.rows.length > 600) { chunks.push(curChunk); curChunk = []; n = 0; }
+      curChunk.push(p); n += p.data.rows.length;
+    });
+    if (curChunk.length) chunks.push(curChunk);
+    var sum = { projects: 0, added: 0, updated: 0, unchanged: 0, removed: 0, created: [], dropped: [] }, last = null, k = 0;
+    var label = btn.lastChild, text0 = label ? label.textContent : '';
+    busy(btn, true);
+    var step = function () {
+      if (k >= chunks.length) return Promise.resolve();
+      var ch = chunks[k];
+      if (label) label.textContent = 'Đang tải ' + (k + 1) + '/' + chunks.length + '…';
+      return call('importPlans', { fileName: st.fileName, plans: ch.map(function (p) { return p.data; }) }).then(function (r) {
+        last = r; k++;
+        if (r.projects) { S.projects = r.projects; derive(); }
+        (r.created || []).forEach(function (x) { sum.created.push(x.code + '_' + x.name); });
+        ch.forEach(function (p) { p.unit.on = false; p.unit.doneUpload = true; });
+        r.results.forEach(function (x) { sum.projects++; sum.added += x.added; sum.updated += x.updated; sum.unchanged += x.unchanged; sum.removed += x.removed; });
+        return step();
+      });
+    };
+    var report = function () {
+      return 'Đã tải KHMS ' + sum.projects + ' dự án: ' + sum.added + ' gói mới, ' + sum.updated + ' cập nhật, ' + sum.unchanged + ' không đổi' +
+        (sum.removed ? ', xóa ' + sum.removed + ' gói không còn trong file' : '') +
+        (sum.created.length ? '; tạo dự án mới: ' + sum.created.join(', ') : '') +
+        (sum.dropped.length ? '; xóa KHMS cũ đã gộp của dự án ' + sum.dropped.join(', ') : '') +
+        (sum.assigned ? '; phân công chuyên viên cho ' + sum.assigned + ' dự án' : '') + '.';
+    };
+    // Sau khi tải KHMS: ghi phân công chuyên viên phụ trách theo sheet DuAn (dự án đã có trong danh mục, kể cả dự án vừa tạo).
+    var asg = function () {
+      var items = st.assign && S.me.isManager ? st.assign.list.filter(function (a) { return a.on && a.owners.length && S.projMap[a.code]; })
+        .map(function (a) { return { projectCode: a.code, owners: a.owners }; }) : [];
+      if (!items.length) return Promise.resolve();
+      if (label) label.textContent = 'Đang ghi phân công chuyên viên…';
+      return call('assignProjects', { items: items }).then(function (r) { khSetAssign(r.assign); sum.assigned = items.length; });
+    };
+    // Xóa KHMS cũ của dự án gốc đã tách sang dự án mã phụ (nếu tích).
+    var dropOld = function () {
+      var list = (st.orphans || []).filter(function (o) { return o.on; });
+      return list.reduce(function (pr, o) {
+        return pr.then(function () {
+          if (label) label.textContent = 'Đang xóa KHMS cũ dự án ' + o.code + '…';
+          return call('deletePlan', { projectCode: o.code }).then(function (r) { last = last || {}; last.packages = r.packages; last.uploads = r.uploads; sum.dropped.push(o.code); });
+        });
+      }, Promise.resolve());
+    };
+    step().then(dropOld).then(asg).then(function () {
+      closeModal();
+      S.packages = last.packages; S.planUploads = last.uploads;
+      S.khms.project = ''; S.khms.state = ''; S.khImport = null;
+      derive(); render(); toast(report());
+    }).catch(function (err) {
+      if (last) { S.packages = last.packages; S.planUploads = last.uploads; derive(); render(); }
+      if (err.code === 'AUTH') { handleErr(err); return; }
+      if (last) { openKhmsBatch(); modalError(report().replace(/\.$/, '') + ' (đã lưu). Phần còn lại chưa lưu: ' + err.message); }
+      else { busy(btn, false); if (label) label.textContent = text0; modalError(err.message); }
+    });
+  }
+
+  /** 1 sheet danh sách gói thầu (bố cục như bảng trên web: 2 tầng tiêu đề, kế hoạch gốc / hiện hành, thực tế, tình trạng, hồ sơ). */
+  function khExportSheet(wb, name, title, rows, withProject) {
+    var ws = wb.addWorksheet(name, { views: [{ state: 'frozen', xSplit: withProject ? 3 : 2, ySplit: 4 }] });
+    var pc = khPlanCols(rows);
+    var head1 = ['STT', 'Hạng mục'].concat(withProject ? ['Dự án'] : [], ['Giá trị gói thầu']), lead = head1.length;
+    var head2 = head1.map(function () { return ''; }), spans = [];
+    MILESTONES.forEach(function (m) {
+      var sub = (pc.two ? [pc.base, pc.cur] : [pc.cur]).concat(['Thực tế'], m.key === 'start' ? [] : ['Tình trạng']);
+      spans.push(sub.length);
+      sub.forEach(function (t, i) { head1.push(i ? '' : m.head); head2.push(t); });
+    });
+    head1.push('Hồ sơ phê duyệt', 'Tình trạng hồ sơ', 'Tên hồ sơ', 'Ghi chú');
+    head2.push('', '', '', '');
+    ws.addRow([title]);
+    ws.addRow(['Xuất ngày ' + fmtDate(S.today) + ' bởi ' + S.me.displayName + ' · ' + rows.length + ' gói thầu']);
+    ws.addRow(head1); ws.addRow(head2);
+    var col = lead + 1;
+    spans.forEach(function (w) { ws.mergeCells(3, col, 3, col + w - 1); col += w; });
+    for (var c = 1; c <= head1.length; c++) if (!head2[c - 1]) ws.mergeCells(3, c, 4, c);
+    var xd = function (iso) { return iso ? new Date(iso + 'T00:00:00Z') : null; };
+    rows.forEach(function (p) {
+      var line = [p.stt, p.name].concat(withProject ? [projectLabel(p.project)] : [], [p.value]);
+      MILESTONES.forEach(function (m) {
+        if (pc.two) line.push(xd(p[m.key + 'Plan0']));
+        line.push(xd(p[m.key + 'Plan']), xd(p._actual[m.key]));
+        if (m.key !== 'start') line.push(p._ms[m.key].code === 'none' ? '' : msText(p._ms[m.key]));
+      });
+      line.push(p._sub ? p._sub.id : p.submissionId, p._sub ? statusOf(p._sub.status).label : '', p._sub ? p._sub.title : '',
+        p.note);
+      var row = ws.addRow(line);
+      row.eachCell(function (cl) { if (cl.value instanceof Date) cl.numFmt = 'dd/mm/yyyy'; });
+      row.getCell(lead).numFmt = '#,##0';
+    });
+    ws.getRow(1).font = { bold: true, size: 14, color: { argb: 'FF1E2B59' } };
+    [3, 4].forEach(function (r) { khHeadStyle(ws.getRow(r), head1.length); });
+    var widths = [7, 42].concat(withProject ? [26] : [], [18]);
+    head2.slice(lead, head2.length - 4).forEach(function (t) { widths.push(t === 'Tình trạng' ? 18 : 12); });
+    widths.push(14, 18, 50, 30);
+    widths.forEach(function (w, i) { ws.getColumn(i + 1).width = w; });
+    if (rows.length) ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4 + rows.length, column: head1.length } };
+    return ws;
+  }
+  function khHeadStyle(row, n) {
+    var bd = { style: 'thin', color: { argb: 'FFB0B8CC' } };
+    for (var c = 1; c <= n; c++) {
+      var cl = row.getCell(c);
+      cl.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cl.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E2B59' } };
+      cl.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      cl.border = { top: bd, bottom: bd, left: bd, right: bd };
+    }
+  }
+  function khDownload(wb, fileName, msg) {
+    return wb.xlsx.writeBuffer().then(function (buf) {
+      downloadBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), fileName);
+      toast(msg);
+    });
   }
 
   /* ---------- Xuất Excel danh sách gói thầu đang xem ---------- */
@@ -869,58 +1437,60 @@
     busy(btn, true); setLoading(1);
     loadExcelJs().then(function (ExcelJS) {
       var wb = new ExcelJS.Workbook();
-      var ws = wb.addWorksheet('KHMS', { views: [{ state: 'frozen', xSplit: 3, ySplit: 4 }] });
-      var pc = khPlanCols(rows);
-      var head1 = ['STT', 'Hạng mục', 'Dự án', 'Giá trị gói thầu'], head2 = ['', '', '', ''], spans = [];
-      MILESTONES.forEach(function (m) {
-        var sub = (pc.two ? [pc.base, pc.cur] : [pc.cur]).concat(['Thực tế'], m.key === 'start' ? [] : ['Tình trạng']);
-        spans.push(sub.length);
-        sub.forEach(function (t, i) { head1.push(i ? '' : m.head); head2.push(t); });
+      khExportSheet(wb, 'KHMS', 'KẾ HOẠCH MUA SẮM' + (S.khms.project ? ' – DỰ ÁN ' + projectLabel(S.khms.project).toUpperCase() : ' – TẤT CẢ DỰ ÁN'), rows, true);
+      return khDownload(wb, 'KHMS-' + (S.khms.project || 'tat-ca') + '-' + S.today + '.xlsx', 'Đã xuất file Excel KHMS.');
+    }).catch(function (err) {
+      toast((err && err.message) || 'Không tạo được file Excel.', 'err');
+    }).then(function () { busy(btn, false); setLoading(-1); });
+  }
+
+  /** Tên sheet Excel: ≤ 31 ký tự, không có : \ / ? * [ ], không trùng. */
+  function khSheetName(s, used) {
+    var base = String(s).replace(/[:\\\/?*\[\]]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 31) || 'Sheet', name = base, i = 2;
+    while (used[name.toLowerCase()]) { var suf = ' (' + i++ + ')'; name = base.slice(0, 31 - suf.length) + suf; }
+    used[name.toLowerCase()] = true;
+    return name;
+  }
+  /**
+   * Xuất KHMS tất cả dự án (theo người dùng: tài khoản haocq, thuync, thoaiht — KHMS_EXPORT_ALL_USERS_ ở Procurement.gs):
+   * 1 file Excel, sheet "Tổng hợp" + mỗi dự án 1 sheet (tên "STT_Tên dự án"), gói còn trong KHMS, không theo bộ lọc đang xem.
+   */
+  function khmsExportAll(btn) {
+    var by = {};
+    S.packages.forEach(function (p) { if (p.active) (by[p.project] = by[p.project] || []).push(p); });
+    var codes = Object.keys(by).sort(projectSort);
+    if (!codes.length) { toast('Chưa có KHMS nào để xuất.', 'err'); return; }
+    busy(btn, true); setLoading(1);
+    loadExcelJs().then(function (ExcelJS) {
+      var wb = new ExcelJS.Workbook(), used = {};
+      var sum = wb.addWorksheet(khSheetName('Tổng hợp', used), { views: [{ state: 'frozen', ySplit: 3 }] });
+      var total = codes.reduce(function (n, c) { return n + by[c].length; }, 0);
+      sum.addRow(['KẾ HOẠCH MUA SẮM – TẤT CẢ DỰ ÁN']);
+      sum.addRow(['Xuất ngày ' + fmtDate(S.today) + ' bởi ' + S.me.displayName + ' · ' + codes.length + ' dự án · ' + total + ' gói thầu']);
+      var head = ['Dự án', 'Chuyên viên phụ trách', 'Giám đốc dự án', 'BOM phụ trách', 'Sheet', 'KHMS cập nhật', 'Rev', 'Gói thầu', 'Giá trị gói thầu', 'Đã chọn thầu', 'Trễ chọn thầu', 'Sắp đến hạn chọn thầu',
+                  'Đã ký HĐ', 'Đã chọn thầu – chưa ký HĐ', 'Chưa gắn hồ sơ'];
+      sum.addRow(head);
+      khHeadStyle(sum.getRow(3), head.length);
+      codes.forEach(function (c) {
+        var rows = by[c].slice().sort(function (a, b) { return a.order - b.order; });
+        var name = khSheetName(projectLabel(c), used);
+        khExportSheet(wb, name, 'KẾ HOẠCH MUA SẮM – DỰ ÁN ' + projectLabel(c).toUpperCase(), rows, false);
+        var st = khmsStats(rows), last = S.planLast[c];
+        var r = sum.addRow([projectLabel(c), khOwnersText(c), khInfoOf(c).director, khInfoOf(c).bom, name, last && last.date ? new Date(last.date + 'T00:00:00Z') : null, last ? last.rev : '',
+          st.n, st.value, st.done, st.late, st.soon, st.contract, st.waitContract, st.nolink]);
+        r.getCell(5).value = { text: name, hyperlink: "#'" + name.replace(/'/g, "''") + "'!A1" };
+        r.getCell(5).font = { color: { argb: 'FF2563EB' }, underline: true };
+        r.getCell(6).numFmt = 'dd/mm/yyyy';
+        r.getCell(9).numFmt = '#,##0';
       });
-      head1.push('Hồ sơ phê duyệt', 'Tình trạng hồ sơ', 'Tên hồ sơ', 'Ghi chú');
-      head2.push('', '', '', '');
-      ws.addRow(['KẾ HOẠCH MUA SẮM' + (S.khms.project ? ' – DỰ ÁN ' + projectLabel(S.khms.project).toUpperCase() : ' – TẤT CẢ DỰ ÁN')]);
-      ws.addRow(['Xuất ngày ' + fmtDate(S.today) + ' bởi ' + S.me.displayName + ' · ' + rows.length + ' gói thầu']);
-      ws.addRow(head1); ws.addRow(head2);
-      var col = 5;
-      spans.forEach(function (w) { ws.mergeCells(3, col, 3, col + w - 1); col += w; });
-      for (var c = 1; c <= head1.length; c++) if (!head2[c - 1]) ws.mergeCells(3, c, 4, c);
-      var xd = function (iso) { return iso ? new Date(iso + 'T00:00:00Z') : null; };
-      rows.forEach(function (p) {
-        var line = [p.stt, p.name, projectLabel(p.project), p.value];
-        MILESTONES.forEach(function (m) {
-          if (pc.two) line.push(xd(p[m.key + 'Plan0']));
-          line.push(xd(p[m.key + 'Plan']), xd(p._actual[m.key]));
-          if (m.key !== 'start') line.push(p._ms[m.key].code === 'none' ? '' : msText(p._ms[m.key]));
-        });
-        line.push(p._sub ? p._sub.id : p.submissionId, p._sub ? statusOf(p._sub.status).label : '', p._sub ? p._sub.title : '',
-          (p.active ? '' : '[Không còn trong KHMS mới] ') + p.note);
-        var row = ws.addRow(line);
-        row.eachCell(function (cl) { if (cl.value instanceof Date) cl.numFmt = 'dd/mm/yyyy'; });
-        row.getCell(4).numFmt = '#,##0';
-      });
-      ws.getRow(1).font = { bold: true, size: 14, color: { argb: 'FF1E2B59' } };
-      [3, 4].forEach(function (r) {
-        var row = ws.getRow(r);
-        for (var c = 1; c <= head1.length; c++) {
-          var cl = row.getCell(c);
-          cl.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-          cl.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E2B59' } };
-          cl.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-          cl.border = { top: { style: 'thin', color: { argb: 'FFB0B8CC' } }, bottom: { style: 'thin', color: { argb: 'FFB0B8CC' } },
-                        left: { style: 'thin', color: { argb: 'FFB0B8CC' } }, right: { style: 'thin', color: { argb: 'FFB0B8CC' } } };
-        }
-      });
-      var widths = [7, 42, 26, 18];
-      head2.slice(4, head2.length - 4).forEach(function (t) { widths.push(t === 'Tình trạng' ? 18 : 12); });
-      widths.push(14, 18, 50, 30);
-      widths.forEach(function (w, i) { ws.getColumn(i + 1).width = w; });
-      ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4 + rows.length, column: head1.length } };
-      return wb.xlsx.writeBuffer();
-    }).then(function (buf) {
-      downloadBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
-        'KHMS-' + (S.khms.project || 'tat-ca') + '-' + S.today + '.xlsx');
-      toast('Đã xuất file Excel KHMS.');
+      var tot = sum.addRow(['Tổng cộng', '', '', '', '', null, ''].concat(['H', 'I', 'J', 'K', 'L', 'M', 'N', 'O'].map(function (L) {
+        return { formula: 'SUM(' + L + '4:' + L + (3 + codes.length) + ')' };
+      })));
+      tot.font = { bold: true }; tot.getCell(9).numFmt = '#,##0';
+      sum.getRow(1).font = { bold: true, size: 14, color: { argb: 'FF1E2B59' } };
+      [40, 26, 24, 24, 30, 14, 9, 10, 20, 13, 13, 13, 11, 16, 13].forEach(function (w, i) { sum.getColumn(i + 1).width = w; });
+      sum.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3 + codes.length, column: head.length } };
+      return khDownload(wb, 'KHMS-tat-ca-du-an-' + S.today + '.xlsx', 'Đã xuất KHMS ' + codes.length + ' dự án (mỗi dự án 1 sheet).');
     }).catch(function (err) {
       toast((err && err.message) || 'Không tạo được file Excel.', 'err');
     }).then(function () { busy(btn, false); setLoading(-1); });
@@ -934,20 +1504,614 @@
       (p.selectPlan ? ' · KH chọn thầu ' + fmtDate(p.selectPlan) : '') + '</div>';
   }
 
+  /* =====================================================================
+   * Chuyên viên phụ trách dự án (theo người dùng: "gán thêm trong KHMS là chuyên viên nào phụ trách dự án nào để tiện cho công tác
+   * thống kê"). Lưu ở sheet KhmsAssign (Procurement.gs); Trưởng phòng / admin phân công trong cửa sổ "Phân công chuyên viên".
+   * ===================================================================== */
+  S.khAssign = {};
+  function khOwners(code) { return S.khAssign[code] || []; }
+  function khOwnersText(code, short) {
+    var o = khOwners(code);
+    return o.length ? o.map(function (u) { return short ? khShortName(u) : userName(u); }).join(', ') : '';
+  }
+  /** Tên ngắn: tên gọi (chữ cuối của họ tên), vd "Cao Quang Hảo" → "Hảo". */
+  function khShortName(u) {
+    var n = String(userName(u) || u).trim().split(/\s+/);
+    return n[n.length - 1] || u;
+  }
+  function khOwnersCell(code) {
+    var o = khOwners(code);
+    return o.length ? '<span class="kh-owners" title="' + esc(khOwnersText(code)) + '">' + esc(khOwnersText(code, true)) + '</span>' : '<span class="muted">—</span>';
+  }
+  /** Tài khoản có thể phân công: đang hoạt động; chuyên viên trước, rồi các chức danh khác. */
+  function khAssignUsers() {
+    return S.users.filter(function (u) { return u.active; }).sort(function (a, b) {
+      return ((a.position === 'CV' ? 0 : 1) - (b.position === 'CV' ? 0 : 1)) || String(a.displayName).localeCompare(String(b.displayName), 'vi');
+    });
+  }
+
+  function openKhAssign(focus) {
+    var by = khdByProject();
+    S.khAsg = { d: {}, all: false, q: '', focus: focus || '' };
+    Object.keys(S.khAssign).forEach(function (c) { S.khAsg.d[c] = S.khAssign[c].slice(); });
+    Object.keys(by).forEach(function (c) { if (!S.khAsg.d[c]) S.khAsg.d[c] = []; });
+    if (focus) S.khAsg.q = focus;
+    renderKhAssign();
+  }
+  function khAsgChanged() {
+    var out = [];
+    Object.keys(S.khAsg.d).forEach(function (c) {
+      var a = (S.khAssign[c] || []).slice().sort().join(','), b = S.khAsg.d[c].slice().sort().join(',');
+      if (a !== b) out.push({ projectCode: c, owners: S.khAsg.d[c] });
+    });
+    return out;
+  }
+  function renderKhAssign() {
+    var st = S.khAsg, by = khdByProject(), users = khAssignUsers(), q = norm(st.q).trim();
+    var codes = (st.all ? (S.projects || []).filter(function (p) { return p.active || by[p.code] || khOwners(p.code).length; }).map(function (p) { return p.code; })
+      : Object.keys(st.d)).filter(function (c, i, a) { return a.indexOf(c) === i; }).sort(projectSort);
+    codes.forEach(function (c) { if (!st.d[c]) st.d[c] = []; });
+    var shown = codes.filter(function (c) { return !q || norm(projectLabel(c) + ' ' + st.d[c].map(userName).join(' ')).indexOf(q) >= 0; });
+    var changed = khAsgChanged(), chg = {};
+    changed.forEach(function (x) { chg[x.projectCode] = true; });
+    var head = '<tr><th>Dự án</th><th class="num">Gói</th>' + users.map(function (u) {
+      return '<th class="center kh-asg-u" title="' + esc(u.displayName + ' (' + u.username + ')') + '">' + esc(khShortName(u.username)) +
+        (u.initials ? '<small>' + esc(u.initials) + '</small>' : '') + '</th>';
+    }).join('') + '</tr>';
+    var body = shown.map(function (c) {
+      return '<tr' + (chg[c] ? ' class="kh-asg-chg"' : '') + '><td class="title-cell">' + projectCell(c) + '</td><td class="num">' + (by[c] ? by[c].length : '<span class="muted">—</span>') + '</td>' +
+        users.map(function (u) {
+          var on = st.d[c].indexOf(u.username) >= 0;
+          return '<td class="center"><input type="checkbox" data-change="kh-asg" data-code="' + esc(c) + '" data-user="' + esc(u.username) + '"' + (on ? ' checked' : '') +
+            ' aria-label="' + esc(u.displayName + ' phụ trách ' + projectLabel(c)) + '"></td>';
+        }).join('') + '</tr>';
+    }).join('');
+    var counts = users.map(function (u) { return codes.filter(function (c) { return st.d[c].indexOf(u.username) >= 0; }).length; });
+    var foot = '<tr><td>Số dự án phụ trách</td><td></td>' + counts.map(function (n) { return '<td class="center"><b>' + n + '</b></td>'; }).join('') + '</tr>';
+    var none = codes.filter(function (c) { return by[c] && !st.d[c].length; }).length;
+    openModal(modalHead('Phân công chuyên viên phụ trách dự án') + '<div class="modal-body"><div id="m-err"></div>' +
+      '<div class="kh-asg-bar"><input type="search" id="m-asg-q" data-input="kh-asg-q" placeholder="Tìm dự án / chuyên viên…" value="' + esc(st.q) + '">' +
+        '<label class="check"><input type="checkbox" data-change="kh-asg-all"' + (st.all ? ' checked' : '') + '><span>Hiện cả dự án chưa có KHMS</span></label></div>' +
+      '<p class="muted kh-note">Tích ô để giao dự án cho chuyên viên (1 dự án có thể nhiều người). ' + (none ? '<b>' + none + '</b> dự án có KHMS chưa phân công. ' : '') +
+        'Dòng tô cam là dự án đã sửa, chưa lưu.</p>' +
+      '<div class="table-wrap kh-asg-wrap"><table class="grid kh-asg"><thead>' + head + '</thead><tbody>' +
+        (body || '<tr><td colspan="' + (users.length + 2) + '" class="muted">Không có dự án phù hợp.</td></tr>') + '</tbody><tfoot>' + foot + '</tfoot></table></div></div>' +
+      '<div class="modal-foot"><button class="secondary-btn" data-act="close-modal">Hủy</button>' +
+      '<button class="primary-btn" id="m-asg-btn" data-act="kh-asg-save"' + (changed.length ? '' : ' disabled') + '>' + ic('check') +
+        'Lưu phân công' + (changed.length ? ' (' + changed.length + ' dự án)' : '') + '</button></div>', 'xl');
+  }
+  function saveKhAssign(btn) {
+    var items = khAsgChanged();
+    if (!items.length) { modalError('Chưa có thay đổi nào.'); return; }
+    busy(btn, true);
+    call('assignProjects', { items: items }).then(function (r) {
+      khSetAssign(r.assign); closeModal(); S.khAsg = null; derive(); render();
+      toast('Đã lưu phân công chuyên viên cho ' + items.length + ' dự án.');
+    }).catch(function (err) { busy(btn, false); if (err.code === 'AUTH') handleErr(err); else modalError(err.message); });
+  }
+  function khSetAssign(list) {
+    S.khAssign = {}; S.khInfo = {};
+    (list || []).forEach(function (a) {
+      if (a.owners.length) S.khAssign[a.project] = a.owners;
+      if (a.director || a.bom) S.khInfo[a.project] = { director: a.director || '', bom: a.bom || '' };
+    });
+    khBuildPeople();
+  }
+
+  /* ---------- Giám đốc dự án / BOM phụ trách dự án (theo người dùng: chuyên viên tự cập nhật bằng cách nhập liệu) ---------- */
+  S.khInfo = {};
+  function khInfoOf(code) { return S.khInfo[code] || { director: '', bom: '' }; }
+  function khInfoCell(code, f) {
+    var v = khInfoOf(code)[f];
+    return v ? '<span class="kh-pinfo">' + esc(v) + '</span>' : '<span class="muted">—</span>';
+  }
+  var KH_INFO_FIELDS = [['director', 'Giám đốc dự án'], ['bom', 'BOM phụ trách']];
+
+  function openKhInfo(focus) {
+    S.khInf = { d: {}, q: focus || '', all: false };
+    renderKhInfo();
+  }
+  function khInfVal(code, f) {
+    var d = S.khInf.d[code];
+    return d && d[f] !== undefined ? d[f] : khInfoOf(code)[f];
+  }
+  function khInfChanged() {
+    var out = [];
+    Object.keys(S.khInf.d).forEach(function (c) {
+      var d = S.khInf.d[c], it = { projectCode: c }, any = false;
+      KH_INFO_FIELDS.forEach(function (f) {
+        if (d[f[0]] !== undefined && d[f[0]].replace(/\s+/g, ' ').trim() !== khInfoOf(c)[f[0]]) { it[f[0]] = d[f[0]]; any = true; }
+      });
+      if (any) out.push(it);
+    });
+    return out;
+  }
+  function khInfBtnText() {
+    var n = khInfChanged().length;
+    return 'Lưu thông tin' + (n ? ' (' + n + ' dự án)' : '');
+  }
+  function renderKhInfo() {
+    var st = S.khInf, by = khdByProject(), q = norm(st.q).trim();
+    var codes = (st.all ? (S.projects || []).filter(function (p) { return p.active || by[p.code]; }).map(function (p) { return p.code; })
+      : Object.keys(by).concat(Object.keys(S.khInfo))).filter(function (c, i, a) { return a.indexOf(c) === i; }).sort(projectSort);
+    var shown = codes.filter(function (c) {
+      return !q || norm(projectLabel(c) + ' ' + khOwnersText(c) + ' ' + khInfVal(c, 'director') + ' ' + khInfVal(c, 'bom')).indexOf(q) >= 0;
+    });
+    var names = {};
+    Object.keys(S.khInfo).forEach(function (c) { KH_INFO_FIELDS.forEach(function (f) { var v = S.khInfo[c][f[0]]; if (v) names[v] = 1; }); });
+    var dl = '<datalist id="kh-inf-names">' + Object.keys(names).sort().map(function (v) { return '<option value="' + esc(v) + '">'; }).join('') + '</datalist>';
+    var body = shown.map(function (c) {
+      return '<tr><td class="title-cell">' + projectCell(c) + '</td><td>' + khOwnersCell(c) + '</td>' +
+        KH_INFO_FIELDS.map(function (f) {
+          return '<td><input type="text" class="kh-inf-in" maxlength="150" list="kh-inf-names" data-input="kh-inf" data-code="' + esc(c) + '" data-f="' + f[0] + '" value="' +
+            esc(khInfVal(c, f[0])) + '" placeholder="' + (f[0] === 'bom' ? 'Nhập BOM phụ trách' : 'Nhập giám đốc dự án') + '" aria-label="' + esc(f[1] + ' ' + projectLabel(c)) + '"></td>';
+        }).join('') + '</tr>';
+    }).join('');
+    openModal(modalHead('Thông tin dự án: Giám đốc dự án / BOM phụ trách') + '<div class="modal-body"><div id="m-err"></div>' +
+      '<div class="kh-asg-bar"><input type="search" id="m-inf-q" data-input="kh-inf-q" placeholder="Tìm dự án / tên…" value="' + esc(st.q) + '">' +
+        '<label class="check"><input type="checkbox" data-change="kh-inf-all"' + (st.all ? ' checked' : '') + '><span>Hiện cả dự án chưa có KHMS</span></label></div>' +
+      '<p class="muted kh-note">Nhập tên Giám đốc dự án và thành viên BOM phụ trách cho từng dự án (gõ tên đã có sẽ được gợi ý). Ô sửa tô cam; bấm <b>Lưu thông tin</b> để lưu tất cả.</p>' +
+      dl + '<div class="table-wrap kh-asg-wrap"><table class="grid kh-inf"><thead><tr><th>Dự án</th><th>Chuyên viên phụ trách</th><th>Giám đốc dự án</th><th>BOM phụ trách</th></tr></thead><tbody>' +
+        (body || '<tr><td colspan="4" class="muted">Không có dự án phù hợp.</td></tr>') + '</tbody></table></div></div>' +
+      '<div class="modal-foot"><button class="secondary-btn" data-act="close-modal">Hủy</button>' +
+      '<button class="primary-btn" id="m-inf-btn" data-act="kh-inf-save">' + ic('check') + '<span>' + khInfBtnText() + '</span></button></div>', 'xl');
+    // Đánh dấu ô đã sửa.
+    Array.prototype.forEach.call(document.querySelectorAll('.kh-inf-in'), function (el) { khInfMark(el); });
+  }
+  function khInfMark(el) {
+    var c = el.dataset.code, f = el.dataset.f;
+    el.classList.toggle('chg', el.value.replace(/\s+/g, ' ').trim() !== khInfoOf(c)[f]);
+  }
+  function saveKhInfo(btn) {
+    var items = khInfChanged();
+    if (!items.length) { modalError('Chưa có thay đổi nào.'); return; }
+    busy(btn, true);
+    call('updateProjectInfo', { items: items }).then(function (r) {
+      khSetAssign(r.assign); closeModal(); S.khInf = null; render();
+      toast('Đã lưu Giám đốc dự án / BOM cho ' + items.length + ' dự án.');
+    }).catch(function (err) { busy(btn, false); if (err.code === 'AUTH') handleErr(err); else modalError(err.message); });
+  }
+
+  /* =====================================================================
+   * Dashboard báo cáo KHMS (theo người dùng: "dashboard báo cáo về tình trạng chọn thầu tổng thể nhiều dự án hoặc từng dự án,
+   * có thể lựa chọn các dự án nào để tổng hợp số liệu"). Tính ở client từ S.packages (gói còn trong KHMS).
+   * ===================================================================== */
+  var KHD_STATES = [
+    ['done', 'Đã chọn – đúng hạn'], ['lateDone', 'Đã chọn – trễ hạn'], ['late', 'Trễ hạn (chưa chọn)'],
+    ['soon', 'Sắp đến hạn (≤ ' + KHMS_SOON_DAYS + ' ngày)'], ['todo', 'Chưa đến hạn'], ['none', 'Chưa có kế hoạch']
+  ];
+  var KHD_LISTS = [['late', 'Trễ chọn thầu'], ['soon', 'Sắp đến hạn chọn thầu'], ['wait', 'Đã chọn thầu – chưa ký HĐ'], ['all', 'Tất cả gói']];
+  S.khDash = { sel: [], pick: false, pq: '', year: S.today ? +S.today.slice(0, 4) : new Date().getFullYear(), list: 'late' };
+  try { S.khDash.sel = JSON.parse(A.store.get('hs_khdash_sel') || '[]') || []; } catch (e) { S.khDash.sel = []; }
+  // Lọc theo người phụ trách ('' = tất cả, '__none' = chưa có): chuyên viên (username), GĐ dự án / BOM (tên không dấu).
+  S.khDash.owner = A.store.get('hs_khdash_owner') || '';
+  S.khDash.director = A.store.get('hs_khdash_director') || '';
+  S.khDash.bom = A.store.get('hs_khdash_bom') || '';
+  S.khDash.by = A.store.get('hs_khdash_by') || 'owner'; // thẻ "Tổng hợp theo người phụ trách" đang xem theo vai trò nào
+
+  /** Dự án có KHMS → { code: [gói còn trong KHMS] }. */
+  function khdByProject() {
+    var by = {};
+    S.packages.forEach(function (p) { if (p.active) (by[p.project] = by[p.project] || []).push(p); });
+    return by;
+  }
+  /** Dự án đang tổng hợp: các dự án được chọn (còn KHMS); chưa chọn dự án nào = tất cả. */
+  function khdCodes(by) {
+    var all = Object.keys(by).sort(projectSort);
+    var sel = S.khDash.sel.filter(function (c) { return by[c]; });
+    var codes = sel.length ? all.filter(function (c) { return sel.indexOf(c) >= 0; }) : all, roles = false;
+    ['owner', 'director', 'bom'].forEach(function (role) {
+      var v = S.khDash[role];
+      if (!v) return;
+      roles = true;
+      codes = codes.filter(function (c) { var ks = khRoleKeys(c, role); return v === '__none' ? !ks.length : ks.indexOf(v) >= 0; });
+    });
+    return { all: all, codes: codes, picked: sel.length > 0, roles: roles };
+  }
+  function khdSaveSel() { A.store.set('hs_khdash_sel', JSON.stringify(S.khDash.sel)); }
+  function khdStats(list) {
+    var st = khmsStats(list);
+    st.ms = {}; st.valDone = 0;
+    KHD_STATES.forEach(function (s) { st.ms[s[0]] = 0; });
+    list.forEach(function (p) {
+      var c = p._ms.select.code;
+      st.ms[c]++;
+      if (c === 'done' || c === 'lateDone') st.valDone += p.value || 0;
+    });
+    st.onTime = st.ms.done + st.ms.lateDone ? Math.round(st.ms.done * 100 / (st.ms.done + st.ms.lateDone)) : null;
+    return st;
+  }
+  function pctOf(n, d) { return d ? Math.round(n * 100 / d) : 0; }
+
+  function viewKhmsDash() {
+    var by = khdByProject(), sc = khdCodes(by);
+    var list = [];
+    sc.codes.forEach(function (c) { list = list.concat(by[c]); });
+    if (sc.all.length && !sc.codes.length) {
+      return khdParamsCard(by, sc) + card('khd-overview', 'Tổng quan', '<div class="empty">Không có dự án nào khớp lựa chọn (dự án / chuyên viên / GĐ dự án / BOM).</div>');
+    }
+    if (!sc.all.length) {
+      return card('khd-params', 'Dashboard báo cáo KHMS', '<div class="empty">Chưa có KHMS nào. Vào <b>KHMS chi tiết dự án</b> → <b>Tải KHMS (Excel)</b> để tải kế hoạch mua sắm.</div>');
+    }
+    return khdParamsCard(by, sc) + khdOverviewCard(list, sc) + khdChartsCard(by, sc, list) + khdPeopleCard(by, sc) + khdProjectsCard(by, sc) + khdListCard(list, sc);
+  }
+
+  function khdParamsCard(by, sc) {
+    var d = S.khDash;
+    var chips = sc.picked
+      ? sc.codes.map(function (c) { return '<span class="khd-chip">' + esc(projectLabel(c)) + '<button data-act="kh-dash-unsel" data-code="' + esc(c) + '" aria-label="Bỏ ' + esc(c) + '">×</button></span>'; }).join('')
+      : '<span class="muted">Tất cả dự án có KHMS (' + sc.all.length + ')</span>';
+    var years = {};
+    S.packages.forEach(function (p) { ['selectPlan', 'selectPlan0'].forEach(function (k) { if (p[k]) years[p[k].slice(0, 4)] = 1; }); if (p._actual && p._actual.select) years[p._actual.select.slice(0, 4)] = 1; });
+    years[String(d.year)] = 1;
+    var yearSel = '<div class="field khd-year"><div class="fbody"><label for="khd-year">Năm (biểu đồ tháng)</label><select id="khd-year" data-change="kh-dash-year">' +
+      Object.keys(years).sort().map(function (y) { return '<option value="' + y + '"' + (+y === d.year ? ' selected' : '') + '>' + y + '</option>'; }).join('') + '</select></div></div>';
+    var picker = '';
+    if (d.pick) {
+      var q = norm(d.pq).trim();
+      var opts = sc.all.filter(function (c) { return !q || norm(projectLabel(c)).indexOf(q) >= 0; }).map(function (c) {
+        var on = S.khDash.sel.indexOf(c) >= 0;
+        return '<label class="khd-opt' + (on ? ' on' : '') + '"><input type="checkbox" data-change="kh-dash-sel" data-code="' + esc(c) + '"' + (on ? ' checked' : '') + '>' +
+          '<span>' + esc(projectLabel(c)) + '</span><small>' + by[c].length + ' gói</small></label>';
+      }).join('');
+      picker = '<div class="khd-picker"><div class="khd-picker-bar"><input type="search" id="khd-pq" data-input="kh-dash-q" placeholder="Tìm dự án…" value="' + esc(d.pq) + '">' +
+        '<button class="secondary-btn" data-act="kh-dash-all">Chọn tất cả' + (q ? ' (đang lọc)' : '') + '</button><button class="secondary-btn" data-act="kh-dash-none">Bỏ chọn</button>' +
+        '<button class="primary-btn" data-act="kh-dash-pick">Xong</button></div>' +
+        '<div class="khd-opts">' + (opts || '<span class="muted">Không có dự án phù hợp.</span>') + '</div>' +
+        '<p class="muted kh-note">Không chọn dự án nào = tổng hợp tất cả dự án có KHMS.</p></div>';
+    }
+    var body = '<div class="params khd-params"><div class="field khd-projects"><div class="fbody"><label>Dự án tổng hợp</label><div class="khd-chips">' + chips + '</div></div>' +
+      '<button class="secondary-btn" data-act="kh-dash-pick">' + ic('box') + (d.pick ? 'Đóng' : 'Chọn dự án') + (sc.picked ? ' (' + sc.codes.length + '/' + sc.all.length + ')' : '') + '</button></div>' +
+      yearSel + khdRoleSelect(sc, 'owner') + khdRoleSelect(sc, 'director') + khdRoleSelect(sc, 'bom') + '</div>' + picker;
+    var tools = (S.me.isManager ? '<button class="secondary-btn" data-act="kh-asg-open">' + ic('user') + 'Phân công chuyên viên</button>' : '') +
+      '<button class="secondary-btn" data-act="nav" data-view="khms">' + ic('clipboard') + 'KHMS chi tiết</button>';
+    return card('khd-params', 'Dashboard báo cáo KHMS', body, { tools: tools, collapsible: true });
+  }
+
+  /* ---------- Thống kê theo người phụ trách: chuyên viên phụ trách / Giám đốc dự án / BOM phụ trách ---------- */
+  /** Tên trong ô GĐ dự án / BOM (chữ tự do, có thể nhiều người "A, B" / "A / B") → [{ key (không dấu), name }]. */
+  function khSplitPeople(s) {
+    return String(s || '').split(/\s*(?:[,;\/+&]|\bvà\b)\s*/i).map(function (x) { return x.replace(/\s+/g, ' ').trim(); }).filter(Boolean)
+      .map(function (x) { return { key: norm(x), name: x }; });
+  }
+  var KHD_ROLES = [
+    { key: 'owner', label: 'Chuyên viên phụ trách', head: 'Chuyên viên', all: 'Tất cả chuyên viên', none: 'Chưa phân công' },
+    { key: 'director', label: 'Giám đốc dự án', head: 'Giám đốc dự án', all: 'Tất cả GĐ dự án', none: 'Chưa nhập GĐ dự án' },
+    { key: 'bom', label: 'BOM phụ trách', head: 'BOM phụ trách', all: 'Tất cả BOM', none: 'Chưa nhập BOM' }
+  ];
+  function khdRole(key) { return KHD_ROLES.filter(function (r) { return r.key === key; })[0] || KHD_ROLES[0]; }
+  /** Khóa người phụ trách của 1 dự án theo vai trò (chuyên viên: username; GĐ dự án / BOM: tên không dấu). */
+  function khRoleKeys(code, role) {
+    if (role === 'owner') return khOwners(code);
+    return khSplitPeople(khInfoOf(code)[role]).map(function (p) { return p.key; });
+  }
+  /** Tên hiển thị: chuyên viên → họ tên; GĐ dự án / BOM → cách viết gặp nhiều nhất. */
+  function khRoleName(role, key) {
+    if (key === '__none') return khdRole(role).none;
+    if (role === 'owner') return userName(key);
+    var n = (S.khPeople && S.khPeople[role] && S.khPeople[role][key]) || {};
+    var best = '', bn = 0;
+    Object.keys(n).forEach(function (v) { if (n[v] > bn) { best = v; bn = n[v]; } });
+    return best || key;
+  }
+  function khBuildPeople() {
+    S.khPeople = { director: {}, bom: {} };
+    Object.keys(S.khInfo).forEach(function (c) {
+      ['director', 'bom'].forEach(function (role) {
+        khSplitPeople(S.khInfo[c][role]).forEach(function (p) {
+          var m = S.khPeople[role][p.key] || (S.khPeople[role][p.key] = {});
+          m[p.name] = (m[p.name] || 0) + 1;
+        });
+      });
+    });
+  }
+  /** Gom dự án theo người phụ trách (dự án nhiều người được tính cho từng người; không có → '__none'). */
+  function khdGroups(by, codes, role) {
+    var groups = {}, order = [];
+    codes.forEach(function (c) {
+      var ks = khRoleKeys(c, role);
+      (ks.length ? ks : ['__none']).forEach(function (k) {
+        if (!groups[k]) { groups[k] = { key: k, codes: [], list: [] }; order.push(k); }
+        groups[k].codes.push(c); groups[k].list = groups[k].list.concat(by[c]);
+      });
+    });
+    order.sort(function (a, b) { return (a === '__none') - (b === '__none') || groups[b].list.length - groups[a].list.length || (a < b ? -1 : 1); });
+    return order.map(function (k) { var g = groups[k]; g.name = khRoleName(role, k); g.st = khdStats(g.list); return g; });
+  }
+  function khdRoleSelect(sc, role) {
+    var r = khdRole(role), cnt = {}, none = 0, cur = S.khDash[role] || '';
+    sc.all.forEach(function (c) { var ks = khRoleKeys(c, role); if (!ks.length) none++; ks.forEach(function (k) { cnt[k] = (cnt[k] || 0) + 1; }); });
+    var keys = Object.keys(cnt).sort(function (a, b) { return String(khRoleName(role, a)).localeCompare(String(khRoleName(role, b)), 'vi'); });
+    return '<div class="field khd-owner"><div class="fbody"><label for="khd-' + role + '">' + esc(r.label) + '</label>' +
+      '<select id="khd-' + role + '" data-change="kh-dash-role" data-role="' + role + '"><option value="">' + esc(r.all) + '</option>' +
+      keys.map(function (k) { return '<option value="' + esc(k) + '"' + (cur === k ? ' selected' : '') + '>' + esc(khRoleName(role, k)) + ' (' + cnt[k] + ' dự án)</option>'; }).join('') +
+      (cur && cur !== '__none' && !cnt[cur] ? '<option value="' + esc(cur) + '" selected>' + esc(khRoleName(role, cur)) + ' (0 dự án)</option>' : '') +
+      '<option value="__none"' + (cur === '__none' ? ' selected' : '') + '>' + esc(r.none) + ' (' + none + ' dự án)</option></select></div></div>';
+  }
+  /** Thẻ "Tổng hợp theo người phụ trách": chọn Chuyên viên / GĐ dự án / BOM; biểu đồ tình trạng chọn thầu + bảng; bấm tên để lọc. */
+  function khdPeopleCard(by, sc) {
+    var role = S.khDash.by || 'owner', r = khdRole(role);
+    var gs = khdGroups(by, sc.codes, role);
+    if (!gs.length) return '';
+    var seg = '<div class="seg" role="group" aria-label="Thống kê theo">' + KHD_ROLES.map(function (x) {
+      return '<button class="' + (x.key === role ? 'on' : '') + '" data-act="kh-dash-by" data-role="' + x.key + '">' + esc(x.label) + '</button>';
+    }).join('') + '</div>';
+    var chart = '';
+    // Biểu đồ: bỏ nhóm "chưa có" (vẫn có trong bảng) để không lấn át các người phụ trách.
+    var cg = gs.filter(function (g) { return g.key !== '__none'; });
+    if (typeof Chart !== 'undefined' && cg.length) {
+      var ds = KHD_STATES.map(function (s) {
+        return { label: s[1], backgroundColor: MS_COLORS[s[0]], stack: 's', data: cg.map(function (g) { return g.st.ms[s[0]]; }) };
+      });
+      var h = Math.max(220, cg.length * 30 + 90);
+      chart = A.chartBox('khd-ch-people', 'Tình trạng chọn thầu theo ' + r.label.toLowerCase() + ' (số gói)', h);
+      S.pendingCharts.push({ id: 'khd-ch-people', config: A.barConfig(cg.map(function (g) { return g.name; }), ds, { horizontal: true, stacked: true, legend: true, unit: ' gói' }) });
+    }
+    var cur = S.khDash[role] || '';
+    var rows = gs.map(function (g) {
+      var st = g.st, pct = pctOf(st.done, st.n);
+      var name = g.key === '__none' ? '<span class="muted">' + esc(g.name) + '</span>' : esc(g.name);
+      return '<tr' + (cur && cur === g.key ? ' class="khd-row-on"' : '') + '><td><button class="link-btn" data-act="kh-dash-role" data-role="' + role + '" data-key="' + esc(g.key) + '">' + name + '</button>' +
+        '<small class="khd-own-proj" title="' + esc(g.codes.map(function (c) { return projectLabel(c); }).join(', ')) + '">' +
+          esc(g.codes.slice(0, 6).map(function (c) { return projectLabel(c); }).join(', ')) + (g.codes.length > 6 ? ' … +' + (g.codes.length - 6) + ' dự án' : '') + '</small></td>' +
+        '<td class="num">' + g.codes.length + '</td><td class="num">' + fmtNum(st.n) + '</td><td class="num nowrap">' + (st.value ? fmtBil(st.value) : '—') + '</td>' +
+        '<td class="num">' + fmtNum(st.done) + '</td><td><div class="khd-bar"><span style="width:' + pct + '%"></span></div><small>' + pct + '%</small></td>' +
+        '<td class="num">' + (st.onTime == null ? '<span class="muted">—</span>' : st.onTime + '%') + '</td>' +
+        '<td class="num' + (st.late ? ' bad' : '') + '">' + fmtNum(st.late) + '</td><td class="num">' + fmtNum(st.soon) + '</td>' +
+        '<td class="num">' + fmtNum(st.contract) + '</td><td class="num">' + fmtNum(st.waitContract) + '</td></tr>';
+    }).join('');
+    var note = role === 'owner'
+      ? 'Dự án nhiều chuyên viên được tính cho từng người.' + (S.me.isManager ? ' Phân công ở nút <b>Phân công chuyên viên</b>.' : '')
+      : 'Theo thông tin chuyên viên khai báo ở <b>Thông tin dự án</b> (KHMS chi tiết). Ô có nhiều tên ("A, B" / "A / B") được tính cho từng người; tên so không dấu, không phân biệt hoa/thường.';
+    var tools = '<button class="secondary-btn" data-act="kh-dash-xlsx">' + ic('download') + 'Xuất báo cáo (Excel)</button>';
+    return card('khd-people', 'Tổng hợp theo người phụ trách', '<div class="khd-list-bar">' + seg + '</div>' +
+      (chart ? '<div class="charts khd-people-chart">' + chart + '</div>' : '') +
+      '<div class="table-wrap"><table class="grid kh-sum khd-sum"><thead><tr><th>' + esc(r.head) + '</th>' +
+      '<th class="num">Dự án</th><th class="num">Gói thầu</th><th class="num">Giá trị</th><th class="num">Đã chọn thầu</th><th>Tiến độ chọn thầu</th>' +
+      '<th class="num">Đúng hạn</th><th class="num">Trễ chọn thầu</th><th class="num">Sắp đến hạn</th><th class="num">Đã ký HĐ</th><th class="num">Chờ ký HĐ</th></tr></thead><tbody>' +
+      rows + '</tbody></table></div><p class="muted kh-note">' + note + ' Bấm tên để lọc dashboard.</p>', { tools: tools, collapsible: true });
+  }
+  /** Xuất báo cáo dashboard (theo bộ lọc đang chọn): Tổng hợp theo chuyên viên / GĐ dự án / BOM + danh sách dự án. */
+  function khdExportXlsx(btn) {
+    var by = khdByProject(), sc = khdCodes(by);
+    if (!sc.codes.length) { toast('Không có dự án để xuất.', 'err'); return; }
+    busy(btn, true); setLoading(1);
+    loadExcelJs().then(function (ExcelJS) {
+      var wb = new ExcelJS.Workbook();
+      var head = ['Gói thầu', 'Giá trị gói thầu', 'Đã chọn thầu', '% đã chọn thầu', 'Chọn thầu đúng hạn (%)', 'Trễ chọn thầu', 'Sắp đến hạn chọn thầu', 'Đã ký HĐ', 'Đã chọn thầu – chờ ký HĐ'];
+      var nums = function (st) { return [st.n, st.value, st.done, st.n ? st.done / st.n : null, st.onTime == null ? null : st.onTime / 100, st.late, st.soon, st.contract, st.waitContract]; };
+      var fmt = function (row, from) { row.getCell(from + 1).numFmt = '#,##0'; row.getCell(from + 3).numFmt = '0%'; row.getCell(from + 4).numFmt = '0%'; };
+      var filt = khdFilterText(sc);
+      KHD_ROLES.forEach(function (r) {
+        var ws = wb.addWorksheet('Theo ' + (r.key === 'owner' ? 'chuyên viên' : r.key === 'director' ? 'GĐ dự án' : 'BOM'), { views: [{ state: 'frozen', ySplit: 3 }] });
+        ws.addRow(['KHMS – TỔNG HỢP THEO ' + r.label.toUpperCase()]);
+        ws.addRow(['Xuất ngày ' + fmtDate(S.today) + ' bởi ' + S.me.displayName + ' · ' + filt]);
+        var h = [r.head, 'Số dự án', 'Dự án'].concat(head);
+        ws.addRow(h); khHeadStyle(ws.getRow(3), h.length);
+        khdGroups(by, sc.codes, r.key).forEach(function (g) {
+          fmt(ws.addRow([g.name, g.codes.length, g.codes.map(function (c) { return projectLabel(c); }).join(', ')].concat(nums(g.st))), 3);
+        });
+        ws.getRow(1).font = { bold: true, size: 14, color: { argb: 'FF1E2B59' } };
+        [28, 10, 60, 10, 18, 12, 12, 14, 12, 14, 10, 16].forEach(function (w, i) { ws.getColumn(i + 1).width = w; });
+        ws.getColumn(3).alignment = { wrapText: true, vertical: 'top' };
+      });
+      var wp = wb.addWorksheet('Theo dự án', { views: [{ state: 'frozen', ySplit: 3 }] });
+      wp.addRow(['KHMS – TỔNG HỢP THEO DỰ ÁN']);
+      wp.addRow(['Xuất ngày ' + fmtDate(S.today) + ' bởi ' + S.me.displayName + ' · ' + filt]);
+      var hp = ['Dự án', 'Chuyên viên phụ trách', 'Giám đốc dự án', 'BOM phụ trách'].concat(head);
+      wp.addRow(hp); khHeadStyle(wp.getRow(3), hp.length);
+      sc.codes.forEach(function (c) {
+        fmt(wp.addRow([projectLabel(c), khOwnersText(c), khInfoOf(c).director, khInfoOf(c).bom].concat(nums(khdStats(by[c])))), 4);
+      });
+      wp.getRow(1).font = { bold: true, size: 14, color: { argb: 'FF1E2B59' } };
+      [40, 26, 24, 24, 10, 18, 12, 12, 14, 12, 14, 10, 16].forEach(function (w, i) { wp.getColumn(i + 1).width = w; });
+      return khDownload(wb, 'Bao-cao-KHMS-theo-nguoi-phu-trach-' + S.today + '.xlsx', 'Đã xuất báo cáo KHMS theo người phụ trách.');
+    }).catch(function (err) {
+      toast((err && err.message) || 'Không tạo được file Excel.', 'err');
+    }).then(function () { busy(btn, false); setLoading(-1); });
+  }
+  /** Mô tả bộ lọc đang chọn (tiêu đề tổng quan, file xuất). */
+  function khdFilterText(sc) {
+    var parts = [(sc.picked ? sc.codes.length + ' dự án được chọn' : sc.codes.length + ' dự án')];
+    KHD_ROLES.forEach(function (r) { var v = S.khDash[r.key]; if (v) parts.push(r.label + ': ' + khRoleName(r.key, v)); });
+    return parts.join(' · ');
+  }
+
+  function khdOverviewCard(list, sc) {
+    var st = khdStats(list), d = S.khDash;
+    var tile = function (key, color, label, n, note) {
+      return '<button class="rep-kpi' + (key && d.list === key ? ' on' : '') + '" style="--c:' + color + '"' + (key ? ' data-act="kh-dash-list" data-list="' + key + '"' : ' data-act="kh-dash-list" data-list="all"') + '>' +
+        '<span class="rk-l">' + esc(label) + '</span><b>' + n + '</b><span class="rk-n">' + esc(note) + '</span></button>';
+    };
+    var body = '<div class="rep-kpis">' +
+      tile('', '#1E2B59', 'Gói thầu', fmtNum(st.n), sc.codes.length + ' dự án' + (st.value ? ' · ' + fmtBil(st.value) : '')) +
+      tile('', MS_COLORS.done, 'Đã chọn thầu', fmtNum(st.done), pctOf(st.done, st.n) + '% số gói' + (st.value ? ' · ' + pctOf(st.valDone, st.value) + '% giá trị' : '')) +
+      tile('', '#2B9E8F', 'Chọn thầu đúng hạn', st.onTime == null ? '—' : st.onTime + '%', st.ms.done + ' đúng hạn · ' + st.ms.lateDone + ' trễ') +
+      tile('late', MS_COLORS.late, 'Trễ chọn thầu', fmtNum(st.late), 'chưa chọn, quá ngày kế hoạch') +
+      tile('soon', MS_COLORS.soon, 'Sắp đến hạn', fmtNum(st.soon), 'chọn thầu trong ' + KHMS_SOON_DAYS + ' ngày tới') +
+      tile('wait', '#2B4396', 'Đã ký hợp đồng', fmtNum(st.contract), st.waitContract + ' gói đã chọn thầu chờ ký') +
+      '</div><p class="muted kh-note">Ngày chọn thầu thực tế = ngày duyệt hồ sơ gắn với gói (hoặc ngày nhập / từ file). Bấm ô để xem danh sách gói bên dưới.</p>';
+    var scope = sc.picked || sc.roles ? khdFilterText(sc) : 'Tất cả dự án';
+    return card('khd-overview', 'Tổng quan <span class="ov-period">' + esc(scope) + '</span>', body, { collapsible: true });
+  }
+
+  function khdDoughnut(labels, data, colors) {
+    var total = data.reduce(function (a, b) { return a + b; }, 0);
+    return {
+      type: 'doughnut',
+      data: { labels: labels, datasets: [{ data: data, backgroundColor: colors, borderColor: '#fff', borderWidth: 2 }] },
+      options: {
+        animation: false, responsive: true, maintainAspectRatio: false, cutout: '62%',
+        plugins: {
+          legend: { position: 'right', labels: { usePointStyle: true, pointStyle: 'circle', boxWidth: 8, boxHeight: 8, color: '#44506A',
+            generateLabels: function (ch) {
+              return ch.data.labels.map(function (l, i) {
+                return { text: l + ': ' + fmtNum(data[i]) + ' (' + pctOf(data[i], total) + '%)', fillStyle: colors[i], strokeStyle: colors[i], pointStyle: 'circle', index: i, hidden: !ch.getDataVisibility(i) };
+              });
+            } } },
+          tooltip: { backgroundColor: 'rgba(16, 26, 51, .92)', padding: 10, cornerRadius: 10,
+            callbacks: { label: function (ctx) { return ' ' + ctx.label + ': ' + fmtNum(ctx.raw) + ' gói (' + pctOf(ctx.raw, total) + '%)'; } } }
+        }
+      }
+    };
+  }
+
+  function khdChartsCard(by, sc, list) {
+    if (typeof Chart === 'undefined') {
+      return card('khd-charts', 'Biểu đồ', '<div class="empty">Không tải được thư viện biểu đồ (kiểm tra kết nối mạng).</div>', { collapsible: true });
+    }
+    var st = khdStats(list), boxes = [], d = S.khDash;
+    var keys = KHD_STATES.map(function (s) { return s[0]; }), names = KHD_STATES.map(function (s) { return s[1]; });
+    var colors = keys.map(function (k) { return MS_COLORS[k]; });
+    // 1. Tình trạng chọn thầu
+    if (st.n) {
+      boxes.push(A.chartBox('khd-ch-state', 'Tình trạng chọn thầu (' + fmtNum(st.n) + ' gói)', 300));
+      S.pendingCharts.push({ id: 'khd-ch-state', config: khdDoughnut(names, keys.map(function (k) { return st.ms[k]; }), colors) });
+    } else boxes.push(A.emptyBox('Tình trạng chọn thầu', 'Không có gói thầu.'));
+    // 2. Theo mốc: mời thầu / chọn thầu / ký HĐ / khởi công
+    var msDs = keys.map(function (k, i) {
+      return { label: names[i], backgroundColor: colors[i], stack: 's', data: MILESTONES.map(function (m) { return list.filter(function (p) { return p._ms[m.key].code === k; }).length; }) };
+    });
+    boxes.push(A.chartBox('khd-ch-ms', 'Tiến độ theo mốc', 300));
+    S.pendingCharts.push({ id: 'khd-ch-ms', config: A.barConfig(MILESTONES.map(function (m) { return m.label; }), msDs, { horizontal: true, stacked: true, legend: true, unit: ' gói' }) });
+    // 3. Chọn thầu theo tháng trong năm: số gói kế hoạch / thực tế + lũy kế
+    var y = String(d.year), plan = [], act = [], cp = [], ca = [], sp = 0, sa = 0;
+    for (var mth = 1; mth <= 12; mth++) {
+      var key = y + '-' + ('0' + mth).slice(-2);
+      var np = list.filter(function (p) { return p.selectPlan && p.selectPlan.slice(0, 7) === key; }).length;
+      var na = list.filter(function (p) { return p._actual.select && p._actual.select.slice(0, 7) === key; }).length;
+      plan.push(np); act.push(na); sp += np; sa += na;
+      cp.push(sp); ca.push(key <= S.today.slice(0, 7) ? sa : null);
+    }
+    var mcfg = A.barConfig(['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12'], [
+      { label: 'Kế hoạch chọn thầu', data: plan, backgroundColor: '#9DB4E0', order: 2 },
+      { label: 'Thực tế chọn thầu', data: act, backgroundColor: MS_COLORS.done, order: 2 }
+    ], { legend: true, unit: ' gói' });
+    // Lũy kế trong năm vẽ theo trục phải (để cột theo tháng không bị nhỏ).
+    mcfg.data.datasets.push({ type: 'line', label: 'Lũy kế kế hoạch (trục phải)', data: cp, yAxisID: 'y1', borderColor: '#2B4396', backgroundColor: '#2B4396', borderDash: [6, 4], pointRadius: 2, tension: .25, order: 1 },
+      { type: 'line', label: 'Lũy kế thực tế (trục phải)', data: ca, yAxisID: 'y1', borderColor: '#2E8B3E', backgroundColor: '#2E8B3E', pointRadius: 2, tension: .25, order: 1, spanGaps: false });
+    mcfg.options.scales.y1 = { position: 'right', beginAtZero: true, grid: { display: false }, border: { display: false }, ticks: { precision: 0, color: '#76829B' } };
+    boxes.push('<div class="khd-wide">' + A.chartBox('khd-ch-month', 'Chọn thầu theo tháng – năm ' + y + ' (kế hoạch hiện hành / thực tế)', 300) + '</div>');
+    S.pendingCharts.push({ id: 'khd-ch-month', config: mcfg });
+    // 4. Theo dự án (xếp chồng theo tình trạng chọn thầu)
+    if (sc.codes.length > 1) {
+      var codes = sc.codes.slice().sort(function (a, b) { return by[b].length - by[a].length; });
+      var pds = keys.map(function (k, i) {
+        return { label: names[i], backgroundColor: colors[i], stack: 's', data: codes.map(function (c) { return by[c].filter(function (p) { return p._ms.select.code === k; }).length; }) };
+      });
+      var h = Math.max(300, codes.length * 26 + 80);
+      // Nhiều dự án: khung cuộn (biểu đồ giữ chiều cao đủ đọc từng dòng).
+      boxes.push('<div class="khd-wide' + (h > 480 ? ' khd-tall' : '') + '">' + A.chartBox('khd-ch-proj', 'Tình trạng chọn thầu theo dự án (' + codes.length + ' dự án, số gói)', h) + '</div>');
+      S.pendingCharts.push({ id: 'khd-ch-proj', config: A.barConfig(codes.map(function (c) { return projectLabel(c); }), pds, { horizontal: true, stacked: true, legend: true, unit: ' gói' }) });
+    }
+    return card('khd-charts', 'Biểu đồ', '<div class="charts khd-charts">' + boxes.join('') + '</div>', { collapsible: true });
+  }
+
+  function khdProjectsCard(by, sc) {
+    var go = function (c, state, n, cls) {
+      return n ? '<button class="link-btn' + (cls ? ' ' + cls : '') + '" data-act="kh-dash-go" data-code="' + esc(c) + '" data-state="' + state + '">' + fmtNum(n) + '</button>' : '<span class="muted">0</span>';
+    };
+    var tot = [];
+    var rows = sc.codes.map(function (c) {
+      var st = khdStats(by[c]), pct = pctOf(st.done, st.n), last = S.planLast[c];
+      tot = tot.concat(by[c]);
+      return '<tr><td><button class="link-btn" data-act="kh-dash-go" data-code="' + esc(c) + '" data-state="">' + projectCell(c) + '</button></td>' +
+        '<td>' + khOwnersCell(c) + '</td><td>' + khInfoCell(c, 'director') + '</td><td>' + khInfoCell(c, 'bom') + '</td>' +
+        '<td class="nowrap">' + (last ? fmtDate(last.date) : '—') + '</td>' +
+        '<td class="num">' + go(c, '', st.n) + '</td><td class="num nowrap">' + (st.value ? fmtBil(st.value) : '—') + '</td>' +
+        '<td class="num">' + go(c, 'done', st.done) + '</td>' +
+        '<td><div class="khd-bar" title="' + pct + '% gói đã chọn thầu"><span style="width:' + pct + '%"></span></div><small>' + pct + '%</small></td>' +
+        '<td class="num">' + (st.onTime == null ? '<span class="muted">—</span>' : st.onTime + '%') + '</td>' +
+        '<td class="num">' + go(c, 'late', st.late, 'bad') + '</td><td class="num">' + go(c, 'soon', st.soon, 'warn') + '</td>' +
+        '<td class="num">' + go(c, 'contract', st.contract) + '</td><td class="num">' + go(c, 'wait-contract', st.waitContract) + '</td></tr>';
+    }).join('');
+    var t = khdStats(tot), tp = pctOf(t.done, t.n);
+    var foot = sc.codes.length > 1 ? '<tfoot><tr><td>Tổng cộng (' + sc.codes.length + ' dự án)</td><td></td><td></td><td></td><td></td><td class="num">' + fmtNum(t.n) + '</td><td class="num nowrap">' + (t.value ? fmtBil(t.value) : '—') + '</td>' +
+      '<td class="num">' + fmtNum(t.done) + '</td><td><div class="khd-bar"><span style="width:' + tp + '%"></span></div><small>' + tp + '%</small></td>' +
+      '<td class="num">' + (t.onTime == null ? '—' : t.onTime + '%') + '</td><td class="num">' + fmtNum(t.late) + '</td><td class="num">' + fmtNum(t.soon) + '</td>' +
+      '<td class="num">' + fmtNum(t.contract) + '</td><td class="num">' + fmtNum(t.waitContract) + '</td></tr></tfoot>' : '';
+    return card('khd-projects', 'Tổng hợp theo dự án', '<div class="table-wrap"><table class="grid kh-sum khd-sum"><thead><tr><th>Dự án</th><th>Chuyên viên</th><th>GĐ dự án</th><th>BOM</th><th>KHMS cập nhật</th>' +
+      '<th class="num">Gói thầu</th><th class="num">Giá trị</th><th class="num">Đã chọn thầu</th><th>Tiến độ chọn thầu</th><th class="num" title="Đã chọn thầu đúng hạn / tổng đã chọn">Đúng hạn</th>' +
+      '<th class="num">Trễ chọn thầu</th><th class="num">Sắp đến hạn</th><th class="num">Đã ký HĐ</th><th class="num">Chờ ký HĐ</th></tr></thead><tbody>' + rows + '</tbody>' + foot + '</table></div>' +
+      '<p class="muted kh-note">Bấm tên dự án / số để mở KHMS chi tiết của dự án (đã lọc theo tình trạng).</p>', { collapsible: true });
+  }
+
+  function khdListCard(list, sc) {
+    var d = S.khDash, mode = d.list;
+    var rows = list.filter(function (p) {
+      var c = p._ms.select.code;
+      if (mode === 'late') return c === 'late';
+      if (mode === 'soon') return c === 'soon';
+      if (mode === 'wait') return (c === 'done' || c === 'lateDone') && !p._actual.contract;
+      return true;
+    });
+    rows.sort(function (a, b) {
+      if (mode === 'late') return b._ms.select.days - a._ms.select.days;
+      if (mode === 'soon') return a._ms.select.days - b._ms.select.days;
+      return projectSort(a.project, b.project) || a.order - b.order;
+    });
+    var seg = '<div class="seg" role="group" aria-label="Danh sách">' + KHD_LISTS.map(function (l) {
+      return '<button class="' + (mode === l[0] ? 'on' : '') + '" data-act="kh-dash-list" data-list="' + l[0] + '">' + l[1] + '</button>';
+    }).join('') + '</div>';
+    var body = rows.length ? '<div class="table-scroll" id="scroll-khd"><table class="grid"><thead><tr><th>Dự án</th><th>Gói thầu</th><th class="num">Giá trị</th>' +
+      '<th>KH chọn thầu</th><th>Thực tế</th><th>Tình trạng chọn thầu</th><th>Ký HĐ</th><th>Hồ sơ</th></tr></thead><tbody>' +
+      rows.map(function (p) {
+        return '<tr><td>' + projectCell(p.project) + '</td><td class="title-cell"><button class="link-btn" data-act="kh-edit" data-id="' + esc(p.id) + '">' + esc(p.name) + '</button></td>' +
+          '<td class="num nowrap">' + (p.value != null ? fmtMoney(p.value) : '—') + '</td><td class="nowrap">' + (p.selectPlan ? fmtDate(p.selectPlan) : '—') + '</td>' +
+          '<td class="nowrap">' + (p._actual.select ? fmtDate(p._actual.select) : '—') + '</td><td>' + msBadge(p._ms.select) + '</td><td>' + msBadge(p._ms.contract) + '</td>' +
+          '<td class="nowrap">' + (p._sub ? statusBadge(p._sub.status) + ' <span class="code">' + esc(p._sub.id) + '</span>' : '<span class="muted">Chưa gắn</span>') + '</td></tr>';
+      }).join('') + '</tbody></table></div>' : '<div class="empty">Không có gói thầu.</div>';
+    return card('khd-list', 'Danh sách gói thầu', '<div class="khd-list-bar">' + seg + '</div>' + body +
+      '<div class="range-bar">' + fmtNum(rows.length) + ' gói thầu · ' + (sc.picked ? sc.codes.length + ' dự án được chọn' : 'tất cả dự án') + '</div>', { collapsible: true });
+  }
+
   /* ---------- Gắn vào ứng dụng ---------- */
-  EXT.data.push(function (d) { S.packages = d.packages || []; S.planUploads = d.planUploads || []; });
+  EXT.data.push(function (d) { S.packages = d.packages || []; S.planUploads = d.planUploads || []; S.khExportAll = !!d.khmsExportAll; khSetAssign(d.khmsAssign); });
   EXT.derive.push(khmsDerive);
-  EXT.nav.push(function () { return { view: 'khms', icon: 'box', label: 'Kế hoạch mua sắm' }; });
+  // Menu 2 cấp: Kế hoạch mua sắm → KHMS chi tiết dự án / Dashboard báo cáo KHMS.
+  EXT.nav.push(function () {
+    return { group: 'khms', icon: 'box', label: 'Kế hoạch mua sắm', children: [
+      { view: 'khms', icon: 'clipboard', label: 'KHMS chi tiết dự án' },
+      { view: 'khms-dash', icon: 'chart', label: 'Dashboard báo cáo KHMS' }
+    ] };
+  });
   EXT.views.khms = viewKhms;
+  EXT.views['khms-dash'] = viewKhmsDash;
   EXT.subInfo.push(subPackageInfo);
   EXT.busy.push(function () { return !!S.khEdit; }); // không tự làm mới 3 phút khi đang sửa bảng
   EXT.help.push('<li><b>Kế hoạch mua sắm</b>: bấm <b>Tải KHMS (Excel)</b> và chọn file KHMS của dự án (cột STT, Hạng mục, Giá trị gói thầu, các nhóm Ngày mời thầu / chọn thầu / ký kết hợp đồng / bắt đầu thi công) — web đọc ngày kế hoạch. ' +
         'Mỗi gói thầu gắn với 1 hồ sơ phê duyệt (web gợi ý theo tên hồ sơ cùng dự án, bấm <b>Xác nhận</b>); hồ sơ được duyệt → ngày duyệt là <b>ngày chọn thầu thực tế</b>. ' +
-        'Ngày mời thầu, ký hợp đồng, khởi công thực tế: bấm <b>Cập nhật bảng</b> để nhập cho cả bảng rồi <b>Lưu thay đổi</b> (hoặc bấm tên gói để sửa 1 gói). Tải lại KHMS (Rev mới): cập nhật kế hoạch, giữ kế hoạch gốc, ngày thực tế và hồ sơ đã gắn.</li>');
+        'Ngày mời thầu, ký hợp đồng, khởi công thực tế: bấm <b>Cập nhật bảng</b> để nhập cho cả bảng rồi <b>Lưu thay đổi</b> (hoặc bấm tên gói để sửa 1 gói). Tải lại KHMS (Rev mới): cập nhật kế hoạch, giữ kế hoạch gốc, ngày thực tế và hồ sơ đã gắn. ' +
+        'File tổng hợp nhiều sheet đặt tên <b>"STT_Tên dự án"</b> (vd KHMS cả phòng) → web tải <b>nhiều dự án một lần</b>, mỗi sheet vào dự án theo số đầu tên sheet. ' +
+        '<b>Dashboard báo cáo KHMS</b>: bấm <b>Chọn dự án</b> để tổng hợp 1, vài hoặc tất cả dự án — tình trạng chọn thầu, tiến độ theo mốc, chọn thầu theo tháng, bảng theo dự án, danh sách gói trễ / sắp đến hạn.</li>');
 
   var ACTIONS_ADD = {
     'kh-upload': function () { khmsUpload(); },
     'kh-export': function (el) { khmsExport(el); },
+    'kh-export-all': function (el) { khmsExportAll(el); },
+    'kh-asg-open': function (el) { openKhAssign(el.dataset.code || ''); },
+    'kh-inf-open': function (el) { openKhInfo(el.dataset.code || ''); },
+    'kh-inf-save': function (el) { saveKhInfo(el); },
+    'kh-asg-save': function (el) { saveKhAssign(el); },
+    'kh-dash-role': function (el) {
+      var role = el.dataset.role, v = el.dataset.key === S.khDash[role] ? '' : el.dataset.key;
+      S.khDash[role] = v; A.store.set('hs_khdash_' + role, v); render();
+    },
+    'kh-dash-by': function (el) { S.khDash.by = el.dataset.role; A.store.set('hs_khdash_by', el.dataset.role); render(); },
+    'kh-dash-xlsx': function (el) { khdExportXlsx(el); },
+    'kh-dash-pick': function () { S.khDash.pick = !S.khDash.pick; render(); },
+    'kh-dash-all': function () {
+      var by = khdByProject(), q = norm(S.khDash.pq).trim();
+      Object.keys(by).forEach(function (c) { if ((!q || norm(projectLabel(c)).indexOf(q) >= 0) && S.khDash.sel.indexOf(c) < 0) S.khDash.sel.push(c); });
+      khdSaveSel(); render();
+    },
+    'kh-dash-none': function () { S.khDash.sel = []; khdSaveSel(); render(); },
+    'kh-dash-unsel': function (el) { S.khDash.sel = S.khDash.sel.filter(function (c) { return c !== el.dataset.code; }); khdSaveSel(); render(); },
+    'kh-dash-list': function (el) { S.khDash.list = el.dataset.list; S.scrollReset = { 'scroll-khd': true }; render(); },
+    'kh-dash-go': function (el) {
+      S.view = 'khms'; S.khms.project = el.dataset.code; S.khms.state = el.dataset.state || ''; S.khms.q = '';
+      S.scrollReset = { 'scroll-khms': true }; render(); window.scrollTo(0, 0);
+    },
     'kh-state': function (el) { S.khms.state = el.dataset.state; S.scrollReset = { 'scroll-khms': true }; render(); },
     'kh-pick-project': function (el) {
       S.khms.project = el.dataset.code; S.khms.state = el.dataset.state || '';
@@ -995,7 +2159,12 @@
         derive(); render(); toast('Đã xóa KHMS dự án ' + el.dataset.code + '.');
       }).catch(function (err) { busy(el, false); handleErr(err); });
     },
-    'kh-submit-import': function (el) { submitKhmsImport(el); }
+    'kh-submit-import': function (el) { submitKhmsImport(el); },
+    'kh-submit-batch': function (el) { submitKhmsBatch(el); },
+    'kh-bimp-open': function (el) {
+      var u = +el.dataset.u;
+      S.khImport.open = S.khImport.open === u ? -1 : u; keepModalScroll(openKhmsImport);
+    }
   };
   Object.keys(ACTIONS_ADD).forEach(function (k) { A.ACTIONS[k] = ACTIONS_ADD[k]; });
 
@@ -1009,26 +2178,59 @@
     'kh-state': function (el) {
       S.khms.state = el.value; S.scrollReset = { 'scroll-khms': true }; render();
     },
-    'kh-inactive': function (el) {
-      S.khms.inactive = el.checked; render();
+    'kh-dash-sel': function (el) {
+      var c = el.dataset.code, sel = S.khDash.sel.filter(function (x) { return x !== c; });
+      if (el.checked) sel.push(c);
+      S.khDash.sel = sel; khdSaveSel(); render();
     },
+    'kh-dash-year': function (el) { S.khDash.year = +el.value; render(); },
+    'kh-dash-role': function (el) { S.khDash[el.dataset.role] = el.value; A.store.set('hs_khdash_' + el.dataset.role, el.value); render(); },
+    'kh-asg': function (el) {
+      var d = S.khAsg.d, c = el.dataset.code, u = el.dataset.user;
+      d[c] = (d[c] || []).filter(function (x) { return x !== u; });
+      if (el.checked) d[c].push(u);
+      keepModalScroll(renderKhAssign);
+    },
+    'kh-asg-all': function (el) { S.khAsg.all = el.checked; keepModalScroll(renderKhAssign); },
+    'kh-inf-all': function (el) { S.khInf.all = el.checked; keepModalScroll(renderKhInfo); },
     'kh-imp-project': function (el) {
       S.khImport.project = el.value; keepModalScroll(openKhmsImport);
     },
     'kh-imp-sheet': function (el) {
       S.khImport.sheet = +el.value; S.khImport.skip = {};
-      S.khImport.sheets[S.khImport.sheet].rows.forEach(function (r, i) { if (r.hidden) S.khImport.skip[i] = true; });
+      S.khImport.sheets[S.khImport.sheet].rows.forEach(function (r, i) { if (r.na) S.khImport.skip[i] = true; });
       openKhmsImport();
     },
     'kh-imp-progress': function (el) {
       S.khImport.useProgress = el.checked; keepModalScroll(openKhmsImport);
     },
     'kh-imp-row': function (el) {
-      S.khImport.skip[el.dataset.i] = !el.checked; keepModalScroll(openKhmsImport);
+      khImpTarget(el).skip[el.dataset.i] = !el.checked; keepModalScroll(openKhmsImport);
     },
     'kh-imp-all': function (el) {
-      S.khImport.sheets[S.khImport.sheet].rows.forEach(function (r, i) { S.khImport.skip[i] = !el.checked; });
+      var t = khImpTarget(el);
+      t.rows.forEach(function (r, i) { t.skip[i] = !el.checked; });
       keepModalScroll(openKhmsImport);
+    },
+    'kh-bimp-on': function (el) {
+      S.khImport.units[+el.dataset.u].on = el.checked; keepModalScroll(openKhmsImport);
+    },
+    'kh-bimp-all': function (el) {
+      S.khImport.units.forEach(function (u) { if (u.project) u.on = el.checked; });
+      keepModalScroll(openKhmsImport);
+    },
+    'kh-imp-orphan': function (el) {
+      S.khImport.orphans[+el.dataset.i].on = el.checked; keepModalScroll(openKhmsImport);
+    },
+    'kh-imp-asg': function (el) {
+      S.khImport.assign.list[+el.dataset.i].on = el.checked; keepModalScroll(openKhmsImport);
+    },
+    'kh-bimp-over': function (el) {
+      S.khImport.units[+el.dataset.u].overwrite = el.checked; keepModalScroll(openKhmsImport);
+    },
+    'kh-bimp-project': function (el) {
+      var u = S.khImport.units[+el.dataset.u];
+      u.project = el.value; u.on = !!el.value; keepModalScroll(openKhmsImport);
     }
   };
   Object.keys(CHANGE_ADD).forEach(function (k) { EXT.change[k] = CHANGE_ADD[k]; });
@@ -1042,6 +2244,16 @@
       if (el.dataset.f !== 'note' && e.inputType && e.inputType.indexOf('insert') === 0 && /^\d{2}$|^\d{2}\/\d{2}$/.test(el.value)) el.value += '/';
       if (el.dataset.f !== 'note' && /[\/\-.]{2}/.test(el.value)) el.value = el.value.replace(/([\/\-.])[\/\-.]+/g, '$1');
       khEditStore(el);
+    },
+    'kh-dash-q': function (el) { S.khDash.pq = el.value; render(); },
+    'kh-asg-q': function (el) { S.khAsg.q = el.value; keepModalScroll(renderKhAssign); },
+    'kh-inf-q': function (el) { S.khInf.q = el.value; keepModalScroll(renderKhInfo); },
+    'kh-inf': function (el) {
+      var c = el.dataset.code;
+      (S.khInf.d[c] = S.khInf.d[c] || {})[el.dataset.f] = el.value;
+      khInfMark(el);
+      var b = document.querySelector('#m-inf-btn span');
+      if (b) b.textContent = khInfBtnText();
     },
     'kh-q': function (el) {
       clearTimeout(qTimer);

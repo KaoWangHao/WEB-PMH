@@ -52,7 +52,7 @@
     adminUsers: null, charts: []
   };
   /**
-   * Điểm gắn chức năng mở rộng (vd Kế hoạch mua sắm ở thư mục khms/, chỉ có trên bản chạy thử /dev): file mở rộng nạp sau App.html,
+   * Điểm gắn chức năng mở rộng (vd Kế hoạch mua sắm ở thư mục khms/, workflow chép vào src/ khi deploy): file mở rộng nạp sau App.html,
    * dùng window.APP (khai báo cuối file) để thêm menu, trang, action, xử lý sự kiện, dữ liệu. Không có file mở rộng thì các danh sách rỗng.
    */
   var EXT = { nav: [], views: {}, change: {}, input: {}, derive: [], data: [], subInfo: [], help: [], busy: [] };
@@ -150,6 +150,9 @@
   /** Số dự án ở đầu tên hồ sơ: "231_TDTower…" → ['231'], "267&285_EBV…" → ['267','285'], "273. Vin…" → ['273']. */
   function projectCodesOf(title) {
     var t = String(title || '').trim();
+    // Mã phụ "260.1_…" (dự án riêng trong danh mục, vd 260.1 Sky M MEP); chưa có trong danh mục → theo số chính 260.
+    var dm = t.match(/^0*(\d{1,6})\.(\d{1,3})(?=[\s_\-]|$)/);
+    if (dm && S.projMap && S.projMap[dm[1] + '.' + dm[2]]) return [dm[1] + '.' + dm[2]];
     var m = t.match(/^(\d{1,6}(?:\s*[&+,]\s*\d{1,6})*)(?=[\s_.\-]|$)/);
     if (!m) {
       var up = t.toUpperCase();
@@ -170,8 +173,11 @@
   }
   function projectSort(a, b) {
     if (a === '-' || b === '-') return a === b ? 0 : a === '-' ? 1 : -1;
-    var na = /^\d+$/.test(a), nb = /^\d+$/.test(b);
-    if (na && nb) return Number(a) - Number(b);
+    var na = /^\d+(\.\d+)?$/.test(a), nb = /^\d+(\.\d+)?$/.test(b);
+    if (na && nb) {
+      var pa = a.split('.'), pb = b.split('.'); // 260 < 260.1 < 260.2 < 261
+      return (Number(pa[0]) - Number(pb[0])) || (Number(pa[1] || -1) - Number(pb[1] || -1));
+    }
     if (na !== nb) return na ? -1 : 1;
     return a < b ? -1 : a > b ? 1 : 0;
   }
@@ -231,7 +237,7 @@
     (S.projects || []).forEach(function (p) { S.projMap[p.code] = p; });
     // Mã chữ (vd "D&B"): khớp đầu tên hồ sơ, không phân biệt hoa/thường; mã dài khớp trước.
     S.letterCodes = (S.projects || []).map(function (p) { return p.code; })
-      .filter(function (c) { return !/^\d+$/.test(c); }).sort(function (a, b) { return b.length - a.length; });
+      .filter(function (c) { return !/^\d+(\.\d+)?$/.test(c); }).sort(function (a, b) { return b.length - a.length; });
     S.typeMap = {};
     (S.cfg.docTypes || []).forEach(function (t, i) { t.order = i; S.typeMap[t.code] = t; });
     var bySub = {};
@@ -423,13 +429,27 @@
     return items;
   }
 
+  /** Nhóm menu mở khi người dùng mở, mặc định mở nếu đang ở 1 mục con. */
+  function navGroupOpen(n) {
+    var st = S.navOpen && S.navOpen[n.group];
+    return st != null ? st : n.children.some(function (c) { return c.view === S.view; });
+  }
+
   function renderShell() {
     var unread = notifUnread();
     var me = S.me;
-    var nav = navItems().map(function (n) {
-      return '<button class="nav-item' + (S.view === n.view ? ' active' : '') + '" data-act="nav" data-view="' + n.view + '">' +
+    var navBtn = function (n, sub) {
+      return '<button class="nav-item' + (sub ? ' sub' : '') + (S.view === n.view ? ' active' : '') + '" data-act="nav" data-view="' + n.view + '">' +
         ic(n.icon) + '<span class="lbl">' + esc(n.label) + '</span>' +
-        (n.count ? '<span class="nav-count">' + n.count + '</span>' : '') + ic('chevRight', 'chev') + '</button>';
+        (n.count ? '<span class="nav-count">' + n.count + '</span>' : '') + (sub ? '' : ic('chevRight', 'chev')) + '</button>';
+    };
+    // Mục có children (vd Kế hoạch mua sắm → KHMS chi tiết dự án / Dashboard báo cáo KHMS): nhóm mở/đóng, mục con thụt vào.
+    var nav = navItems().map(function (n) {
+      if (!n.children) return navBtn(n);
+      var open = navGroupOpen(n), cur = n.children.some(function (c) { return c.view === S.view; });
+      return '<button class="nav-item nav-group' + (cur ? ' has-active' : '') + '" data-act="nav-group" data-group="' + esc(n.group) + '" aria-expanded="' + open + '">' +
+        ic(n.icon) + '<span class="lbl">' + esc(n.label) + '</span>' + ic(open ? 'chevDown' : 'chevRight', 'chev') + '</button>' +
+        (open ? '<div class="nav-sub">' + n.children.map(function (c) { return navBtn(c, true); }).join('') + '</div>' : '');
     }).join('');
 
 
@@ -1056,29 +1076,76 @@
     return n.indexOf('~$') === 0 || n.charAt(0) === '.' || n === 'thumbs.db' || n === 'desktop.ini';
   }
 
+  /** Hộp chờ giữa màn hình khi Chrome đọc thư mục / web so khớp file; text rỗng → ẩn. */
+  function syncWait(html) {
+    var el = document.getElementById('sync-wait');
+    if (!html) { if (el) el.remove(); return; }
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'sync-wait';
+      el.className = 'sync-wait';
+      el.setAttribute('role', 'status');
+      document.body.appendChild(el);
+    }
+    el.innerHTML = '<span class="spin" aria-hidden="true"></span><div>' + html + '</div>';
+  }
+
+  /**
+   * Chọn thư mục → xem trước. Thư mục trên ổ chung qua VPN có thể mất nhiều thời gian để Chrome đọc xong (chưa có sự kiện nào
+   * trong lúc đó), nên khi hộp chọn đóng mà chưa có kết quả thì hiện hộp chờ; mọi lỗi đều báo ra màn hình.
+   */
   function startFolderSync() {
-    var input = document.createElement('input');
+    if (S.syncInput) S.syncInput.remove();
+    var input = S.syncInput = document.createElement('input'); // giữ tham chiếu tới khi có kết quả
     input.type = 'file';
     input.multiple = true;
     input.setAttribute('webkitdirectory', '');
     input.style.display = 'none';
     document.body.appendChild(input);
+    var done = false, waitTimer = null;
+    function finish() {
+      done = true;
+      clearTimeout(waitTimer);
+      window.removeEventListener('focus', onFocus);
+      if (S.syncInput === input) S.syncInput = null;
+      input.remove();
+    }
+    function onFocus() {
+      waitTimer = setTimeout(function () {
+        if (!done) syncWait('<b>Chrome đang đọc thư mục…</b><br>Thư mục trên ổ chung qua VPN có thể mất vài phút, vui lòng chờ. ' +
+          'Nếu Chrome hỏi “Tải … tệp lên trang web này?”, hãy bấm <b>Tải lên</b>.');
+      }, 700);
+    }
+    input.addEventListener('cancel', function () {
+      finish();
+      syncWait('');
+      toast('Chưa chọn thư mục (hoặc đã bấm Hủy khi Chrome hỏi tải lên).', 'err');
+    });
     input.addEventListener('change', function () {
       var files = input.files;
-      input.remove();
-      if (!files || !files.length) { toast('Thư mục trống hoặc chưa chọn thư mục.', 'err'); return; }
-      var plan;
-      try { plan = buildSyncPlan(files); } catch (e) { toast(e.message, 'err'); return; }
-      openSyncPreview(plan);
+      finish();
+      if (!files || !files.length) { syncWait(''); toast('Thư mục trống hoặc chưa chọn thư mục.', 'err'); return; }
+      syncWait('<b>Đang so khớp ' + fmtNum(files.length) + ' file với hồ sơ trên web…</b>');
+      setTimeout(function () { // cho hộp chờ hiện ra trước khi xử lý
+        try {
+          openSyncPreview(buildSyncPlan(files));
+        } catch (e) {
+          if (window.console) console.error(e);
+          toast(e && e.message ? e.message : 'Lỗi khi đọc thư mục: ' + e, 'err');
+        } finally {
+          syncWait('');
+        }
+      }, 30);
     });
+    window.addEventListener('focus', onFocus);
     input.click();
   }
 
   /** Ngày sửa đổi của file trên server (giờ Việt Nam) → ISO yyyy-mm-dd; trình duyệt không có thì ''. */
   function fileDay(ms) {
     if (!ms) return '';
-    try { return new Date(ms).toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }); }
-    catch (e) { return new Date(ms + 7 * 3600000).toISOString().slice(0, 10); }
+    var d = new Date(ms + 7 * 3600000); // giờ Việt Nam = UTC+7 (không có giờ mùa hè); nhanh hơn toLocaleDateString cho hàng chục nghìn file
+    return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
   }
   /** Ngày sẽ ghi nhận cho hồ sơ: ngày của file, không sau hôm nay, không trước lần thay đổi gần nhất (server kiểm tra lại y hệt). */
   function syncEffDate(sub, iso) {
@@ -2884,6 +2951,15 @@
       if (window.innerWidth <= 1000) S.collapsed = true;
       closeModal(); render(); window.scrollTo(0, 0);
     },
+    'nav-group': function (el) {
+      var n = navItems().filter(function (x) { return x.group === el.dataset.group; })[0];
+      if (!n) return;
+      S.navOpen = S.navOpen || {};
+      var open = navGroupOpen(n), cur = n.children.some(function (c) { return c.view === S.view; });
+      // Nhóm đang đóng và chưa ở mục con nào → mở nhóm và vào mục con đầu tiên.
+      if (!open && !cur) { S.navOpen[n.group] = true; ACTIONS.nav({ dataset: { view: n.children[0].view } }); return; }
+      S.navOpen[n.group] = !open; render();
+    },
     'go-dashboard': function () { ACTIONS.nav({ dataset: { view: S.me.isManager ? 'manager' : 'home' } }); },
     'toggle-side': function () { S.collapsed = !S.collapsed; render(); setTimeout(function () { S.charts.forEach(function (c) { c.resize(); }); }, 250); },
     'toggle-dd': function (el) {
@@ -3273,7 +3349,8 @@
     statusOf: statusOf, statusBadge: statusBadge, userName: userName, card: card,
     projectLabel: projectLabel, projectCell: projectCell, projectSort: projectSort, projectCodesOf: projectCodesOf,
     openModal: openModal, closeModal: closeModal, modalHead: modalHead, modalError: modalError, keepModalScroll: keepModalScroll,
-    syncSection: syncSection, loadExcelJs: loadExcelJs, downloadBlob: downloadBlob
+    syncSection: syncSection, loadExcelJs: loadExcelJs, downloadBlob: downloadBlob,
+    chartBox: chartBox, emptyBox: emptyBox, barConfig: barConfig
   };
 
   boot();

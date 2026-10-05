@@ -1,5 +1,5 @@
 <style>
-/* Kế hoạch mua sắm (KHMS) — chức năng chạy thử, thư mục khms/ (chỉ có trên bản /dev). */
+/* Kế hoạch mua sắm (KHMS), thư mục khms/ — workflow deploy chép vào src/. */
 .field select { border: 0; outline: 0; font-size: 16px; font-weight: 500; padding: 0; background: transparent; width: 100%; color: var(--ink); cursor: pointer; }
 .field.kh-proj { flex: 2 1 320px; }
 .kh-upload { min-height: 40px; font-size: 15px; padding: 0 16px; }
@@ -66,7 +66,6 @@ table.grid.kh-table { font-size: 13.5px; }
 .mini-btn:hover { background: #F1F5FF; border-color: #B9C7E6; }
 .mini-btn.ok { background: #EEF7E6; border-color: #C5E1AE; color: #3E6B12; }
 .mini-btn.ok:hover { background: #E2F1D5; }
-.check.kh-inact { font-size: 13.5px; font-weight: 500; }
 .kh-ms td { vertical-align: top; }
 .kh-ms .kh-date { width: 130px; border: 1px solid #C9CDD6; border-radius: 8px; padding: 7px 9px; font-size: 15px; font-family: var(--num); }
 .kh-ms .kh-date:focus { outline: 0; border-color: var(--navy-600); box-shadow: var(--ring); }
@@ -79,4 +78,100 @@ table.grid.kh-table { font-size: 13.5px; }
 .kh-chg-l { display: block; font-size: 11.5px; color: var(--muted); max-width: 200px; }
 .kh-warn { color: #B4500C; font-weight: 600; }
 .meta-grid .meta-wide { grid-column: 1 / -1; }
+/* Tải KHMS nhiều dự án (file tổng hợp, mỗi sheet 1 dự án) */
+.kh-bimp td { vertical-align: middle; }
+.kh-bimp select { min-width: 170px; max-width: 240px; padding: 5px 8px; font-size: 13px; border: 1px solid #C9CDD6; border-radius: 8px; background: #fff; }
+.kh-bwarn { font-size: 11.5px; margin-top: 3px; }
+.kh-bnew { font-size: 11.5px; margin-top: 3px; color: #1E7B34; font-weight: 600; }
+.kh-bopen { font-size: 12px; margin-top: 2px; }
+.kh-over-box { margin-top: 10px; border-color: #F5B48A; background: #FFF4EC; color: #8A3A08; }
+.kh-sheet { display: block; font-size: 11px; color: var(--muted); }
+/* Dashboard báo cáo KHMS */
+.field.khd-projects > .secondary-btn { flex: none; white-space: nowrap; }
+.khd-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; max-height: 92px; overflow: auto; }
+.khd-chip { display: inline-flex; align-items: center; gap: 4px; background: #EEF2FB; border: 1px solid #D5DEEF; color: var(--navy-800, #23325F); border-radius: 999px; padding: 2px 4px 2px 10px; font-size: 13px; font-weight: 600; }
+.khd-chip button { border: 0; background: none; color: var(--muted); font-size: 16px; line-height: 1; padding: 0 4px; cursor: pointer; border-radius: 50%; }
+.khd-chip button:hover { color: #C0392B; background: #FBE3E0; }
+.khd-picker { margin-top: 12px; border: 1px solid var(--line-soft); border-radius: 14px; padding: 12px; background: #FAFCFF; }
+.khd-picker-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.khd-picker-bar input { flex: 1 1 220px; min-width: 0; border: 1px solid #C9CDD6; border-radius: 10px; padding: 8px 12px; font-size: 14.5px; }
+.khd-opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px; max-height: 320px; overflow: auto; }
+.khd-opt { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line-soft); border-radius: 10px; padding: 7px 10px; background: #fff; cursor: pointer; font-size: 14px; }
+.khd-opt span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.khd-opt small { color: var(--muted); white-space: nowrap; }
+.khd-opt.on { border-color: var(--navy-600); background: #F1F5FF; }
+.charts .khd-wide { grid-column: 1 / -1; }
+.khd-bar { display: inline-block; vertical-align: middle; width: 90px; height: 8px; border-radius: 6px; background: #E6EBF3; overflow: hidden; margin-right: 6px; }
+.khd-bar span { display: block; height: 100%; background: linear-gradient(90deg, #7CB342, #2E8B3E); border-radius: 6px; }
+.khd-sum tfoot td { font-weight: 700; background: #F4F7FC; border-top: 2px solid #D5DEEF; }
+.khd-list-bar { display: flex; justify-content: flex-start; margin-bottom: 10px; overflow-x: auto; }
+@media (max-width: 700px) {
+  .field.khd-projects { flex-wrap: wrap; padding-bottom: 8px; }
+  .khd-opts { grid-template-columns: 1fr; }
+}
+/* Chuyên viên phụ trách dự án */
+.kh-owners { font-weight: 600; color: var(--ink-2); }
+.kh-own-info { margin-top: 8px; }
+.khd-own-proj { display: block; font-size: 11.5px; color: var(--muted); max-width: 360px; white-space: normal; }
+.khd-sum td.bad { color: #C0392B; font-weight: 700; }
+.kh-asg-bar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-bottom: 8px; }
+.kh-asg-bar input[type=search] { flex: 1 1 240px; min-width: 0; border: 1px solid #C9CDD6; border-radius: 10px; padding: 8px 12px; font-size: 14.5px; }
+.kh-asg-wrap { max-height: 60vh; overflow: auto; }
+.kh-asg th, .kh-asg td { padding: 6px 8px; font-size: 13.5px; }
+.kh-asg thead th { position: sticky; top: 0; z-index: 1; }
+.kh-asg th.kh-asg-u { min-width: 64px; line-height: 1.2; }
+.kh-asg th.kh-asg-u small { display: block; font-size: 10.5px; opacity: .75; }
+.kh-asg tr.kh-asg-chg td { background: #FFF4EC; }
+.kh-asg tfoot td { font-weight: 700; background: #F4F7FC; }
+.kh-asg input[type=checkbox] { width: 18px; height: 18px; cursor: pointer; }
+.kh-pinfo { color: var(--ink-2); }
+.kh-inf td { padding: 6px 8px; font-size: 13.5px; vertical-align: middle; }
+.kh-inf-in { width: 100%; min-width: 180px; border: 1px solid #C9CDD6; border-radius: 8px; padding: 7px 10px; font-size: 14px; background: #fff; }
+.kh-inf-in:focus { outline: 0; border-color: var(--navy-600); box-shadow: var(--ring); }
+.kh-inf-in.chg { border-color: #F5A06A; background: #FFF4EC; }
+.kh-own-info .link-btn { margin-left: 8px; }
+.khd-people-chart { grid-template-columns: minmax(0, 1fr); margin-bottom: 14px; }
+.khd-sum tr.khd-row-on td { background: #F1F5FF; }
+/* Dashboard KHMS: tham số dạng lưới 6 cột — hàng 1: Dự án tổng hợp (4) + Năm (2); hàng 2: 3 ô lọc người phụ trách (2 + 2 + 2). */
+.params.khd-params { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+.params.khd-params > .field { min-width: 0; min-height: 64px; }
+.params.khd-params > .khd-projects { grid-column: span 4; align-items: center; padding-right: 10px; }
+.params.khd-params > .khd-year, .params.khd-params > .khd-owner { grid-column: span 2; }
+.params.khd-params select { width: 100%; text-overflow: ellipsis; }
+/* Biểu đồ: hàng 1 hai ô bằng nhau, các biểu đồ dài chiếm cả hàng; theo dự án nhiều thì cuộn trong khung. */
+.charts.khd-charts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.charts.khd-charts .khd-wide { grid-column: 1 / -1; }
+.khd-tall .chart-box { max-height: 560px; overflow-y: auto; }
+@media (max-width: 1100px) {
+  .params.khd-params { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .params.khd-params > .khd-projects { grid-column: 1 / -1; }
+  .params.khd-params > .khd-year, .params.khd-params > .khd-owner { grid-column: span 1; }
+  .charts.khd-charts { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 560px) {
+  .params.khd-params { grid-template-columns: minmax(0, 1fr); }
+}
+/* KHMS chi tiết: thông tin dự án (4 ô) + vùng thao tác (ô nhỏ theo nhóm) */
+.kh-pinfo { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.kh-pi { border: 1px solid var(--line-soft); border-radius: 12px; background: #FAFCFF; padding: 9px 12px; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.kh-pi-l { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+.kh-pi-l svg.ic { width: 15px; height: 15px; color: var(--navy-600); }
+.kh-pi-v { font-size: 14px; color: var(--ink); overflow-wrap: anywhere; }
+.kh-pi-v small { display: block; font-size: 12px; color: var(--muted); margin-top: 1px; }
+.kh-pi-a { margin-top: auto; padding-top: 2px; }
+.kh-pi-a .link-btn { font-size: 12.5px; display: inline-flex; align-items: center; gap: 4px; }
+.kh-pi-a .link-btn svg.ic { width: 14px; height: 14px; }
+.kh-actions { display: flex; flex-wrap: wrap; gap: 10px 28px; margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.kh-act-g { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.kh-act-h { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
+.kh-act-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.kh-tile { display: inline-flex; align-items: center; gap: 9px; border: 1px solid var(--line-soft); background: #fff; border-radius: 11px; padding: 7px 12px 7px 10px;
+  cursor: pointer; text-align: left; color: var(--ink); transition: border-color .15s, box-shadow .15s, transform .15s; }
+.kh-tile:hover { border-color: #C3CEE2; box-shadow: var(--shadow-hover); transform: translateY(-1px); }
+.kh-tile svg.ic { width: 18px; height: 18px; color: var(--navy-600); flex: none; }
+.kh-tile b { display: block; font-size: 13px; font-weight: 700; line-height: 1.25; }
+.kh-tile small { display: block; font-size: 11.5px; color: var(--muted); line-height: 1.25; }
+.kh-tile:disabled { opacity: .6; cursor: progress; }
+@media (max-width: 1100px) { .kh-pinfo { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .kh-pinfo { gap: 8px; } .kh-pi { padding: 8px 10px; } .kh-tile { flex: 1 1 100%; } }
 </style>
