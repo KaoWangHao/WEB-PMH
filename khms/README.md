@@ -161,3 +161,20 @@ Phần lõi không chứa code KHMS, chỉ có các "điểm gắn" — không c
 - Ngày kế hoạch hiện không sửa trên web (lấy từ file) — đổi nếu người dùng muốn.
 - Chưa có thông báo (chuông) cho KHMS (vd gói sắp đến hạn chọn thầu).
 - Hướng dẫn sử dụng (Claude Docs) chưa có phần KHMS.
+18. **Chuyên viên sửa được ngày kế hoạch** (theo người dùng: "các data trong cột kế hoạch, chuyên viên được quyền cập nhật lại các data đó luôn,
+    như cách cập nhật ngày thực tế"): "Cập nhật bảng" có ô nhập cho cột kế hoạch (bảng 2 cột: KH gốc `…Plan0` và KH hiện hành `…Plan`; bảng 1 cột:
+    sửa cả gốc lẫn hiện hành để không tách cột); form 1 gói cũng sửa được. Ngày kế hoạch không giới hạn "không sau hôm nay". `updatePackages_`
+    nhận thêm `<mốc>Plan0` / `<mốc>Plan`. Tải lại file KHMS vẫn cập nhật kế hoạch hiện hành theo file.
+19. **Trang "Thông tin dự án"** (menu KHMS → mục con thứ 3, view `khms-info`; theo người dùng: "thông tin mã số dự án, tên dự án, chuyên viên phụ trách,
+    GDDA và BOM phụ trách. Data hiện có lấy theo data trong KHMS và cho phép chuyên viên có thể tự cập nhật thêm dự án khi cần"):
+    bảng Mã số · Tên · Chuyên viên phụ trách · GĐ dự án · BOM · số gói KHMS · cập nhật; phạm vi mặc định = dự án có KHMS / đã khai báo (chọn "Tất cả dự án
+    trong danh mục" để xem hết). Hộp **Thêm dự án / Sửa** (action `saveKhmsProject` → `saveKhmsProject_`): mọi tài khoản thêm dự án mới vào danh mục
+    `Projects` (mã STT / STT.n / chữ, chưa trùng); đổi tên dự án đã có: Trưởng phòng / admin; chuyên viên phụ trách: Trưởng phòng chọn bất kỳ ai,
+    chuyên viên chỉ tích / bỏ chính mình (dự án mới mặc định tích mình); GĐDA / BOM: mọi tài khoản. Ô "Thông tin dự án" ở KHMS chi tiết mở trang này;
+    nút "Cập nhật" ở 4 ô thông tin dự án mở hộp Sửa; nhập nhanh GĐDA / BOM nhiều dự án: nút trên trang.
+20. **"Thông tin dự án" thành mục menu riêng, gồm mọi dự án; ai cũng phân công được** (theo người dùng: "phần thông tin dự án làm bao gồm luôn cho những
+    dự án chưa có KHMS, trong thanh menu, để phần thông tin dự án ra cùng level với phần Kế hoạch mua sắm, ko phải level con, rồi cho chức năng phân công
+    chuyên viên và khai báo GDDA và BOM phụ trách dự án luôn"): mục `khms-info` ngang cấp "Kế hoạch mua sắm" (EXT.nav riêng); bảng mặc định **tất cả dự án**
+    trong danh mục, Phạm vi: Tất cả / Có KHMS / Chưa có KHMS; bỏ cột "Cập nhật" (xem ở tooltip nút Sửa). Nút **Phân công chuyên viên** (bảng dự án × chuyên viên)
+    và **Khai báo GĐDA / BOM** (nhiều dự án) trên trang, mặc định hiện mọi dự án. **Phân công chuyên viên mở cho mọi tài khoản** (`assignProjects_` bỏ
+    `requireManager_`; `saveKhmsProject_` không còn giới hạn "chỉ tự nhận / bỏ mình"); đổi tên dự án vẫn chỉ Trưởng phòng / admin.
