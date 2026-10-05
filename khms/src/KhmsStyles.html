@@ -178,11 +178,12 @@ table.grid.kh-table { font-size: 13.5px; }
 .kh-pi-params { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
 @media (max-width: 700px) { .kh-pi-params { grid-template-columns: 1fr; } }
 .kh-pi-table td { vertical-align: middle; }
+.kh-pi-table .title-cell { white-space: normal; min-width: 180px; max-width: 360px; }
+.kh-pi-table td:nth-child(3), .kh-pi-table td:nth-child(4), .kh-pi-table td:nth-child(5) { min-width: 120px; }
 .kh-pi-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 0 14px; }
 .kh-pi-form.even { grid-template-columns: 1fr 1fr; }
 @media (max-width: 600px) { .kh-pi-form, .kh-pi-form.even { grid-template-columns: 1fr; } }
 .kh-pi-users { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px 14px; max-height: 220px; overflow: auto;
   padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--page); }
-.kh-pi-user.locked { opacity: .6; }
 .kh-plan0 { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line); }
 </style>

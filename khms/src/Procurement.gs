@@ -69,11 +69,11 @@ function listAssign_() {
 }
 
 /**
- * Lưu phân công chuyên viên phụ trách dự án (Trưởng phòng / admin). payload: { items: [{ projectCode, owners: [username] }] }
+ * Lưu phân công chuyên viên phụ trách dự án — mọi tài khoản (theo người dùng: trang "Thông tin dự án" có chức năng phân công chuyên viên;
+ * trước đây chỉ Trưởng phòng / admin). payload: { items: [{ projectCode, owners: [username] }] }
  * — chỉ các dự án gửi lên được thay; owners rỗng = bỏ phân công. Chuyên viên phải là tài khoản đang hoạt động.
  */
 function assignProjects_(user, payload) {
-  requireManager_(user);
   var items = (payload && payload.items) || [];
   if (!items.length) throw appError_('Không có thay đổi nào để lưu.');
   if (items.length > 500) throw appError_('Quá nhiều dự án trong một lần lưu.');
@@ -148,7 +148,7 @@ function updateProjectInfo_(user, payload) {
  * cho phép chuyên viên có thể tự cập nhật thêm dự án khi cần"). payload: { code, isNew, name?, owners?: [username], director?, bom? }.
  * - Thêm dự án (isNew): mọi tài khoản; mã chưa có trong danh mục (số STT, mã phụ STT.n hoặc chữ), tên bắt buộc.
  * - Đổi tên dự án đã có: Trưởng phòng / admin.
- * - Chuyên viên phụ trách: Trưởng phòng / admin chọn bất kỳ ai; tài khoản khác chỉ thêm / bỏ chính mình.
+ * - Chuyên viên phụ trách: mọi tài khoản phân công được (như assignProjects_).
  * - GĐ dự án / BOM: mọi tài khoản (như updateProjectInfo_).
  */
 function saveKhmsProject_(user, payload) {
@@ -184,11 +184,6 @@ function saveKhmsProject_(user, payload) {
     readTable_('KhmsAssign').forEach(function (r) { byCode[normalizeProjectCode_(r.projectCode)] = r; });
     var r = byCode[code] || (byCode[code] = { projectCode: code, owners: '', director: '', bom: '' });
     var oldOwners = String(r.owners || '').split(',').map(normalizeUsername_).filter(Boolean);
-    if (owners && !user.isManager) {
-      // Chuyên viên chỉ thêm / bỏ chính mình; người khác giữ nguyên như trên sheet.
-      var others = function (list) { return list.filter(function (u) { return u !== user.username; }).sort().join(','); };
-      if (others(owners) !== others(oldOwners)) throw appError_('Chỉ Trưởng phòng được phân công chuyên viên khác; bạn chỉ thêm / bỏ được chính mình.', 'FORBIDDEN');
-    }
     if (isNew) {
       appendObj_('Projects', { code: code, name: name, active: true, createdAt: date });
     } else if (name && name !== String(proj.name)) {

@@ -172,3 +172,9 @@ Phần lõi không chứa code KHMS, chỉ có các "điểm gắn" — không c
     `Projects` (mã STT / STT.n / chữ, chưa trùng); đổi tên dự án đã có: Trưởng phòng / admin; chuyên viên phụ trách: Trưởng phòng chọn bất kỳ ai,
     chuyên viên chỉ tích / bỏ chính mình (dự án mới mặc định tích mình); GĐDA / BOM: mọi tài khoản. Ô "Thông tin dự án" ở KHMS chi tiết mở trang này;
     nút "Cập nhật" ở 4 ô thông tin dự án mở hộp Sửa; nhập nhanh GĐDA / BOM nhiều dự án: nút trên trang.
+20. **"Thông tin dự án" thành mục menu riêng, gồm mọi dự án; ai cũng phân công được** (theo người dùng: "phần thông tin dự án làm bao gồm luôn cho những
+    dự án chưa có KHMS, trong thanh menu, để phần thông tin dự án ra cùng level với phần Kế hoạch mua sắm, ko phải level con, rồi cho chức năng phân công
+    chuyên viên và khai báo GDDA và BOM phụ trách dự án luôn"): mục `khms-info` ngang cấp "Kế hoạch mua sắm" (EXT.nav riêng); bảng mặc định **tất cả dự án**
+    trong danh mục, Phạm vi: Tất cả / Có KHMS / Chưa có KHMS; bỏ cột "Cập nhật" (xem ở tooltip nút Sửa). Nút **Phân công chuyên viên** (bảng dự án × chuyên viên)
+    và **Khai báo GĐDA / BOM** (nhiều dự án) trên trang, mặc định hiện mọi dự án. **Phân công chuyên viên mở cho mọi tài khoản** (`assignProjects_` bỏ
+    `requireManager_`; `saveKhmsProject_` không còn giới hạn "chỉ tự nhận / bỏ mình"); đổi tên dự án vẫn chỉ Trưởng phòng / admin.
