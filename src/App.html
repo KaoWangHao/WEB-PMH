@@ -270,8 +270,8 @@
 
   function defaultFilter(view) {
     var f = { from: view === 'home' ? S.today.slice(0, 4) + '-01-01' : '', to: '', owners: [], statuses: [], types: [], projects: [], q: '', period: null };
-    // Dashboard Trưởng phòng / Báo cáo tổng hợp: mặc định kỳ "Năm nay" (chọn Tuần/Tháng/Quý ở THAM SỐ).
-    if (view === 'manager' || view === 'report') {
+    // Dashboard Trưởng phòng / Báo cáo tổng hợp / Tổng quan của tôi: mặc định kỳ "Năm nay" (chọn Tuần/Tháng/Quý ở THAM SỐ).
+    if (view === 'manager' || view === 'report' || view === 'home') {
       var y = S.today.slice(0, 4);
       f.period = { g: 'year', k: y }; f.from = y + '-01-01'; f.to = y + '-12-31';
     }
@@ -953,7 +953,7 @@
       extra = '<button class="tile" data-act="nav" data-view="manager"><div class="circle" style="background:#1E2B59">' + fmtNum(cnt) +
         '</div><div class="tlabel">Đang trình tôi (' + esc(posLabel(S.me.position)) + ')</div></button>';
     }
-    return paramsCard('home', { tools: syncButton() }) +
+    return paramsCard('home', { period: true, tools: syncButton() }) +
       overviewCard('home', scope, { extraTile: extra }) +
       chartsCard('home', rows, {}) +
       detailCard('home', rows, { title: 'Thông tin chi tiết hồ sơ của tôi', create: true }) +
@@ -1769,6 +1769,13 @@
 
   function repData(view) {
     var f = getFilter(view);
+    // Tổng quan của tôi: báo cáo (xuất Excel) chỉ gồm hồ sơ của chính mình.
+    if (view === 'home') {
+      var own = {};
+      Object.keys(f).forEach(function (k) { own[k] = f[k]; });
+      own.owners = [S.me.username];
+      f = own;
+    }
     // Mọi bộ lọc của THAM SỐ trừ ngày và tình trạng (ngày → "trong kỳ" theo ngày trình; tình trạng → các ô tự chia).
     var base = applyFilter(S.subs, { from: '', to: '', owners: f.owners, statuses: [], types: f.types, projects: f.projects, q: f.q }, true);
     var range = [f.from || '', f.to || '9999-12-31'];
