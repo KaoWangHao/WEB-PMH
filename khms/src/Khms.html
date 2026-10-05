@@ -98,9 +98,10 @@
     });
     S.khSugg = khmsSuggestions();
     // Hồ sơ đã duyệt chờ xác nhận chọn thầu (tính 1 lần mỗi lần dữ liệu đổi; bảng gói thầu và menu dùng lại).
-    S.khPendAll = khPendingList('');
+    // Thông báo (thanh, số trên menu) chỉ gồm hồ sơ liên quan đến mình; ô "chờ xác nhận" trong bảng gói thầu hiện cho mọi người.
     S.khPendByPkg = {};
-    S.khPendAll.forEach(function (x) { if (x.p) S.khPendByPkg[x.p.id] = x; });
+    khPendingList('', false, true).forEach(function (x) { if (x.p) S.khPendByPkg[x.p.id] = x; });
+    S.khPendAll = khPendingList('');
   }
 
   /**
@@ -225,11 +226,14 @@
    *  - 'linked': đã gắn gói, vừa được duyệt (p._pending);  - 'sugg': chưa gắn, web gợi ý gói theo tên;
    *  - 'none': hồ sơ Trình duyệt đã duyệt (từ ngày tải KHMS đầu tiên) của dự án có KHMS nhưng chưa tìm thấy gói → chuyên viên tự chọn.
    * Hồ sơ đã "Bỏ qua" (S.khSkip) không tính, trừ khi withSkipped.
+   * Chỉ hồ sơ liên quan đến mình (khPendMine; theo người dùng: "hồ sơ ở dự án, ở khms của chuyên viên nào thì chỉ hiện thông báo cho chuyên viên đó"),
+   * trừ khi all.
    */
-  function khPendingList(project, withSkipped) {
+  function khPendingList(project, withSkipped, all) {
     var out = [], seen = {};
     var push = function (s, p, kind, proj) {
       if (seen[s.id] || (S.khSkip[s.id] && !withSkipped) || (project && proj !== project)) return;
+      if (!all && !khPendMine(s, proj)) return;
       seen[s.id] = true;
       out.push({ s: s, p: p, kind: S.khSkip[s.id] ? 'skipped' : kind, project: proj });
     };
@@ -248,6 +252,11 @@
     return out.sort(function (a, b) {
       return projectSort(a.project, b.project) || (rank[a.kind] - rank[b.kind]) || ((a.p ? a.p.order : 1e9) - (b.p ? b.p.order : 1e9)) || (a.s.id < b.s.id ? -1 : 1);
     });
+  }
+  /** Hồ sơ liên quan đến mình: mình phụ trách hồ sơ, hoặc mình được phân công phụ trách dự án trong KHMS. */
+  function khPendMine(s, project) {
+    var me = S.me.username;
+    return s.owner === me || khOwners(project).indexOf(me) >= 0;
   }
   function khPendingOf(p) { return (S.khPendByPkg && S.khPendByPkg[p.id]) || null; }
   function khmsPendingBar(project) {
@@ -271,6 +280,9 @@
     var fp = focusId && S.packages.filter(function (x) { return x.id === focusId; })[0];
     var project = fp ? fp.project : S.khms.project;
     var list = khPendingList(project, withSkipped);
+    // Bấm "chờ xác nhận" ở gói của người khác: vẫn mở được dòng của gói đó.
+    var fx = focusId && S.khPendByPkg[focusId];
+    if (fx && !list.some(function (x) { return x.s === fx.s; })) list.unshift(fx);
     var nSkip = khPendingList(project, true).length - khPendingList(project).length;
     if (!list.length && !nSkip) { toast('Không có hồ sơ nào chờ xác nhận.'); return; }
     S.khPend = { project: project, focus: focusId || '', showSkipped: !!withSkipped, nSkip: nSkip, rows: list.map(function (x) {

@@ -198,3 +198,6 @@ Phần lõi không chứa code KHMS, chỉ có các "điểm gắn" — không c
       **`KhmsSkip`** (`submissionId`, `actor`, `date`; gửi kèm bootstrap `khmsSkip`); hồ sơ bỏ qua không còn trong chờ xác nhận / gợi ý gắn gói. Khôi phục: dòng nhỏ
       "N hồ sơ … đã chọn Bỏ qua — Xem / khôi phục" (khi không còn hồ sơ chờ) hoặc ô "Hiện cả hồ sơ đã bỏ qua" trong cửa sổ → "↺ Khôi phục" (`{ unignore }`) hoặc chọn gói
       (gắn gói cũng tự khôi phục).
+23. **Thông báo chờ xác nhận chỉ cho người liên quan** (theo người dùng: "hồ sơ ở dự án, ở khms của chuyên viên nào thì chỉ hiện thông báo cho chuyên viên đó"):
+    thanh "N hồ sơ phê duyệt đã được duyệt", số trên menu và cửa sổ chỉ gồm hồ sơ mà mình **phụ trách hồ sơ** hoặc **được phân công phụ trách dự án** (KhmsAssign)
+    — `khPendMine`. Ô "chờ xác nhận" trong bảng gói thầu vẫn hiện cho mọi người (trạng thái của gói); bấm vào vẫn mở được dòng đó để xác nhận.
