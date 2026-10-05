@@ -106,6 +106,20 @@ function assignProjects_(user, payload) {
   });
 }
 
+/** Tài khoản bị xóa (deleteUser_, trong withLock_): bỏ khỏi chuyên viên phụ trách dự án, hoặc thay bằng `to` nếu có. */
+function replaceAssignOwner_(from, to) {
+  if (!db_().getSheetByName('KhmsAssign')) return;
+  var byCode = {}, changed = false;
+  readTable_('KhmsAssign').forEach(function (r) {
+    byCode[normalizeProjectCode_(r.projectCode)] = r;
+    var list = String(r.owners || '').split(',').map(normalizeUsername_).filter(Boolean);
+    if (list.indexOf(from) < 0) return;
+    list = list.map(function (u) { return u === from ? to : u; }).filter(function (u, i, a) { return u && a.indexOf(u) === i; });
+    r.owners = list.join(','); changed = true;
+  });
+  if (changed) rewriteTable_('KhmsAssign', keepAssignRows_(byCode));
+}
+
 /** Dòng KhmsAssign còn dữ liệu (chuyên viên, GĐ dự án hoặc BOM). */
 function keepAssignRows_(byCode) {
   return Object.keys(byCode).map(function (k) { return byCode[k]; })

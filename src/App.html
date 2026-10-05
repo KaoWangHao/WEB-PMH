@@ -2607,7 +2607,8 @@
     var body = '<div class="table-wrap"><table class="grid"><thead><tr><th>Tài khoản</th><th>Họ tên</th><th>Ký hiệu</th><th>Chức danh</th><th>Admin</th><th>Trạng thái</th><th>Ngày tạo</th><th></th></tr></thead><tbody>' +
       rows + '</tbody></table></div>' +
       '<p class="muted" style="margin:12px 0 0">Chỉ quản trị viên tạo được tài khoản. Người dùng mới phải đổi mật khẩu tạm ở lần đăng nhập đầu tiên. ' +
-      'Chuyên viên chỉ sửa được hồ sơ của mình; TP.MH, TP.C&amp;C, GĐTM và quản trị viên sửa được mọi hồ sơ.</p>';
+      'Chuyên viên chỉ sửa được hồ sơ của mình; TP.MH, TP.C&amp;C, GĐTM và quản trị viên sửa được mọi hồ sơ. ' +
+      'Xóa tài khoản: bấm <b>Sửa</b> → <b>Xóa tài khoản</b> (có thể chuyển hồ sơ của người đó cho tài khoản khác).</p>';
     return card('admin-users', 'Danh sách tài khoản', body, { tools: tools }) + adminProjectsCard();
   }
 
@@ -2751,9 +2752,30 @@
          : '<div class="form-row"><label for="m-pw">Mật khẩu tạm</label><div style="display:flex;gap:8px"><input type="text" id="m-pw" autocomplete="off" value="' + randomPassword() + '">' +
            '<button class="secondary-btn" data-act="gen-pw" data-target="m-pw" type="button">Tạo mới</button></div>' +
            '<div class="help">Gửi mật khẩu này cho người dùng. Họ sẽ phải đổi khi đăng nhập lần đầu.</div></div>') +
-      '</div><div class="modal-foot"><button class="secondary-btn" data-act="close-modal">Hủy</button>' +
+      '</div><div class="modal-foot">' +
+      (u && u.username !== S.me.username ? '<button class="danger-btn left" data-act="delete-user" data-u="' + esc(u.username) + '">Xóa tài khoản</button>' : '') +
+      '<button class="secondary-btn" data-act="close-modal">Hủy</button>' +
       '<button class="primary-btn" style="min-height:42px;font-size:16px" data-act="submit-user" data-mode="' + (u ? 'edit' : 'new') + '">' + ic('check') + 'Lưu</button></div>';
     openModal(html);
+  }
+
+  /** Xác nhận xóa tài khoản (admin): chọn người nhận hồ sơ của tài khoản bị xóa, hoặc giữ nguyên. */
+  function openDeleteUser(username) {
+    var u = S.adminUsers.filter(function (x) { return x.username === username; })[0];
+    if (!u) return;
+    var n = S.subs.filter(function (s) { return s.owner === username; }).length;
+    var others = S.users.filter(function (x) { return x.active && x.username !== username; })
+      .sort(function (a, b) { return String(a.displayName).localeCompare(String(b.displayName), 'vi'); });
+    openModal(modalHead('Xóa tài khoản') + '<div class="modal-body"><div id="m-err"></div>' +
+      '<p style="margin-top:0">Xóa hẳn tài khoản <b>' + esc(u.displayName) + '</b> (<span class="code">' + esc(u.username) + '</span>)? Người này sẽ không đăng nhập được nữa; ' +
+      '<b>không hoàn tác được</b>. Nếu chỉ tạm ngưng, hãy bỏ tích "Tài khoản đang hoạt động" ở hộp Sửa tài khoản.</p>' +
+      (n ? '<div class="form-row"><label for="m-del-to">Chuyển ' + fmtNum(n) + ' hồ sơ của tài khoản này cho</label><select id="m-del-to">' +
+          '<option value="">— Giữ nguyên (hồ sơ vẫn ghi tên đăng nhập cũ) —</option>' +
+          others.map(function (x) { return '<option value="' + esc(x.username) + '">' + esc(x.displayName + ' (' + x.username + ')') + '</option>'; }).join('') +
+          '</select><div class="help">Mỗi hồ sơ được chuyển ghi 1 dòng lịch sử. Phân công dự án (KHMS) của tài khoản này cũng chuyển cho người được chọn.</div></div>'
+        : '<p class="muted">Tài khoản này không có hồ sơ nào.</p>') +
+      '</div><div class="modal-foot"><button class="secondary-btn" data-act="close-modal">Hủy</button>' +
+      '<button class="danger-btn" data-act="submit-delete-user" data-u="' + esc(u.username) + '">Xóa tài khoản</button></div>');
   }
   function openResetPassword(username) {
     openModal(modalHead('Đặt lại mật khẩu') + '<div class="modal-body"><div id="m-err"></div>' +
@@ -3157,6 +3179,18 @@
         .catch(function (err) { busy(el, false); if (err.code === 'AUTH') handleErr(err); else modalError(err.message); });
     },
     'edit-user': function (el) { openUserForm(el.dataset.u); },
+    'delete-user': function (el) { openDeleteUser(el.dataset.u); },
+    'submit-delete-user': function (el) {
+      if (!el.dataset.confirm) { el.dataset.confirm = '1'; el.textContent = 'Bấm lần nữa để xác nhận xóa'; return; }
+      var sel = document.getElementById('m-del-to');
+      busy(el, true);
+      call('deleteUser', { username: el.dataset.u, transferTo: sel ? sel.value : '' }).then(function (r) {
+        closeModal();
+        S.adminUsers = S.adminUsers.filter(function (x) { return x.username !== r.username; });
+        toast('Đã xóa tài khoản ' + r.username + (r.transferred ? '; đã chuyển ' + r.transferred + ' hồ sơ.' : '.'));
+        return loadAll(true);
+      }).catch(function (err) { busy(el, false); if (err.code === 'AUTH') handleErr(err); else modalError(err.message); });
+    },
     'reset-user': function (el) { openResetPassword(el.dataset.u); },
     'gen-pw': function (el) { document.getElementById(el.dataset.target).value = randomPassword(); },
     'submit-user': function (el) {
