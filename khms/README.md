@@ -201,3 +201,7 @@ Phần lõi không chứa code KHMS, chỉ có các "điểm gắn" — không c
 23. **Thông báo chờ xác nhận chỉ cho người liên quan** (theo người dùng: "hồ sơ ở dự án, ở khms của chuyên viên nào thì chỉ hiện thông báo cho chuyên viên đó"):
     thanh "N hồ sơ phê duyệt đã được duyệt", số trên menu và cửa sổ chỉ gồm hồ sơ mà mình **phụ trách hồ sơ** hoặc **được phân công phụ trách dự án** (KhmsAssign)
     — `khPendMine`. Ô "chờ xác nhận" trong bảng gói thầu vẫn hiện cho mọi người (trạng thái của gói); bấm vào vẫn mở được dòng đó để xác nhận.
+24. **Gợi ý gói theo tên hồ sơ cho hồ sơ chưa tìm thấy gói** (theo người dùng: "dựa vào tên hồ sơ để gợi ý đến gói thầu tương ứng trong khms để chuyên viên có thể xác nhận,
+    đồng bộ nhanh hơn"): `khRankPackages` so từ khóa không dấu (bỏ số dự án, ký hiệu viết hoa cuối tên như `_CQH`, từ chung `KH_STOP`: mua sắm, cung cấp, thi công, lắp đặt…)
+    — điểm = 0,7 × tỉ lệ từ của gói có trong tên hồ sơ + 0,3 × tỉ lệ ngược lại, gói đang gắn hồ sơ khác × 0,8. Dòng "chưa tìm thấy gói": điểm ≥ 0,34 (`KH_GUESS_MIN`)
+    → điền sẵn gói (mỗi gói 1 dòng), tích sẵn, ghi "Gợi ý gần đúng theo tên hồ sơ (N%) — kiểm tra lại"; ô chọn có nhóm "Gợi ý theo tên hồ sơ" (3 gói điểm cao nhất, kèm %).

@@ -275,6 +275,36 @@
       (none ? ' (trong đó <b>' + none + '</b> hồ sơ chưa tìm thấy gói thầu tương ứng)' : '') + '.</span>' +
       '<span class="kh-pend-go">Xem &amp; xác nhận ' + ic('chevRight') + '</span></button>';
   }
+  /**
+   * Gợi ý gần đúng theo tên hồ sơ (theo người dùng: "dựa vào tên hồ sơ để gợi ý đến gói thầu tương ứng trong khms để chuyên viên có thể xác nhận,
+   * đồng bộ nhanh hơn"): so từ khóa không dấu của tên hồ sơ với tên gói (bỏ số dự án, ký hiệu cuối tên, từ chung), điểm = 70% tỉ lệ từ của gói có trong
+   * tên hồ sơ + 30% tỉ lệ ngược lại; gói đang gắn hồ sơ khác bị trừ điểm. Trả về các gói xếp theo điểm (0–1).
+   */
+  var KH_STOP = ' mua sam cung cap thi cong goi thau hang muc phe duyet trinh duyet du an hop dong lua chon nha tp cv va cho cac tai lap dat vat tu thiet bi '.split(' ');
+  function khWords(text) {
+    return khKey(text).split(' ').filter(function (w, i, a) {
+      return w.length > 1 && !/^\d+$/.test(w) && KH_STOP.indexOf(w) < 0 && a.indexOf(w) === i;
+    });
+  }
+  function khRankPackages(sub, projects) {
+    var tw = khWords(String(sub.title || '').replace(/[\s_\-(]+[A-Z]{2,6}\)?\s*$/, ''));
+    if (!tw.length) return [];
+    return S.packages.filter(function (x) { return x.active && projects.indexOf(x.project) >= 0; }).map(function (x) {
+      var pw = khWords(x.name);
+      if (!pw.length) return { p: x, score: 0 };
+      var inter = pw.filter(function (w) { return tw.indexOf(w) >= 0; }).length;
+      var score = 0.7 * inter / pw.length + 0.3 * inter / tw.length;
+      if (x.submissionId && x.submissionId !== sub.id) score *= 0.8;
+      return { p: x, score: score };
+    }).filter(function (r) { return r.score > 0; }).sort(function (a, b) { return b.score - a.score || a.p.order - b.p.order; });
+  }
+  var KH_GUESS_MIN = 0.34; // điểm tối thiểu để điền sẵn gói gợi ý
+  function khPendProjects(sub, project) {
+    var projs = sub._projects.filter(function (c) { return S.packages.some(function (x) { return x.active && x.project === c; }); });
+    if (projs.indexOf(project) < 0) projs.unshift(project);
+    return projs;
+  }
+
   /** Mở cửa sổ: theo dự án đang xem (hoặc dự án của gói được bấm); không chọn dự án → mọi dự án. */
   function openKhPending(focusId, withSkipped) {
     var fp = focusId && S.packages.filter(function (x) { return x.id === focusId; })[0];
@@ -285,10 +315,19 @@
     if (fx && !list.some(function (x) { return x.s === fx.s; })) list.unshift(fx);
     var nSkip = khPendingList(project, true).length - khPendingList(project).length;
     if (!list.length && !nSkip) { toast('Không có hồ sơ nào chờ xác nhận.'); return; }
+    var used = {};
+    list.forEach(function (x) { if (x.p) used[x.p.id] = true; });
     S.khPend = { project: project, focus: focusId || '', showSkipped: !!withSkipped, nSkip: nSkip, rows: list.map(function (x) {
       var target = x.kind === 'skipped' ? '__skip' : x.p ? x.p.id : '';
-      return { sub: x.s, from: x.p ? x.p.id : '', kind: x.kind, project: x.project, target: target,
-               on: x.kind !== 'skipped' && !!target && (!focusId || (x.p && x.p.id === focusId)) };
+      var row = { sub: x.s, from: x.p ? x.p.id : '', kind: x.kind, project: x.project, target: target, guess: 0,
+                  ranked: x.kind === 'skipped' || x.kind === 'none' ? khRankPackages(x.s, khPendProjects(x.s, x.project)) : [] };
+      // Chưa tìm thấy gói: điền sẵn gói khớp tên nhất (chưa dùng ở dòng khác) để chuyên viên kiểm tra và xác nhận nhanh.
+      if (x.kind === 'none') {
+        var best = row.ranked.filter(function (r) { return r.score >= KH_GUESS_MIN && !used[r.p.id]; })[0];
+        if (best) { row.target = best.p.id; row.guess = Math.round(best.score * 100); used[best.p.id] = true; }
+      }
+      row.on = row.kind !== 'skipped' && !!row.target && (!focusId || (x.p && x.p.id === focusId));
+      return row;
     }) };
     renderKhPending();
   }
@@ -297,26 +336,32 @@
     var st = S.khPend;
     var body = st.rows.map(function (r, i) {
       var pk = r.target && r.target.charAt(0) !== '_' ? S.packages.filter(function (x) { return x.id === r.target; })[0] : null;
-      var projs = r.sub._projects.filter(function (c) { return S.packages.some(function (x) { return x.active && x.project === c; }); });
-      if (projs.indexOf(r.project) < 0) projs.unshift(r.project);
+      var projs = khPendProjects(r.sub, r.project);
       var opts = S.packages.filter(function (x) { return x.active && projs.indexOf(x.project) >= 0; })
         .sort(function (a, b) { return projectSort(a.project, b.project) || a.order - b.order; });
+      var optHtml = function (x, pct) {
+        var other = x.submissionId && x.submissionId !== r.sub.id ? ' (đang gắn ' + x.submissionId + ')' : '';
+        return '<option value="' + esc(x.id) + '"' + (x.id === r.target ? ' selected' : '') + '>' + esc((pct ? pct + '% · ' : '') +
+          (projs.length > 1 ? x.project + ' · ' : '') + (x.stt ? x.stt + '. ' : '') + x.name + other) + '</option>';
+      };
+      var top = (r.ranked || []).filter(function (t) { return t.score >= 0.15; }).slice(0, 3);
+      var topIds = top.map(function (t) { return t.p.id; });
       var sel = '<select data-change="kh-pend-target" data-i="' + i + '" aria-label="Gói thầu tương ứng">' +
         '<option value=""' + (!r.target ? ' selected' : '') + '>— Chọn gói thầu —</option>' +
-        opts.map(function (x) {
-          var other = x.submissionId && x.submissionId !== r.sub.id ? ' (đang gắn ' + x.submissionId + ')' : '';
-          return '<option value="' + esc(x.id) + '"' + (x.id === r.target ? ' selected' : '') + '>' + esc((projs.length > 1 ? x.project + ' · ' : '') + (x.stt ? x.stt + '. ' : '') + x.name + other) + '</option>';
-        }).join('') +
+        (top.length ? '<optgroup label="Gợi ý theo tên hồ sơ">' + top.map(function (t) { return optHtml(t.p, Math.round(t.score * 100)); }).join('') + '</optgroup>' +
+          '<optgroup label="Tất cả gói thầu">' : '') +
+        opts.filter(function (x) { return topIds.indexOf(x.id) < 0; }).map(function (x) { return optHtml(x); }).join('') + (top.length ? '</optgroup>' : '') +
         '<option value="__skip"' + (r.target === '__skip' ? ' selected' : '') + '>⊘ Bỏ qua – không đồng bộ vào KHMS</option>' +
         (r.kind === 'skipped' ? '<option value="__unskip"' + (r.target === '__unskip' ? ' selected' : '') + '>↺ Khôi phục (chờ xác nhận lại)</option>' : '') + '</select>';
       var note = r.target === '__skip' && r.kind !== 'skipped' ? '<small class="kh-pend-chg">Hồ sơ sẽ không đồng bộ vào KHMS (không hỏi lại)</small>'
+        : r.guess && r.target && r.target.charAt(0) !== '_' && topIds[0] === r.target ? '<small class="kh-pend-guess">Gợi ý gần đúng theo tên hồ sơ (' + r.guess + '%) — kiểm tra lại</small>'
         : r.target && r.from && r.target !== r.from && r.target.charAt(0) !== '_' ? '<small class="kh-pend-chg">Đã đổi gói</small>' : '';
       var plan = pk && pk.selectPlan, late = plan ? diffDays(plan, r.sub.approvedAt) : 0;
       return '<tr class="' + (r.on ? '' : 'muted-row') + (r.kind === 'none' && !r.target ? ' kh-pend-need' : '') + '">' +
         '<td class="center"><input type="checkbox" data-change="kh-pend-on" data-i="' + i + '"' + (r.on ? ' checked' : '') + (r.target ? '' : ' disabled') + ' aria-label="Xác nhận"></td>' +
         '<td class="title-cell"><button class="link-btn code" data-act="open-history" data-id="' + esc(r.sub.id) + '">' + esc(r.sub.id) + '</button> ' +
           '<span class="proj-code">' + esc(r.project) + '</span><div>' + esc(r.sub.title) + '</div>' +
-          '<small class="muted">' + esc(userName(r.sub.owner)) + ' · ' + KH_PEND_KIND[r.kind] + '</small></td>' +
+          '<small class="muted">' + esc(userName(r.sub.owner)) + ' · ' + (r.kind === 'none' && r.guess ? 'gợi ý gần đúng theo tên hồ sơ' : KH_PEND_KIND[r.kind]) + '</small></td>' +
         '<td class="kh-pend-sel">' + sel + note + '</td>' +
         '<td class="nowrap">' + (plan ? fmtDate(plan) : '<span class="muted">—</span>') + '</td>' +
         '<td class="nowrap"><b>' + fmtDate(r.sub.approvedAt) + '</b>' + (plan ? '<div>' + msBadge(late > 0 ? { code: 'lateDone', days: late } : { code: 'done', days: 0 }) + '</div>' : '') + '</td></tr>';
@@ -327,6 +372,8 @@
       '<p class="muted kh-note" style="margin-top:0">Các hồ sơ phê duyệt dưới đây <b>đã được duyệt</b>. Kiểm tra mỗi hồ sơ ứng với <b>gói thầu</b> nào trong KHMS — đổi gói nếu chưa đúng; ' +
         'hồ sơ <b>chưa tìm thấy gói</b> thì tự chọn gói; không muốn đồng bộ thì chọn <b>"Bỏ qua – không đồng bộ vào KHMS"</b>. Tích những dòng đồng ý rồi bấm <b>Xác nhận</b>: ' +
         'ngày duyệt hồ sơ được ghi là <b>ngày chọn thầu thực tế</b> của gói. Dòng bỏ tích vẫn chờ xác nhận ở lần sau.</p>' +
+      (st.rows.some(function (r) { return r.guess; }) ? '<p class="kh-pend-info">' + ic('check') + '<span>Gói thầu của hồ sơ chưa tìm thấy gói đã được <b>điền sẵn theo tên hồ sơ</b> (ghi % độ khớp) — ' +
+        'kiểm tra lại trước khi xác nhận; mở ô chọn để xem nhóm "Gợi ý theo tên hồ sơ".</span></p>' : '') +
       (nNeed ? '<p class="kh-pend-warn">' + ic('help') + '<span><b>' + nNeed + '</b> hồ sơ chưa có gói thầu — chọn gói ở cột "Gói thầu tương ứng" (hoặc Bỏ qua).</span></p>' : '') +
       '<div class="table-wrap kh-asg-wrap"><table class="grid kh-pend"><thead><tr><th class="center"><input type="checkbox" data-change="kh-pend-all"' + (n && n === st.rows.filter(function (r) { return r.target; }).length ? ' checked' : '') + ' aria-label="Chọn tất cả"></th>' +
         '<th>Hồ sơ đã duyệt</th><th>Gói thầu tương ứng trong KHMS</th><th>KH chọn thầu</th><th>Ngày duyệt → chọn thầu thực tế</th></tr></thead><tbody>' + body + '</tbody></table></div>' +
@@ -2509,7 +2556,7 @@
     'kh-pi-all': function (el) { S.khPi.scope = el.value; render(); },
     'kh-pend-on': function (el) { S.khPend.rows[+el.dataset.i].on = el.checked; keepModalScroll(renderKhPending); },
     'kh-pend-all': function (el) { S.khPend.rows.forEach(function (r) { r.on = el.checked && !!r.target && r.kind !== 'skipped'; }); keepModalScroll(renderKhPending); },
-    'kh-pend-target': function (el) { var r = S.khPend.rows[+el.dataset.i]; r.target = el.value; r.on = !!el.value; keepModalScroll(renderKhPending); },
+    'kh-pend-target': function (el) { var r = S.khPend.rows[+el.dataset.i]; r.target = el.value; r.on = !!el.value; r.guess = 0; keepModalScroll(renderKhPending); },
     'kh-pend-skipped': function (el) { openKhPending(S.khPend.focus, el.checked); },
     'kh-imp-project': function (el) {
       S.khImport.project = el.value; keepModalScroll(openKhmsImport);
