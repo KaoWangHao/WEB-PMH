@@ -1,7 +1,7 @@
-# Kế hoạch mua sắm (KHMS) — chức năng chạy thử
+# Kế hoạch mua sắm (KHMS)
 
 Thư mục này chứa **toàn bộ code và các trao đổi về chức năng Kế hoạch mua sắm**. Theo yêu cầu của người dùng, chức năng này
-**tạm thời chỉ chạy trên bản thử `/dev`**, chưa đưa lên link chính. Khi nào người dùng đồng ý thì mới deploy (xem mục cuối).
+chạy thử trên bản `/dev` rồi **đã đưa lên bản chính ngày 05/10/2026** (theo người dùng: "deploy, merge phần KHMS lên web chính").
 
 - Link bản thử (chỉ chủ sở hữu `caoquanghao1902@gmail.com` mở được):
   https://script.google.com/macros/s/AKfycbzKFtsxCRvR1hUYjOmI1yH5VPGDq3MNtC0NMfWJQoqJ/dev
@@ -28,12 +28,10 @@ Phần lõi không chứa code KHMS, chỉ có các "điểm gắn" — không c
 - `src/Submissions.gs`: `bootstrap_` gọi `khmsBootstrap_` nếu có; xóa hồ sơ gọi `unlinkSubmissionPackages_` nếu có.
 
 ## Chạy thử & deploy
-- **Máy local**: `node dev/serve.js` — mặc định nạp cả `khms/src` (giống `/dev`); `KHMS=0 node dev/serve.js` để chạy giống bản chính.
+- **Máy local**: `node dev/serve.js` — mặc định nạp cả `khms/src` (giống bản chính); `KHMS=0 node dev/serve.js` để chạy không có KHMS.
 - **Bản thử `/dev`**: tab Actions → *Deploy Apps Script* → Run workflow, tích **"Chỉ đẩy bản thử"** → workflow chép `khms/src/*` vào `src/`
   rồi `clasp push` lên HEAD (link `/dev`). Link chính không đổi.
-- **Bản chính** (push lên `main`): đẩy code **không có** `khms/`, cập nhật link chính, rồi đẩy lại HEAD **kèm** `khms/` để `/dev` vẫn có KHMS.
-- **Khi người dùng cho phép đưa KHMS lên bản chính**: chạy tay workflow trên `main` với **"Đưa Kế hoạch mua sắm (khms/) lên bản chính"** = true
-  (hoặc chuyển hẳn 3 file `khms/src/*` vào `src/` và bỏ bước chép trong workflow).
+- **Bản chính** (push lên `main`): workflow chép `khms/src/*` vào `src/`, `clasp push` rồi cập nhật link chính — KHMS có trên cả link chính và `/dev`.
 
 ## Yêu cầu & quyết định đã trao đổi với người dùng
 1. **Ý tưởng** (ảnh form KHMS: STT, Hạng mục, Giá trị gói thầu, Ngày mời thầu / Ngày chọn thầu / Ngày ký kết hợp đồng — mỗi nhóm
@@ -53,7 +51,7 @@ Phần lõi không chứa code KHMS, chỉ có các "điểm gắn" — không c
 4. File có **cột KH Rev00 và KH Rev01** cho từng mốc → web **hiển thị tương ứng 2 cột** "KH Rev00 | KH Rev01" (ngày đã đổi tô cam);
    tình trạng tính theo bản mới nhất.
 5. Cập nhật: thay vì từng dòng, **1 nút "Cập nhật bảng"** cho cả bảng, điều chỉnh toàn bảng một lúc rồi **Lưu thay đổi** một lần.
-6. **Tạm thời chỉ chạy trên `/dev`**, code và trao đổi để riêng thư mục này; deploy sau.
+6. **Tạm thời chỉ chạy trên `/dev`**, code và trao đổi để riêng thư mục này; deploy sau. → **Đã đưa lên bản chính 05/10/2026** (code vẫn để riêng thư mục này, workflow chép vào `src/` khi deploy).
 7. **STT gói thầu do hệ thống tự đánh 1, 2, 3…** theo thứ tự các gói (được tích) trong file, **không dùng STT có trong file Excel** (STT trong file chỉ dùng để nhận ra dòng nhóm I, II… không phải gói thầu).
 8. **File tổng hợp `P.MH_KeHoachMuaSamVatTuGiaoThau.xlsx`** (người dùng gửi: "dùng data trong file này, upload lên phần KHMS, chỉ lấy data
    những vùng nêu sẵn trong phần KHMS trên web") — 1 file, ~45 sheet, **mỗi sheet `STT_Tên dự án` là KHMS của 1 dự án** (sheet `DuAn` là danh sách
