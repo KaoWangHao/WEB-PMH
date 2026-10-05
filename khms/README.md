@@ -178,3 +178,30 @@ Phần lõi không chứa code KHMS, chỉ có các "điểm gắn" — không c
     trong danh mục, Phạm vi: Tất cả / Có KHMS / Chưa có KHMS; bỏ cột "Cập nhật" (xem ở tooltip nút Sửa). Nút **Phân công chuyên viên** (bảng dự án × chuyên viên)
     và **Khai báo GĐDA / BOM** (nhiều dự án) trên trang, mặc định hiện mọi dự án. **Phân công chuyên viên mở cho mọi tài khoản** (`assignProjects_` bỏ
     `requireManager_`; `saveKhmsProject_` không còn giới hạn "chỉ tự nhận / bỏ mình"); đổi tên dự án vẫn chỉ Trưởng phòng / admin.
+21. **Hoàn thành chọn thầu – chờ xác nhận** (theo người dùng: "khi có 1 hồ sơ mới được duyệt là link qua KHMS, mình muốn khi vào KHMS dự án đó, sẽ có chỗ thông báo
+    là có bnhieu gói thầu được hoàn thành chọn thầu, rồi ấn vô đó sẽ hiện ra cửa sổ thông báo trước là hồ sơ đã duyệt đó tương ứng với gói thầu nào trong KHMS để
+    chuyên viên kiểm tra trước khi đồng ý xác nhận cho đồng bộ qua, hoặc có cần điều chỉnh lại không"):
+    - Cột mới `Packages.selectConfirmed` (ngày duyệt đã xác nhận) + `skipSubs` (hồ sơ đã xác nhận "không thuộc gói này"). Ngày chọn thầu thực tế chỉ lấy theo hồ sơ
+      khi `selectConfirmed` = ngày duyệt hiện tại; không thì gói **chờ xác nhận** (`p._pending`). Gói chưa gắn mà web gợi ý 1 hồ sơ **đã duyệt** cũng chờ xác nhận.
+    - KHMS chi tiết: thanh "N gói thầu đã hoàn thành chọn thầu" (theo dự án đang xem / mọi dự án) + ô chọn thầu thực tế "dd/mm · chờ xác nhận" + nút "Xác nhận chọn thầu";
+      menu "Kế hoạch mua sắm" / "KHMS chi tiết dự án" có số đếm. Cửa sổ: hồ sơ đã duyệt → gói thầu tương ứng (đổi được, hoặc "Không thuộc gói thầu nào"),
+      KH chọn thầu, ngày duyệt (đúng hạn / trễ N ngày); tích dòng đồng ý → **Xác nhận & đồng bộ** (action `confirmSelections`: gắn + xác nhận; hồ sơ đang gắn gói
+      khác thì chuyển sang; "không thuộc" → gỡ + thêm vào `skipSubs`). Dòng bỏ tích vẫn chờ lần sau.
+    - Người dùng tự gắn hồ sơ đã duyệt (nút Xác nhận gợi ý, "Cập nhật bảng", form 1 gói) = đã xác nhận. Dữ liệu cũ: 1 lần (cờ `KHMS_SELECT_CONFIRM_V1`, `migrateSelectConfirm_`)
+      gói đã gắn hồ sơ đã duyệt được coi là đã xác nhận.
+22. **Hồ sơ chưa tìm thấy gói + chế độ Bỏ qua** (theo người dùng: "trường hợp hồ sơ được duyệt nhưng không tìm thấy gói thầu tương ứng trong KHMS thì phần gợi ý để trống
+    và chuyên viên tự chọn, và thêm chế độ bỏ qua để chuyên viên có thể tùy chọn trong trường hợp không đồng bộ hồ sơ đã duyệt vào KHMS"):
+    - Danh sách chờ xác nhận (`khPendingList`, tính 1 lần trong `khmsDerive` → `S.khPendAll`) theo **hồ sơ**: `linked` / `sugg` như mục 21 + `none` = hồ sơ Trình duyệt
+      đã duyệt (từ ngày tải KHMS đầu tiên của dự án) thuộc dự án có KHMS, chưa gắn gói, không gợi ý được → ô gói để trống "— Chọn gói thầu —" (dòng tô cam, chưa tích được
+      tới khi chọn gói). Hồ sơ Báo cáo (xin ý kiến) không tính.
+    - Ô gói có thêm **"⊘ Bỏ qua – không đồng bộ vào KHMS"** (thay cho "Không thuộc gói thầu nào"): `confirmSelections` `{ ignore }` → gỡ khỏi gói (nếu đang gắn), ghi sheet
+      **`KhmsSkip`** (`submissionId`, `actor`, `date`; gửi kèm bootstrap `khmsSkip`); hồ sơ bỏ qua không còn trong chờ xác nhận / gợi ý gắn gói. Khôi phục: dòng nhỏ
+      "N hồ sơ … đã chọn Bỏ qua — Xem / khôi phục" (khi không còn hồ sơ chờ) hoặc ô "Hiện cả hồ sơ đã bỏ qua" trong cửa sổ → "↺ Khôi phục" (`{ unignore }`) hoặc chọn gói
+      (gắn gói cũng tự khôi phục).
+23. **Thông báo chờ xác nhận chỉ cho người liên quan** (theo người dùng: "hồ sơ ở dự án, ở khms của chuyên viên nào thì chỉ hiện thông báo cho chuyên viên đó"):
+    thanh "N hồ sơ phê duyệt đã được duyệt", số trên menu và cửa sổ chỉ gồm hồ sơ mà mình **phụ trách hồ sơ** hoặc **được phân công phụ trách dự án** (KhmsAssign)
+    — `khPendMine`. Ô "chờ xác nhận" trong bảng gói thầu vẫn hiện cho mọi người (trạng thái của gói); bấm vào vẫn mở được dòng đó để xác nhận.
+24. **Gợi ý gói theo tên hồ sơ cho hồ sơ chưa tìm thấy gói** (theo người dùng: "dựa vào tên hồ sơ để gợi ý đến gói thầu tương ứng trong khms để chuyên viên có thể xác nhận,
+    đồng bộ nhanh hơn"): `khRankPackages` so từ khóa không dấu (bỏ số dự án, ký hiệu viết hoa cuối tên như `_CQH`, từ chung `KH_STOP`: mua sắm, cung cấp, thi công, lắp đặt…)
+    — điểm = 0,7 × tỉ lệ từ của gói có trong tên hồ sơ + 0,3 × tỉ lệ ngược lại, gói đang gắn hồ sơ khác × 0,8. Dòng "chưa tìm thấy gói": điểm ≥ 0,34 (`KH_GUESS_MIN`)
+    → điền sẵn gói (mỗi gói 1 dòng), tích sẵn, ghi "Gợi ý gần đúng theo tên hồ sơ (N%) — kiểm tra lại"; ô chọn có nhóm "Gợi ý theo tên hồ sơ" (3 gói điểm cao nhất, kèm %).

@@ -450,7 +450,8 @@
       if (!n.children) return navBtn(n);
       var open = navGroupOpen(n), cur = n.children.some(function (c) { return c.view === S.view; });
       return '<button class="nav-item nav-group' + (cur ? ' has-active' : '') + '" data-act="nav-group" data-group="' + esc(n.group) + '" aria-expanded="' + open + '">' +
-        ic(n.icon) + '<span class="lbl">' + esc(n.label) + '</span>' + ic(open ? 'chevDown' : 'chevRight', 'chev') + '</button>' +
+        ic(n.icon) + '<span class="lbl">' + esc(n.label) + '</span>' + (n.count && !open ? '<span class="nav-count">' + n.count + '</span>' : '') +
+        ic(open ? 'chevDown' : 'chevRight', 'chev') + '</button>' +
         (open ? '<div class="nav-sub">' + n.children.map(function (c) { return navBtn(c, true); }).join('') + '</div>' : '');
     }).join('');
 

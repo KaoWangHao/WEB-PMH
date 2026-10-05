@@ -21,13 +21,21 @@ var KHMS_HEADERS_ = {
              'invitePlan0', 'invitePlan', 'inviteActual', 'selectPlan0', 'selectPlan', 'selectActual',
              'contractPlan0', 'contractPlan', 'contractActual', 'startPlan0', 'startPlan', 'startActual',
              'submissionId', 'note', 'active', 'sortOrder', 'rev', 'createdAt', 'updatedAt', 'updatedBy',
-             'rev0'], // nhãn bản kế hoạch gốc (vd Rev00)
+             'rev0', // nhãn bản kế hoạch gốc (vd Rev00)
+             // Chọn thầu theo hồ sơ phê duyệt cần chuyên viên xác nhận (theo người dùng: "cửa sổ thông báo trước là hồ sơ đã duyệt đó tương ứng với
+             // gói thầu nào … để chuyên viên kiểm tra trước khi đồng ý xác nhận cho đồng bộ qua"): selectConfirmed = ngày duyệt (dd/MM/yyyy) đã xác nhận
+             // — ngày chọn thầu thực tế chỉ lấy theo hồ sơ khi khớp ngày duyệt hiện tại; skipSubs = mã hồ sơ (cách nhau dấu phẩy) đã xác nhận "không
+             // thuộc gói này" để không gợi ý lại.
+             'selectConfirmed', 'skipSubs'],
   // Lịch sử tải file KHMS.
   PlanUploads: ['projectCode', 'fileName', 'rev', 'actor', 'date', 'added', 'updated', 'removed', 'total'],
   // Chuyên viên phụ trách dự án (theo người dùng: "gán thêm trong KHMS là chuyên viên nào phụ trách dự án nào để tiện cho công tác thống kê").
   // owners: các username cách nhau bởi dấu phẩy (1 dự án có thể nhiều chuyên viên).
   // director / bom: Giám đốc dự án, BOM phụ trách dự án — chuyên viên tự nhập (updateProjectInfo).
-  KhmsAssign: ['projectCode', 'owners', 'updatedAt', 'updatedBy', 'director', 'bom']
+  KhmsAssign: ['projectCode', 'owners', 'updatedAt', 'updatedBy', 'director', 'bom'],
+  // Hồ sơ đã duyệt chuyên viên chọn "Bỏ qua – không đồng bộ vào KHMS" (theo người dùng: "thêm chế độ bỏ qua để chuyên viên có thể tùy chọn
+  // trong trường hợp không đồng bộ hồ sơ đã duyệt vào KHMS"): không còn hiện ở "chờ xác nhận" / gợi ý gắn gói.
+  KhmsSkip: ['submissionId', 'actor', 'date']
 };
 
 /** Action của KHMS — Code.gs tra thêm bảng này khi action không có trong API_ACTIONS_. Mỗi hàm tự kiểm tra quyền. */
@@ -40,7 +48,8 @@ var KHMS_ACTIONS_ = {
   deletePlan:     function (user, p) { return deletePlan_(user, p); },
   assignProjects: function (user, p) { return assignProjects_(user, p); },
   updateProjectInfo: function (user, p) { return updateProjectInfo_(user, p); },
-  saveKhmsProject: function (user, p) { return saveKhmsProject_(user, p); }
+  saveKhmsProject: function (user, p) { return saveKhmsProject_(user, p); },
+  confirmSelections: function (user, p) { return confirmSelections_(user, p); }
 };
 
 /**
@@ -53,7 +62,8 @@ var KHMS_EXPORT_ALL_USERS_ = ['haocq', 'thuync', 'thoaiht'];
 function khmsBootstrap_(user) {
   var me = user ? normalizeUsername_(user.username) : '';
   purgeInactivePackages_();
-  return { packages: listPackages_(), planUploads: listPlanUploads_(), khmsAssign: listAssign_(),
+  migrateSelectConfirm_();
+  return { packages: listPackages_(), planUploads: listPlanUploads_(), khmsAssign: listAssign_(), khmsSkip: listKhmsSkip_(),
            khmsExportAll: KHMS_EXPORT_ALL_USERS_.indexOf(me) >= 0 };
 }
 
@@ -237,6 +247,8 @@ function serializePackage_(rec) {
     id: String(rec.id), project: normalizeProjectCode_(rec.projectCode), stt: String(rec.stt || ''),
     name: String(rec.name || ''), value: rec.value === '' || rec.value == null ? null : Number(rec.value),
     submissionId: String(rec.submissionId || ''), note: String(rec.note || ''), active: toBool_(rec.active),
+    selectConfirmed: dmyToIso_(rec.selectConfirmed),
+    skipSubs: String(rec.skipSubs || '').split(',').filter(Boolean),
     order: Number(rec.sortOrder) || 0, rev: String(rec.rev || ''), rev0: String(rec.rev0 || ''),
     updatedAt: dmyToIso_(rec.updatedAt), updatedBy: normalizeUsername_(rec.updatedBy || '')
   };
@@ -275,6 +287,39 @@ function purgeInactivePackages_() {
     var keep = all.filter(function (p) { return toBool_(p.active); });
     if (keep.length !== all.length) rewriteTable_('Packages', keep);
   });
+}
+
+/**
+ * 1 lần (cờ KHMS_SELECT_CONFIRM_V1): gói đã gắn hồ sơ đã duyệt từ trước khi có bước xác nhận → coi như đã xác nhận
+ * (selectConfirmed = ngày duyệt), để số liệu chọn thầu hiện có không bị đổi.
+ */
+function migrateSelectConfirm_() {
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty('KHMS_SELECT_CONFIRM_V1')) return;
+  withLock_(function () {
+    if (props.getProperty('KHMS_SELECT_CONFIRM_V1')) return;
+    var subs = {};
+    readTable_('Submissions').forEach(function (s) { subs[String(s.id)] = s; });
+    var changed = readTable_('Packages').filter(function (p) {
+      var a = approvedDmy_(subs[String(p.submissionId || '')]);
+      if (!a || String(p.selectConfirmed || '')) return false;
+      p.selectConfirmed = a;
+      return true;
+    });
+    if (changed.length) writeObjs_('Packages', changed);
+    props.setProperty('KHMS_SELECT_CONFIRM_V1', new Date().toISOString());
+  });
+}
+
+/** Mã hồ sơ đã chọn "Bỏ qua – không đồng bộ vào KHMS". */
+function listKhmsSkip_() {
+  ensureSheet_('KhmsSkip');
+  return readTable_('KhmsSkip').map(function (r) { return String(r.submissionId || ''); }).filter(Boolean);
+}
+
+/** Ngày duyệt (dd/MM/yyyy) của hồ sơ nếu đang ở tình trạng Đã duyệt; không thì ''. */
+function approvedDmy_(sub) {
+  return sub && String(sub.status) === APPROVED_STATUS && sub.approvedAt ? String(sub.approvedAt) : '';
 }
 
 function listPlanUploads_() {
@@ -550,7 +595,7 @@ function checkPackageLink_(rows, rec, submissionId, subs) {
  * Áp 1 thay đổi vào gói (chưa ghi sheet): ngày kế hoạch …Plan0 / …Plan (ISO, '' = xóa), ngày thực tế (ISO, '' = xóa; không sau hôm nay),
  * ghi chú, hồ sơ gắn ('' = bỏ gắn).
  */
-function applyPackageEdit_(rec, it, todayIso) {
+function applyPackageEdit_(rec, it, todayIso, subById) {
   PLAN_MILESTONES_.forEach(function (m) {
     [m + 'Plan0', m + 'Plan'].forEach(function (k) {
       if (it[k] === undefined) return;
@@ -566,7 +611,11 @@ function applyPackageEdit_(rec, it, todayIso) {
     rec[k] = v;
   });
   if (it.note !== undefined) rec.note = String(it.note || '').trim().slice(0, 500);
-  if (it.submissionId !== undefined) rec.submissionId = String(it.submissionId || '');
+  if (it.submissionId !== undefined && String(it.submissionId || '') !== String(rec.submissionId || '')) {
+    rec.submissionId = String(it.submissionId || '');
+    // Người dùng tự chọn hồ sơ (đã duyệt) cho gói → coi như đã xác nhận chọn thầu theo hồ sơ.
+    rec.selectConfirmed = approvedDmy_(subById && subById[rec.submissionId]);
+  }
 }
 
 /** Sau khi sửa: hồ sơ gắn phải tồn tại và mỗi hồ sơ chỉ gắn 1 gói (kiểm tra cả khi đổi chéo giữa các gói trong cùng lần lưu). */
@@ -598,16 +647,17 @@ function updatePackages_(user, payload) {
   if (items.length > PLAN_MAX_ROWS_) throw appError_('Quá nhiều gói thầu trong một lần lưu.');
   ensurePlanSheets_();
   return withLock_(function () {
-    var rows = readTable_('Packages');
+    var rows = readTable_('Packages'), subs = readTable_('Submissions'), subById = {};
+    subs.forEach(function (x) { subById[String(x.id)] = x; });
     var date = today_(), todayIso = dmyToIso_(date), changed = [], errs = [];
     items.forEach(function (it) {
       var rec = findPackage_(rows, it && it.id);
       if (!rec) { errs.push('không tìm thấy gói ' + (it && it.id)); return; }
-      try { applyPackageEdit_(rec, it, todayIso); } catch (e) { errs.push('"' + rec.name + '": ' + e.message); return; }
+      try { applyPackageEdit_(rec, it, todayIso, subById); } catch (e) { errs.push('"' + rec.name + '": ' + e.message); return; }
       rec.updatedAt = date; rec.updatedBy = user.username;
       if (changed.indexOf(rec) < 0) changed.push(rec);
     });
-    if (!errs.length) errs = checkPackageLinks_(rows, changed, readTable_('Submissions'));
+    if (!errs.length) errs = checkPackageLinks_(rows, changed, subs);
     if (errs.length) throw appError_('Chưa lưu: ' + errs.slice(0, 3).join('; ') + (errs.length > 3 ? ' (và ' + (errs.length - 3) + ' lỗi khác)' : '') + '.');
     writeObjs_('Packages', changed);
     return { packages: changed.map(serializePackage_) };
@@ -635,10 +685,73 @@ function linkPackages_(user, payload) {
       if (!rec) { skipped.push({ id: l && l.id, reason: 'không tìm thấy gói' }); return; }
       try { checkPackageLink_(rows, rec, sid, subs); } catch (e) { skipped.push({ id: rec.id, reason: e.message }); return; }
       rec.submissionId = sid; rec.updatedAt = date; rec.updatedBy = user.username;
+      var sub = subs.filter(function (x) { return String(x.id) === sid; })[0];
+      rec.selectConfirmed = approvedDmy_(sub); // người dùng tự xác nhận gắn hồ sơ đã duyệt → đồng bộ luôn
       changed.push(rec);
     });
     writeObjs_('Packages', changed);
     return { packages: changed.map(serializePackage_), skipped: skipped };
+  });
+}
+
+/**
+ * Xác nhận chọn thầu theo hồ sơ đã duyệt (cửa sổ "Hoàn thành chọn thầu – chờ xác nhận"), mọi tài khoản.
+ * payload: { items: [{ id, submissionId }] } — gắn hồ sơ (phải đang Đã duyệt) vào gói `id` và xác nhận ngày duyệt là ngày chọn thầu thực tế;
+ *   hồ sơ đang gắn gói khác thì gỡ khỏi gói đó (chuyển sang gói được chọn).
+ *          [{ id, skip: submissionId }] — hồ sơ không thuộc gói `id`: gỡ nếu đang gắn, không gợi ý lại cho gói này.
+ *          [{ ignore: submissionId }]   — "Bỏ qua – không đồng bộ vào KHMS": gỡ khỏi gói đang gắn (nếu có), ghi vào KhmsSkip.
+ *          [{ unignore: submissionId }] — khôi phục hồ sơ đã bỏ qua (lại chờ xác nhận). Gắn hồ sơ vào gói cũng tự khôi phục.
+ */
+function confirmSelections_(user, payload) {
+  var items = (payload && payload.items) || [];
+  if (!items.length) throw appError_('Chưa chọn gói thầu nào.');
+  if (items.length > PLAN_MAX_ROWS_) throw appError_('Quá nhiều gói thầu trong một lần.');
+  ensurePlanSheets_();
+  ensureSheet_('KhmsSkip');
+  return withLock_(function () {
+    var rows = readTable_('Packages'), subById = {};
+    readTable_('Submissions').forEach(function (x) { subById[String(x.id)] = x; });
+    var skipRows = readTable_('KhmsSkip'), skipSet = {}, skipChanged = false;
+    skipRows.forEach(function (r) { skipSet[String(r.submissionId)] = r; });
+    var date = today_(), changed = [], errs = [];
+    var touch = function (p) { p.updatedAt = date; p.updatedBy = user.username; if (changed.indexOf(p) < 0) changed.push(p); };
+    items.forEach(function (it) {
+      it = it || {};
+      if (it.ignore || it.unignore) {
+        var sidI = String(it.ignore || it.unignore);
+        if (!subById[sidI]) { errs.push('không tìm thấy hồ sơ ' + sidI); return; }
+        if (it.ignore) {
+          rows.forEach(function (p) { if (String(p.submissionId || '') === sidI) { p.submissionId = ''; p.selectConfirmed = ''; touch(p); } });
+          if (!skipSet[sidI]) { skipSet[sidI] = { submissionId: sidI, actor: user.username, date: date }; skipChanged = true; }
+        } else if (skipSet[sidI]) { delete skipSet[sidI]; skipChanged = true; }
+        return;
+      }
+      var rec = findPackage_(rows, it && it.id);
+      if (!rec) { errs.push('không tìm thấy gói ' + (it && it.id)); return; }
+      if (it.skip) {
+        var skip = String(it.skip);
+        var list = String(rec.skipSubs || '').split(',').filter(Boolean);
+        if (list.indexOf(skip) < 0) list.push(skip);
+        rec.skipSubs = list.slice(-50).join(',');
+        if (String(rec.submissionId || '') === skip) { rec.submissionId = ''; rec.selectConfirmed = ''; }
+        touch(rec);
+        return;
+      }
+      var sid = String(it.submissionId || ''), sub = subById[sid], a = approvedDmy_(sub);
+      if (!sub) { errs.push('"' + rec.name + '": không tìm thấy hồ sơ ' + sid); return; }
+      if (!a) { errs.push('hồ sơ ' + sid + ' chưa được duyệt'); return; }
+      rows.forEach(function (p) { // hồ sơ đang gắn gói khác → chuyển sang gói này
+        if (p !== rec && String(p.submissionId || '') === sid) { p.submissionId = ''; p.selectConfirmed = ''; touch(p); }
+      });
+      rec.submissionId = sid; rec.selectConfirmed = a;
+      if (skipSet[sid]) { delete skipSet[sid]; skipChanged = true; }
+      rec.skipSubs = String(rec.skipSubs || '').split(',').filter(function (x) { return x && x !== sid; }).join(',');
+      touch(rec);
+    });
+    if (errs.length) throw appError_('Chưa lưu: ' + errs.slice(0, 3).join('; ') + (errs.length > 3 ? ' (và ' + (errs.length - 3) + ' lỗi khác)' : '') + '.');
+    writeObjs_('Packages', changed);
+    if (skipChanged) rewriteTable_('KhmsSkip', Object.keys(skipSet).map(function (k) { return skipSet[k]; }));
+    return { packages: changed.map(serializePackage_), skips: Object.keys(skipSet) };
   });
 }
 
