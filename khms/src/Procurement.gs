@@ -32,7 +32,10 @@ var KHMS_HEADERS_ = {
   // Chuyên viên phụ trách dự án (theo người dùng: "gán thêm trong KHMS là chuyên viên nào phụ trách dự án nào để tiện cho công tác thống kê").
   // owners: các username cách nhau bởi dấu phẩy (1 dự án có thể nhiều chuyên viên).
   // director / bom: Giám đốc dự án, BOM phụ trách dự án — chuyên viên tự nhập (updateProjectInfo).
-  KhmsAssign: ['projectCode', 'owners', 'updatedAt', 'updatedBy', 'director', 'bom']
+  KhmsAssign: ['projectCode', 'owners', 'updatedAt', 'updatedBy', 'director', 'bom'],
+  // Hồ sơ đã duyệt chuyên viên chọn "Bỏ qua – không đồng bộ vào KHMS" (theo người dùng: "thêm chế độ bỏ qua để chuyên viên có thể tùy chọn
+  // trong trường hợp không đồng bộ hồ sơ đã duyệt vào KHMS"): không còn hiện ở "chờ xác nhận" / gợi ý gắn gói.
+  KhmsSkip: ['submissionId', 'actor', 'date']
 };
 
 /** Action của KHMS — Code.gs tra thêm bảng này khi action không có trong API_ACTIONS_. Mỗi hàm tự kiểm tra quyền. */
@@ -60,7 +63,7 @@ function khmsBootstrap_(user) {
   var me = user ? normalizeUsername_(user.username) : '';
   purgeInactivePackages_();
   migrateSelectConfirm_();
-  return { packages: listPackages_(), planUploads: listPlanUploads_(), khmsAssign: listAssign_(),
+  return { packages: listPackages_(), planUploads: listPlanUploads_(), khmsAssign: listAssign_(), khmsSkip: listKhmsSkip_(),
            khmsExportAll: KHMS_EXPORT_ALL_USERS_.indexOf(me) >= 0 };
 }
 
@@ -306,6 +309,12 @@ function migrateSelectConfirm_() {
     if (changed.length) writeObjs_('Packages', changed);
     props.setProperty('KHMS_SELECT_CONFIRM_V1', new Date().toISOString());
   });
+}
+
+/** Mã hồ sơ đã chọn "Bỏ qua – không đồng bộ vào KHMS". */
+function listKhmsSkip_() {
+  ensureSheet_('KhmsSkip');
+  return readTable_('KhmsSkip').map(function (r) { return String(r.submissionId || ''); }).filter(Boolean);
 }
 
 /** Ngày duyệt (dd/MM/yyyy) của hồ sơ nếu đang ở tình trạng Đã duyệt; không thì ''. */
@@ -690,18 +699,33 @@ function linkPackages_(user, payload) {
  * payload: { items: [{ id, submissionId }] } — gắn hồ sơ (phải đang Đã duyệt) vào gói `id` và xác nhận ngày duyệt là ngày chọn thầu thực tế;
  *   hồ sơ đang gắn gói khác thì gỡ khỏi gói đó (chuyển sang gói được chọn).
  *          [{ id, skip: submissionId }] — hồ sơ không thuộc gói `id`: gỡ nếu đang gắn, không gợi ý lại cho gói này.
+ *          [{ ignore: submissionId }]   — "Bỏ qua – không đồng bộ vào KHMS": gỡ khỏi gói đang gắn (nếu có), ghi vào KhmsSkip.
+ *          [{ unignore: submissionId }] — khôi phục hồ sơ đã bỏ qua (lại chờ xác nhận). Gắn hồ sơ vào gói cũng tự khôi phục.
  */
 function confirmSelections_(user, payload) {
   var items = (payload && payload.items) || [];
   if (!items.length) throw appError_('Chưa chọn gói thầu nào.');
   if (items.length > PLAN_MAX_ROWS_) throw appError_('Quá nhiều gói thầu trong một lần.');
   ensurePlanSheets_();
+  ensureSheet_('KhmsSkip');
   return withLock_(function () {
     var rows = readTable_('Packages'), subById = {};
     readTable_('Submissions').forEach(function (x) { subById[String(x.id)] = x; });
+    var skipRows = readTable_('KhmsSkip'), skipSet = {}, skipChanged = false;
+    skipRows.forEach(function (r) { skipSet[String(r.submissionId)] = r; });
     var date = today_(), changed = [], errs = [];
     var touch = function (p) { p.updatedAt = date; p.updatedBy = user.username; if (changed.indexOf(p) < 0) changed.push(p); };
     items.forEach(function (it) {
+      it = it || {};
+      if (it.ignore || it.unignore) {
+        var sidI = String(it.ignore || it.unignore);
+        if (!subById[sidI]) { errs.push('không tìm thấy hồ sơ ' + sidI); return; }
+        if (it.ignore) {
+          rows.forEach(function (p) { if (String(p.submissionId || '') === sidI) { p.submissionId = ''; p.selectConfirmed = ''; touch(p); } });
+          if (!skipSet[sidI]) { skipSet[sidI] = { submissionId: sidI, actor: user.username, date: date }; skipChanged = true; }
+        } else if (skipSet[sidI]) { delete skipSet[sidI]; skipChanged = true; }
+        return;
+      }
       var rec = findPackage_(rows, it && it.id);
       if (!rec) { errs.push('không tìm thấy gói ' + (it && it.id)); return; }
       if (it.skip) {
@@ -720,12 +744,14 @@ function confirmSelections_(user, payload) {
         if (p !== rec && String(p.submissionId || '') === sid) { p.submissionId = ''; p.selectConfirmed = ''; touch(p); }
       });
       rec.submissionId = sid; rec.selectConfirmed = a;
+      if (skipSet[sid]) { delete skipSet[sid]; skipChanged = true; }
       rec.skipSubs = String(rec.skipSubs || '').split(',').filter(function (x) { return x && x !== sid; }).join(',');
       touch(rec);
     });
     if (errs.length) throw appError_('Chưa lưu: ' + errs.slice(0, 3).join('; ') + (errs.length > 3 ? ' (và ' + (errs.length - 3) + ' lỗi khác)' : '') + '.');
     writeObjs_('Packages', changed);
-    return { packages: changed.map(serializePackage_) };
+    if (skipChanged) rewriteTable_('KhmsSkip', Object.keys(skipSet).map(function (k) { return skipSet[k]; }));
+    return { packages: changed.map(serializePackage_), skips: Object.keys(skipSet) };
   });
 }
 

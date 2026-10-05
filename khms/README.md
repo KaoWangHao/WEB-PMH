@@ -189,3 +189,12 @@ Phần lõi không chứa code KHMS, chỉ có các "điểm gắn" — không c
       khác thì chuyển sang; "không thuộc" → gỡ + thêm vào `skipSubs`). Dòng bỏ tích vẫn chờ lần sau.
     - Người dùng tự gắn hồ sơ đã duyệt (nút Xác nhận gợi ý, "Cập nhật bảng", form 1 gói) = đã xác nhận. Dữ liệu cũ: 1 lần (cờ `KHMS_SELECT_CONFIRM_V1`, `migrateSelectConfirm_`)
       gói đã gắn hồ sơ đã duyệt được coi là đã xác nhận.
+22. **Hồ sơ chưa tìm thấy gói + chế độ Bỏ qua** (theo người dùng: "trường hợp hồ sơ được duyệt nhưng không tìm thấy gói thầu tương ứng trong KHMS thì phần gợi ý để trống
+    và chuyên viên tự chọn, và thêm chế độ bỏ qua để chuyên viên có thể tùy chọn trong trường hợp không đồng bộ hồ sơ đã duyệt vào KHMS"):
+    - Danh sách chờ xác nhận (`khPendingList`, tính 1 lần trong `khmsDerive` → `S.khPendAll`) theo **hồ sơ**: `linked` / `sugg` như mục 21 + `none` = hồ sơ Trình duyệt
+      đã duyệt (từ ngày tải KHMS đầu tiên của dự án) thuộc dự án có KHMS, chưa gắn gói, không gợi ý được → ô gói để trống "— Chọn gói thầu —" (dòng tô cam, chưa tích được
+      tới khi chọn gói). Hồ sơ Báo cáo (xin ý kiến) không tính.
+    - Ô gói có thêm **"⊘ Bỏ qua – không đồng bộ vào KHMS"** (thay cho "Không thuộc gói thầu nào"): `confirmSelections` `{ ignore }` → gỡ khỏi gói (nếu đang gắn), ghi sheet
+      **`KhmsSkip`** (`submissionId`, `actor`, `date`; gửi kèm bootstrap `khmsSkip`); hồ sơ bỏ qua không còn trong chờ xác nhận / gợi ý gắn gói. Khôi phục: dòng nhỏ
+      "N hồ sơ … đã chọn Bỏ qua — Xem / khôi phục" (khi không còn hồ sơ chờ) hoặc ô "Hiện cả hồ sơ đã bỏ qua" trong cửa sổ → "↺ Khôi phục" (`{ unignore }`) hoặc chọn gói
+      (gắn gói cũng tự khôi phục).
