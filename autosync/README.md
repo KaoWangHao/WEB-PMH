@@ -19,6 +19,17 @@ trong `12_HoSo_TrinhKy` (đường dẫn + ngày sửa đổi) và POST lên web
 ký hiệu chuyên viên, **không** đổi chuyên viên phụ trách, bỏ qua file ở nhiều thư mục / hồ sơ trùng tên, hồ sơ Đã duyệt giữ nguyên, ngày = ngày sửa đổi
 của file — rồi ghi bằng `applyFolderSync_` (lõi) với tài khoản hệ thống `auto-sync`. Kết quả lần chạy gần nhất: Script Properties `LAST_AUTO_SYNC`.
 
+**Không cần người dùng xác nhận**: đồng bộ tự động ghi thẳng (chỉ những thay đổi "chắc chắn" — các trường hợp cần chọn như file ở nhiều thư mục,
+hồ sơ trùng tên, đổi chuyên viên phụ trách thì bỏ qua để đồng bộ thủ công xử lý). Mỗi thay đổi ghi 1 dòng History bởi "Đồng bộ tự động" và
+chuyên viên / Trưởng phòng nhận thông báo ở chuông như đồng bộ thủ công; sửa sai bằng nút Cập nhật.
+
+**Nhiều máy** (theo người dùng: "có thể dùng trên nhiều máy không" → làm trạng thái riêng từng máy): cài script trên nhiều máy để dự phòng,
+**dùng chung một khóa**. Server xử lý tuần tự (`withLock_` trong `applyFolderSync_`, kiểm tra lại tình trạng `from` / trùng tên) nên máy chạy sau
+không ghi trùng. Script Properties `AUTO_SYNC_MACHINES` = `{ tênMáy: lần chạy gần nhất + lastOkAt/lastOkTs }` (`recordAutoSyncRun_`; máy quá 30 ngày
+không gửi tự bị xóa, tối đa 20 máy; admin xóa tay bằng action `autoSyncForget`). Thẻ Quản trị: bảng từng máy (Tốt / Lỗi / **Không gửi dữ liệu** =
+T2–T6 8:45–18:00 mà quá 2 giờ không gửi) và trạng thái chung — chỉ báo đỏ khi **mọi** máy có vấn đề, còn ≥1 máy tốt thì "Hoạt động · n/m máy
+có vấn đề". Chú thích nút đồng bộ hiện lần **thành công** gần nhất (máy nào cũng được).
+
 ## Điểm gắn trong phần lõi (dùng chung, không phụ thuộc thư mục này)
 - `src/Code.gs`: `doPost` gọi `autoSyncPost_` nếu có (không có → "Không hỗ trợ"); `api()` tra thêm `AUTO_SYNC_ACTIONS_` nếu có.
 - `src/Submissions.gs`: `bootstrap_` gọi `autoSyncBootstrap_` nếu có.
@@ -30,8 +41,8 @@ của file — rồi ghi bằng `applyFolderSync_` (lõi) với tài khoản h�
 ## Gỡ bỏ tính năng
 1. Xóa thư mục `autosync/`, commit, merge lên `main` → workflow deploy đẩy code không còn chức năng này (`clasp push --force` xóa file cũ trên Apps Script).
    Web vẫn chạy bình thường; nút "Đồng bộ thư mục" thủ công giữ nguyên; lịch sử cũ ghi "auto-sync" vẫn hiển thị (tên đăng nhập).
-2. Trên máy Windows: `powershell -ExecutionPolicy Bypass -File cai-dat.ps1 -GoBo` để gỡ lịch chạy (hoặc xóa task *"CENTRAL PMH - Dong bo thu muc"* trong Task Scheduler).
-3. (Tùy chọn) Xóa Script Properties `AUTO_SYNC_KEY_HASH`, `LAST_AUTO_SYNC` trong Apps Script → Project Settings.
+2. Trên **từng** máy Windows đã cài: `powershell -ExecutionPolicy Bypass -File cai-dat.ps1 -GoBo` để gỡ lịch chạy (hoặc xóa task *"CENTRAL PMH - Dong bo thu muc"* trong Task Scheduler).
+3. (Tùy chọn) Xóa Script Properties `AUTO_SYNC_KEY_HASH`, `LAST_AUTO_SYNC`, `AUTO_SYNC_MACHINES` trong Apps Script → Project Settings.
 
 Tạm dừng mà không gỡ: chỉ cần gỡ lịch chạy trên máy Windows (bước 2), hoặc tạo khóa mới trên web mà không dán vào máy.
 

@@ -12,6 +12,8 @@ Nút đồng bộ thủ công trên web vẫn dùng bình thường.
 - **Không** đổi chuyên viên phụ trách; **bỏ qua** file nằm ở nhiều thư mục và hồ sơ trùng tên trên web (để đồng bộ thủ công xử lý).
 - Hồ sơ **Đã duyệt** luôn giữ nguyên.
 - Lịch sử hồ sơ ghi "Đồng bộ từ thư mục chia sẻ" bởi **Đồng bộ tự động**; chuyên viên vẫn nhận thông báo ở chuông.
+- **Không cần ai bấm xác nhận**: thay đổi được ghi ngay. Trường hợp cần người chọn (file ở nhiều thư mục, trùng tên, đổi chuyên viên phụ trách)
+  thì tự động bỏ qua — dùng nút "Đồng bộ thư mục" thủ công để xử lý. Ghi sai thì sửa bằng nút Cập nhật của hồ sơ.
 
 ## Cài đặt (1 lần, trên máy luôn bật trong giờ làm việc)
 1. Máy chạy Windows, đăng nhập bằng tài khoản mở được ổ `\\HCM-FS01` (có VPN / mạng công ty trong giờ làm việc).
@@ -23,10 +25,17 @@ Nút đồng bộ thủ công trên web vẫn dùng bình thường.
    (mỗi ngày 7:30, lặp mỗi giờ đến 17:30) và chạy thử 1 lần ngay.
 6. Trên web, thẻ "Đồng bộ thư mục tự động" hiện **Hoạt động** cùng thời gian và kết quả lần chạy gần nhất.
 
+## Cài trên nhiều máy (dự phòng)
+Làm lại bước 1, 2, 4, 5 trên máy khác và **chép nguyên file `auto-sync.config.json`** từ máy đầu tiên (dùng chung một khóa — đừng bấm
+"Tạo khóa mới", vì khóa cũ sẽ hết hiệu lực trên mọi máy). Các máy chạy cùng lúc không ghi trùng: máy chạy sau thấy hồ sơ đã đúng tình trạng thì bỏ qua.
+Thẻ "Đồng bộ thư mục tự động" có bảng **từng máy** (Tốt / Lỗi / Không gửi dữ liệu); trạng thái chung chỉ báo lỗi khi **mọi** máy đều có vấn đề.
+Máy thôi dùng: gỡ lịch chạy trên máy đó rồi bấm **Xóa** ở dòng của máy trong bảng (máy quá 30 ngày không gửi cũng tự biến mất).
+
 ## Theo dõi, sửa lỗi
 - Nhật ký trên máy: `auto-sync.log` cùng thư mục. Trên web: thẻ "Đồng bộ thư mục tự động" (Quản trị) và chú thích của nút "Đồng bộ thư mục".
 - "Không truy cập được thư mục…": máy chưa kết nối VPN / mạng công ty lúc chạy.
-- "Khóa đồng bộ tự động không đúng": tạo khóa mới trên web rồi dán lại vào `auto-sync.config.json`.
+- "Khóa đồng bộ tự động không đúng": tạo khóa mới trên web rồi dán lại vào `auto-sync.config.json` (trên **mọi** máy).
+- "Không gửi dữ liệu": trong giờ làm việc quá 2 giờ máy không gửi — máy tắt / ngủ, hoặc lịch chạy bị gỡ.
 - Chạy tay bất kỳ lúc nào: `powershell -ExecutionPolicy Bypass -File auto-sync.ps1 -Force`.
 - Gỡ lịch chạy: `powershell -ExecutionPolicy Bypass -File cai-dat.ps1 -GoBo`.
 

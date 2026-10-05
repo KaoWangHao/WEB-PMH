@@ -15,45 +15,103 @@
   EXT.names['auto-sync'] = 'Đồng bộ tự động';
   EXT.data.push(function (d) { S.autoSync = d.autoSync || null; });
 
-  // Chú thích của nút "Đồng bộ thư mục": lịch và kết quả lần chạy tự động gần nhất.
+  var LATE_MS = 2 * 3600000;   // trong giờ làm việc mà quá 2 giờ không gửi dữ liệu → "không gửi dữ liệu"
+
+  // Các máy chạy script (nhiều máy = dự phòng). Bản cũ chỉ có `last` → coi như 1 máy.
+  function machinesOf(a) {
+    if (!a) return [];
+    if (a.machines && a.machines.length) return a.machines;
+    return a.last ? [Object.assign({ name: a.last.machine || '(không rõ tên máy)', lastOkAt: a.last.ok ? a.last.at : '',
+                                     lastOkTs: a.last.ok ? a.last.ts : 0 }, a.last)] : [];
+  }
+  // Đang trong giờ làm việc (T2–T6, 8:45–18:00 giờ VN): máy phải gửi dữ liệu ít nhất mỗi 2 giờ.
+  function inWorkHours(now) {
+    var vn = new Date(now + 7 * 3600000);
+    var day = vn.getUTCDay(), m = vn.getUTCHours() * 60 + vn.getUTCMinutes();
+    return day >= 1 && day <= 5 && m >= 8 * 60 + 45 && m <= 18 * 60;
+  }
+  // Trạng thái 1 máy: ok | err (lần gần nhất lỗi) | late (trong giờ làm việc mà lâu không gửi dữ liệu).
+  function machineState(m, now) {
+    if (!m.ok) return 'err';
+    if (m.ts && inWorkHours(now) && now - m.ts > LATE_MS) return 'late';
+    return 'ok';
+  }
+  // Tổng hợp: chỉ báo lỗi khi MỌI máy đều có vấn đề; còn ít nhất 1 máy tốt → vẫn "Hoạt động".
+  function health(a) {
+    var ms = machinesOf(a), now = Date.now();
+    var st = ms.map(function (m) { return machineState(m, now); });
+    var good = st.filter(function (x) { return x === 'ok'; }).length;
+    return { machines: ms, states: st, good: good, bad: ms.length - good };
+  }
+  var DOT = { ok: '#7CB342', warn: '#E9A23B', err: '#DD5A4C', off: '#9AA0AE' };
+  function badge(color, text) { return '<span class="status-badge"><span class="dot" style="background:' + color + '"></span>' + text + '</span>'; }
+  var STATE_TEXT = { ok: ['ok', 'Tốt'], err: ['err', 'Lỗi'], late: ['warn', 'Không gửi dữ liệu'] };
+
+  // Chú thích của nút "Đồng bộ thư mục": lịch và lần đồng bộ tự động thành công gần nhất (máy nào cũng được).
   EXT.syncNotes.push(function () {
     var a = S.autoSync;
     if (!a || !a.configured) return '';
+    var ms = machinesOf(a), best = null;
+    ms.forEach(function (m) { if (m.lastOkTs && (!best || m.lastOkTs > best.lastOkTs)) best = m; });
     var l = a.last;
-    return ' Đồng bộ tự động: mỗi giờ 7:30–17:30' + (l ? ' (lần chạy gần nhất ' + l.at +
-      (l.ok ? ': ' + (l.changed || 0) + ' đổi tình trạng, ' + (l.created || 0) + ' tạo mới)' : ': lỗi — ' + l.error + ')') : '') + '.';
+    var tail = best ? ' (thành công gần nhất ' + best.lastOkAt + (ms.length > 1 ? ', máy ' + best.name : '') + ')'
+      : l && !l.ok ? ' (lần chạy gần nhất ' + l.at + ': lỗi — ' + l.error + ')' : '';
+    return ' Đồng bộ tự động: mỗi giờ 7:30–17:30' + tail + '.';
   });
 
-  // Thẻ ở trang Quản trị: trạng thái lần chạy gần nhất + tạo khóa cho máy chạy script autosync/tools.
+  // Thẻ ở trang Quản trị: trạng thái chung + bảng từng máy + tạo khóa cho máy chạy script autosync/tools.
   EXT.adminCards.push(function () {
-    var a = S.autoSync || {}, l = a.last;
-    var state = !a.configured ? '<span class="status-badge"><span class="dot" style="background:#9AA0AE"></span>Chưa cài đặt</span>'
-      : !l ? '<span class="status-badge"><span class="dot" style="background:#E9A23B"></span>Đã tạo khóa, chưa chạy lần nào</span>'
-      : l.ok ? '<span class="status-badge"><span class="dot" style="background:#7CB342"></span>Hoạt động</span>'
-      : '<span class="status-badge"><span class="dot" style="background:#DD5A4C"></span>Lần gần nhất bị lỗi</span>';
+    var a = S.autoSync || {}, h = health(a), ms = h.machines;
+    var state = !a.configured ? badge(DOT.off, 'Chưa cài đặt')
+      : !ms.length ? badge(DOT.warn, 'Đã tạo khóa, chưa máy nào chạy')
+      : !h.bad ? badge(DOT.ok, 'Hoạt động' + (ms.length > 1 ? ' · ' + ms.length + ' máy' : ''))
+      : h.good ? badge(DOT.warn, 'Hoạt động · ' + h.bad + '/' + ms.length + ' máy có vấn đề')
+      : badge(DOT.err, ms.length > 1 ? 'Tất cả ' + ms.length + ' máy đều có vấn đề' : (h.states[0] === 'late' ? 'Máy không gửi dữ liệu' : 'Lần gần nhất bị lỗi'));
+    var rows = ms.map(function (m, i) {
+      var t = STATE_TEXT[h.states[i]];
+      var res = m.ok ? fmtNum(m.files || 0) + ' file · ' + (m.changed || 0) + ' đổi tình trạng · ' + (m.created || 0) + ' tạo mới' +
+          (m.skipped ? ' · ' + m.skipped + ' bỏ qua' : '')
+        : '<span style="color:var(--danger)">' + esc(m.error || 'Lỗi') + '</span>';
+      return '<tr><td><b>' + esc(m.name) + '</b></td><td>' + badge(DOT[t[0]], t[1]) + '</td><td class="nowrap">' + esc(m.at || '—') + '</td>' +
+        '<td>' + res + '</td><td class="nowrap">' + esc(m.lastOkAt || '—') + '</td>' +
+        '<td><div class="row-actions"><button data-act="auto-sync-forget" data-m="' + esc(m.name) + '" title="Xóa máy khỏi danh sách (máy đã gỡ script). Máy còn chạy sẽ tự hiện lại ở lần gửi sau.">' +
+        ic('x') + '<span>Xóa</span></button></div></td></tr>';
+    }).join('');
+    var table = ms.length ? '<div class="table-wrap" style="margin-top:12px"><table class="grid"><thead><tr><th>Máy</th><th>Trạng thái</th>' +
+      '<th>Lần gửi gần nhất</th><th>Kết quả</th><th>Thành công gần nhất</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>' : '';
     var body = '<div class="meta-grid">' +
-      '<div><small>Trạng thái</small>' + state + '</div>' +
+      '<div><small>Trạng thái chung</small>' + state + '</div>' +
       '<div><small>Lịch chạy</small>Mỗi giờ 7:30 – 17:30 (Task Scheduler trên máy trong mạng công ty)</div>' +
-      '<div><small>Lần chạy gần nhất</small>' + (l ? esc(l.at) + (l.machine ? ' · máy ' + esc(l.machine) : '') : '—') + '</div>' +
-      '<div><small>Kết quả</small>' + (!l ? '—' : l.ok ? fmtNum(l.files || 0) + ' file · ' + (l.changed || 0) + ' đổi tình trạng · ' + (l.created || 0) + ' tạo mới' +
-        (l.skipped ? ' · ' + l.skipped + ' bỏ qua' : '') : '<span style="color:var(--danger)">' + esc(l.error || 'Lỗi') + '</span>') + '</div></div>' +
-      '<p class="muted" style="margin:12px 0 0">Máy chủ Google không vào được ổ chia sẻ nội bộ, nên đồng bộ tự động chạy bằng script trên một máy tính luôn mở trong giờ làm việc ' +
-        '(có VPN / mạng công ty). Cài đặt: xem <b>autosync/tools/README.md</b> trên GitHub, bấm <b>Tạo khóa</b> và dán khóa vào file cấu hình của script. ' +
-        'Đồng bộ thủ công (nút "Đồng bộ thư mục") vẫn dùng bình thường; tự động chỉ áp dụng lựa chọn mặc định (đổi tình trạng, tạo hồ sơ có ký hiệu), không đổi chuyên viên phụ trách.</p>';
+      '<div><small>Lần chạy gần nhất (mọi máy)</small>' + (a.last ? esc(a.last.at) + (a.last.machine ? ' · máy ' + esc(a.last.machine) : '') : '—') + '</div></div>' +
+      table +
+      '<p class="muted" style="margin:12px 0 0">Máy chủ Google không vào được ổ chia sẻ nội bộ, nên đồng bộ tự động chạy bằng script trên máy tính luôn mở trong giờ làm việc ' +
+        '(có VPN / mạng công ty). Có thể cài trên <b>nhiều máy</b> để dự phòng — dùng chung một khóa; chỉ báo lỗi khi mọi máy đều có vấn đề, ' +
+        '"Không gửi dữ liệu" = trong giờ làm việc quá 2 giờ máy không gửi. Cài đặt: xem <b>autosync/tools/README.md</b> trên GitHub, bấm <b>Tạo khóa</b> ' +
+        'và dán khóa vào file cấu hình của script. Đồng bộ thủ công (nút "Đồng bộ thư mục") vẫn dùng bình thường; tự động chỉ áp dụng lựa chọn mặc định ' +
+        '(đổi tình trạng, tạo hồ sơ có ký hiệu), không đổi chuyên viên phụ trách.</p>';
     var tools = '<button class="secondary-btn" data-act="auto-sync-key">' + ic('key') + '<span>' + (a.configured ? 'Tạo khóa mới' : 'Tạo khóa') + '</span></button>';
     return card('admin-autosync', 'Đồng bộ thư mục tự động', body, { tools: tools, collapsible: true });
   });
 
+  A.ACTIONS['auto-sync-forget'] = function (el) {
+    if (!el.dataset.confirm) { el.dataset.confirm = '1'; el.lastChild.textContent = 'Bấm lần nữa để xóa'; return; }
+    busy(el, true);
+    call('autoSyncForget', { machine: el.dataset.m }).then(function (r) {
+      S.autoSync = r.status; render();
+    }).catch(function (err) { busy(el, false); handleErr(err); });
+  };
+
   A.ACTIONS['auto-sync-key'] = function (el) {
     if (S.autoSync && S.autoSync.configured && !el.dataset.confirm) {
-      el.dataset.confirm = '1'; el.lastChild.textContent = 'Bấm lần nữa: khóa cũ sẽ hết hiệu lực'; return;
+      el.dataset.confirm = '1'; el.lastChild.textContent = 'Bấm lần nữa: khóa cũ hết hiệu lực trên mọi máy'; return;
     }
     busy(el, true);
     call('autoSyncKey').then(function (r) {
       S.autoSync = r.status; render();
       openModal(modalHead('Khóa đồng bộ tự động') + '<div class="modal-body">' +
         '<p style="margin-top:0">Dán khóa này vào ô <b>"key"</b> trong file <b>auto-sync.config.json</b> trên máy chạy đồng bộ (xem autosync/tools/README.md). ' +
-        'Khóa chỉ hiện <b>1 lần</b>; tạo khóa mới thì khóa cũ hết hiệu lực.</p>' +
+        'Khóa chỉ hiện <b>1 lần</b>; tạo khóa mới thì khóa cũ hết hiệu lực — <b>mọi máy</b> đang chạy phải dán lại khóa mới. ' +
+        'Nhiều máy dùng chung một khóa (chép cùng file cấu hình).</p>' +
         '<div class="form-row"><label for="m-ask">Khóa</label><input type="text" id="m-ask" readonly value="' + esc(r.key) + '" onclick="this.select()"></div>' +
         '<div class="form-row"><label for="m-asu">Địa chỉ web app (ô "webAppUrl")</label><input type="text" id="m-asu" readonly value="' + esc(r.url || '') + '" onclick="this.select()"></div>' +
         '</div><div class="modal-foot"><button class="primary-btn" data-act="close-modal">Đã lưu khóa</button></div>');
