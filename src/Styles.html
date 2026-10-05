@@ -696,6 +696,11 @@ tr.group-row td { background: #F5F8FC; padding: 8px 12px; }
 .loading { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 120; overflow: hidden; }
 .loading::after { content: ''; position: absolute; left: -40%; width: 40%; height: 100%; background: linear-gradient(90deg, transparent, var(--cyan), var(--accent)); animation: load 1s linear infinite; box-shadow: 0 0 10px var(--accent); }
 @keyframes load { to { left: 100%; } }
+.sync-wait { position: fixed; left: 50%; top: 38%; transform: translate(-50%, -50%); z-index: 130; display: flex; gap: 14px; align-items: center;
+  width: max-content; max-width: min(460px, calc(100vw - 32px)); padding: 18px 22px; background: var(--card); color: var(--ink);
+  border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 18px 50px -10px rgba(30, 43, 89, .35); font-size: 14px; line-height: 1.55; }
+.sync-wait .spin { flex: none; width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--line-soft); border-top-color: var(--accent); animation: sync-spin .8s linear infinite; }
+@keyframes sync-spin { to { transform: rotate(360deg); } }
 .boot { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(160deg, #1E2B59 0%, #141D40 100%); color: #fff; font-size: 17px; letter-spacing: .5px; }
 
 /* ---------- Responsive ---------- */

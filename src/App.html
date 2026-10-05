@@ -1076,29 +1076,76 @@
     return n.indexOf('~$') === 0 || n.charAt(0) === '.' || n === 'thumbs.db' || n === 'desktop.ini';
   }
 
+  /** Hộp chờ giữa màn hình khi Chrome đọc thư mục / web so khớp file; text rỗng → ẩn. */
+  function syncWait(html) {
+    var el = document.getElementById('sync-wait');
+    if (!html) { if (el) el.remove(); return; }
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'sync-wait';
+      el.className = 'sync-wait';
+      el.setAttribute('role', 'status');
+      document.body.appendChild(el);
+    }
+    el.innerHTML = '<span class="spin" aria-hidden="true"></span><div>' + html + '</div>';
+  }
+
+  /**
+   * Chọn thư mục → xem trước. Thư mục trên ổ chung qua VPN có thể mất nhiều thời gian để Chrome đọc xong (chưa có sự kiện nào
+   * trong lúc đó), nên khi hộp chọn đóng mà chưa có kết quả thì hiện hộp chờ; mọi lỗi đều báo ra màn hình.
+   */
   function startFolderSync() {
-    var input = document.createElement('input');
+    if (S.syncInput) S.syncInput.remove();
+    var input = S.syncInput = document.createElement('input'); // giữ tham chiếu tới khi có kết quả
     input.type = 'file';
     input.multiple = true;
     input.setAttribute('webkitdirectory', '');
     input.style.display = 'none';
     document.body.appendChild(input);
+    var done = false, waitTimer = null;
+    function finish() {
+      done = true;
+      clearTimeout(waitTimer);
+      window.removeEventListener('focus', onFocus);
+      if (S.syncInput === input) S.syncInput = null;
+      input.remove();
+    }
+    function onFocus() {
+      waitTimer = setTimeout(function () {
+        if (!done) syncWait('<b>Chrome đang đọc thư mục…</b><br>Thư mục trên ổ chung qua VPN có thể mất vài phút, vui lòng chờ. ' +
+          'Nếu Chrome hỏi “Tải … tệp lên trang web này?”, hãy bấm <b>Tải lên</b>.');
+      }, 700);
+    }
+    input.addEventListener('cancel', function () {
+      finish();
+      syncWait('');
+      toast('Chưa chọn thư mục (hoặc đã bấm Hủy khi Chrome hỏi tải lên).', 'err');
+    });
     input.addEventListener('change', function () {
       var files = input.files;
-      input.remove();
-      if (!files || !files.length) { toast('Thư mục trống hoặc chưa chọn thư mục.', 'err'); return; }
-      var plan;
-      try { plan = buildSyncPlan(files); } catch (e) { toast(e.message, 'err'); return; }
-      openSyncPreview(plan);
+      finish();
+      if (!files || !files.length) { syncWait(''); toast('Thư mục trống hoặc chưa chọn thư mục.', 'err'); return; }
+      syncWait('<b>Đang so khớp ' + fmtNum(files.length) + ' file với hồ sơ trên web…</b>');
+      setTimeout(function () { // cho hộp chờ hiện ra trước khi xử lý
+        try {
+          openSyncPreview(buildSyncPlan(files));
+        } catch (e) {
+          if (window.console) console.error(e);
+          toast(e && e.message ? e.message : 'Lỗi khi đọc thư mục: ' + e, 'err');
+        } finally {
+          syncWait('');
+        }
+      }, 30);
     });
+    window.addEventListener('focus', onFocus);
     input.click();
   }
 
   /** Ngày sửa đổi của file trên server (giờ Việt Nam) → ISO yyyy-mm-dd; trình duyệt không có thì ''. */
   function fileDay(ms) {
     if (!ms) return '';
-    try { return new Date(ms).toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }); }
-    catch (e) { return new Date(ms + 7 * 3600000).toISOString().slice(0, 10); }
+    var d = new Date(ms + 7 * 3600000); // giờ Việt Nam = UTC+7 (không có giờ mùa hè); nhanh hơn toLocaleDateString cho hàng chục nghìn file
+    return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
   }
   /** Ngày sẽ ghi nhận cho hồ sơ: ngày của file, không sau hôm nay, không trước lần thay đổi gần nhất (server kiểm tra lại y hệt). */
   function syncEffDate(sub, iso) {
