@@ -144,7 +144,9 @@
     var st = statusOf(code);
     return '<span class="status-badge"><span class="dot" style="background:' + st.color + '"></span>' + esc(st.label) + '</span>';
   }
-  /** Loại hồ sơ theo tên: có cụm "xin ý kiến" (không dấu, bỏ ngoặc/gạch) → Báo cáo (BC), còn lại → Trình duyệt (TD). */
+  /** Loại hồ sơ theo tên: có cụm "xin ý kiến" (không dấu, bỏ ngoặc/gạch) → Báo cáo (BC), còn lại → Trình duyệt (TD).
+   *  Theo người dùng: loại Trình duyệt / Báo cáo CHỈ áp dụng (hiển thị, thống kê, lọc) cho hồ sơ đang trình TP.MH — s._type ('' nếu
+   *  không ở TP.MH); s._kind = loại theo tên bất kể tình trạng (KHMS dùng để bỏ qua hồ sơ báo cáo). */
   function docTypeOf(title) {
     var t = ' ' + norm(title).replace(/[^a-z0-9]+/g, ' ').trim() + ' ';
     var kws = S.cfg.reportKeywords || [];
@@ -203,8 +205,9 @@
     S.subs.forEach(function (s) { (s._projects.length ? s._projects : ['-']).forEach(function (c) { seen[c] = 1; }); });
     return Object.keys(seen).sort(projectSort).map(function (c) { return { value: c, label: projectLabel(c) }; });
   }
-  function typeOf(code) { return S.typeMap[code] || { code: code, label: code, color: '#9AA0AE' }; }
+  function typeOf(code) { return S.typeMap[code] || { code: code, label: code || '', color: '#9AA0AE', order: 99 }; }
   function typeBadge(code) {
+    if (!code) return '';
     var t = typeOf(code);
     return '<span class="type-badge type-' + esc(code) + '">' + esc(t.label) + '</span>';
   }
@@ -249,7 +252,8 @@
     S.hist.forEach(function (h) { (bySub[h.submissionId] = bySub[h.submissionId] || []).push(h); });
     S.histBySub = bySub;
     S.subs.forEach(function (s) {
-      s._type = docTypeOf(s.title);
+      s._kind = docTypeOf(s.title);
+      s._type = s.status === TPMH_STATUS ? s._kind : '';
       s._projects = projectCodesOf(s.title);
       var changes = (bySub[s.id] || []).filter(function (h) { return h.fromStatus !== h.toStatus; });
       var segs = [];
@@ -353,7 +357,7 @@
     return '<div class="table-wrap"><table class="grid notif-tbl"><thead><tr><th>Hồ sơ</th><th>Trước</th><th></th><th>Hiện tại</th>' +
       '<th>Ngày</th><th>Thay đổi bởi</th><th></th></tr></thead><tbody>' + groups.map(function (g) {
         var s = g.sub, h = (isNew && g.firstNew) || g.last;
-        return '<tr' + (isNew ? ' class="nt-new"' : '') + '><td class="title-cell">' + esc(s.title) + '<div class="code">' + esc(s.id) + ' · ' + typeBadge(s._type) +
+        return '<tr' + (isNew ? ' class="nt-new"' : '') + '><td class="title-cell">' + esc(s.title) + '<div class="code">' + esc(s.id) + (s._type ? ' · ' + typeBadge(s._type) : '') +
           (isNew && g.n > 1 ? ' · ' + g.n + ' lần thay đổi' : '') + '</div></td>' +
           '<td>' + (h.fromStatus ? statusBadge(h.fromStatus) : '<span class="nd-tag">Tạo mới</span>') + '</td><td class="nt-arrow">→</td>' +
           '<td>' + statusBadge(s.status) + '</td><td class="nowrap">' + fmtDate(g.last.date) + '</td>' +
@@ -366,7 +370,7 @@
     return '<div class="table-wrap"><table class="grid notif-tbl"><thead><tr><th>Hồ sơ</th><th>Chuyên viên</th><th>Trình đến ngày</th>' +
       '<th>Tình trạng hiện tại</th><th></th></tr></thead><tbody>' + groups.map(function (g) {
         var s = g.sub, h = (isNew && g.firstNew) || g.last;
-        return '<tr' + (isNew ? ' class="nt-new"' : '') + '><td class="title-cell">' + esc(s.title) + '<div class="code">' + esc(s.id) + ' · ' + typeBadge(s._type) + '</div></td>' +
+        return '<tr' + (isNew ? ' class="nt-new"' : '') + '><td class="title-cell">' + esc(s.title) + '<div class="code">' + esc(s.id) + (s._type ? ' · ' + typeBadge(s._type) : '') + '</div></td>' +
           '<td class="nowrap">' + esc(userName(s.owner)) + '</td><td class="nowrap">' + fmtDate(h.date) + '</td><td>' + statusBadge(s.status) + '</td>' +
           '<td><div class="row-actions"><button data-act="notif-history" data-id="' + esc(s.id) + '">' + ic('history') + 'Lịch sử</button></div></td></tr>';
       }).join('') + '</tbody></table></div>';
@@ -656,7 +660,7 @@
       dateField(view, 'from', 'Từ ngày') + dateField(view, 'to', 'Đến ngày') +
       (opts.owners ? multiField(view, 'owners', 'Chuyên viên', ownerOptions()) : '') +
       multiField(view, 'statuses', 'Tình trạng hồ sơ', statusOptions()) +
-      multiField(view, 'types', 'Loại hồ sơ', typeOptions()) +
+      multiField(view, 'types', 'Loại hồ sơ (ở TP.MH)', typeOptions()) +
       multiField(view, 'projects', 'Dự án', projectOptions()) +
       '<div class="field"><div class="fbody"><label for="' + qId + '">Tên / mã hồ sơ</label>' +
         '<input type="text" id="' + qId + '" data-input="filter-q" data-view="' + view + '" placeholder="Nhập để tìm…" value="' + esc(f.q) + '"></div></div>' +
@@ -1051,19 +1055,20 @@
     var pos = S.me.position;
     var rows = S.subs.filter(function (s) { return s.status === pos; })
       .sort(function (a, b) { return b._days - a._days || (a.submittedAt < b.submittedAt ? -1 : 1); });
+    var typed = pos === TPMH_STATUS;   // loại Trình duyệt / Báo cáo chỉ áp dụng cho TP.MH
     var body = rows.length ? '<div class="table-wrap"><table class="grid"><thead><tr>' +
-      '<th>Mã HS</th><th>Tên hồ sơ</th><th>Loại</th><th>Chuyên viên</th><th>Ngày trình</th><th>Chuyển đến tôi</th><th class="num">Số ngày chờ</th><th></th>' +
+      '<th>Mã HS</th><th>Tên hồ sơ</th>' + (typed ? '<th>Loại</th>' : '') + '<th>Chuyên viên</th><th>Ngày trình</th><th>Chuyển đến tôi</th><th class="num">Số ngày chờ</th><th></th>' +
       '</tr></thead><tbody>' + rows.map(function (s) {
-        return '<tr><td class="code">' + esc(s.id) + '</td><td class="title-cell">' + esc(s.title) + '</td><td>' + typeBadge(s._type) + '</td>' +
+        return '<tr><td class="code">' + esc(s.id) + '</td><td class="title-cell">' + esc(s.title) + '</td>' + (typed ? '<td>' + typeBadge(s._type) + '</td>' : '') +
           '<td class="nowrap">' + esc(userName(s.owner)) + '</td><td class="nowrap">' + fmtDate(s.submittedAt) + '</td>' +
           '<td class="nowrap">' + fmtDate(s._since) + '</td><td class="num">' + waitCell(s) + '</td><td>' + rowActions(s) + '</td></tr>';
       }).join('') + '</tbody></table></div>'
       : '<div class="empty">' + ic('inbox') + '<div>Không có hồ sơ nào đang trình ' + esc(posLabel(pos)) + '.</div></div>';
     var tools = '<span class="status-badge" style="font-size:15px"><span class="dot" style="background:' + statusOf(pos).color + '"></span>' + rows.length + ' hồ sơ</span>' +
-      (S.cfg.docTypes || []).map(function (t) {
+      (typed ? (S.cfg.docTypes || []).map(function (t) {
         return '<span class="type-badge type-' + t.code + '" style="font-size:13.5px">' + esc(t.label) + ': ' +
           rows.filter(function (s) { return s._type === t.code; }).length + '</span>';
-      }).join('');
+      }).join('') : '');
     return card('manager-pending', 'Hồ sơ ' + esc(statusOf(pos).label), body, { collapsible: true, tools: tools });
   }
 
@@ -1432,58 +1437,50 @@
 
   /* ---------- Trình duyệt / Báo cáo ---------- */
   function typeCard(scope) {
+    // Theo người dùng: loại Trình duyệt / Báo cáo chỉ thống kê cho hồ sơ đang trình TP.MH.
     var f = getFilter('manager');
     var types = S.cfg.docTypes || [];
-    var sts = S.cfg.statuses;
+    var tp = scope.filter(function (s) { return s.status === TPMH_STATUS; });
     var selT = f.types.length === 1 ? f.types[0] : null;
     var by = function (list, t) { return list.filter(function (s) { return s._type === t; }); };
-    var pending = function (list) { return list.filter(function (s) { return S.cfg.submittingStatuses.indexOf(s.status) >= 0; }).length; };
+    var waitAvg = function (list) { return list.length ? Math.round(list.reduce(function (a, s) { return a + s._days; }, 0) / list.length) : 0; };
     function link(n, attrs, strong) {
       return n ? '<td class="cell" data-act="type-filter"' + attrs + '>' + (strong ? '<b>' + fmtNum(n) + '</b>' : fmtNum(n)) + '</td>' : '<td class="cell zero">0</td>';
     }
 
-    var tiles = '<button class="tile' + (!f.types.length ? ' selected' : '') + '" data-act="type-filter" data-type="">' +
-      '<div class="circle" style="background:#1E2B59">' + fmtNum(scope.length) + '</div><div class="tlabel">Tổng hồ sơ</div></button>' +
+    var tiles = '<button class="tile' + (!f.types.length ? ' selected' : '') + '" data-act="type-filter" data-type="" data-status="' + TPMH_STATUS + '">' +
+      '<div class="circle" style="background:' + statusOf(TPMH_STATUS).color + '">' + fmtNum(tp.length) + '</div><div class="tlabel">Đang trình TP.MH</div></button>' +
       types.map(function (t) {
-        var list = by(scope, t.code);
-        var pct = scope.length ? Math.round(list.length * 100 / scope.length) : 0;
+        var list = by(tp, t.code);
+        var pct = tp.length ? Math.round(list.length * 100 / tp.length) : 0;
         return '<button class="tile' + (selT === t.code ? ' selected' : '') + '" data-act="type-filter" data-type="' + t.code + '">' +
           '<div class="circle" style="background:' + t.color + '">' + fmtNum(list.length) + '</div>' +
-          '<div class="tlabel">' + esc(t.label) + '<small>' + pct + '% · ' + pending(list) + ' đang trình</small></div></button>';
+          '<div class="tlabel">' + esc(TPMH_TYPE_LABELS[t.code] || t.label) + '<small>' + pct + '% · chờ TB ' + waitAvg(list) + ' ngày</small></div></button>';
       }).join('');
-
-    var byStatus = '<div class="table-wrap"><table class="grid matrix"><thead><tr><th>Loại</th>' +
-      sts.map(function (st) { return '<th class="center"><span class="dot" style="background:' + st.color + ';margin-right:6px"></span>' + esc(st.short) + '</th>'; }).join('') +
-      '<th class="num">Tổng</th></tr></thead><tbody>' +
-      types.map(function (t) {
-        var list = by(scope, t.code);
-        return '<tr><td class="nowrap">' + typeBadge(t.code) + '</td>' + sts.map(function (st) {
-          return link(list.filter(function (s) { return s.status === st.code; }).length, ' data-type="' + t.code + '" data-status="' + st.code + '"');
-        }).join('') + link(list.length, ' data-type="' + t.code + '"', true) + '</tr>';
-      }).join('') + '</tbody><tfoot><tr><td>Tổng cộng</td>' + sts.map(function (st) {
-        return link(scope.filter(function (s) { return s.status === st.code; }).length, ' data-type="" data-status="' + st.code + '"');
-      }).join('') + link(scope.length, ' data-type=""', true) + '</tr></tfoot></table></div>';
 
     var owners = ownerOptions().map(function (o) { return o.value; });
     if (f.owners.length) owners = owners.filter(function (o) { return f.owners.indexOf(o) >= 0; });
-    var byOwner = '<div class="table-wrap"><table class="grid matrix"><thead><tr><th>Chuyên viên</th>' +
-      types.map(function (t) { return '<th class="center">' + typeBadge(t.code) + '</th><th class="center muted-th">Đang trình</th>'; }).join('') +
-      '<th class="num">Tổng</th></tr></thead><tbody>' +
+    owners = owners.filter(function (o) { return tp.some(function (s) { return s.owner === o; }); });
+    var byOwner = owners.length ? '<div class="table-wrap"><table class="grid matrix"><thead><tr><th>Chuyên viên</th>' +
+      types.map(function (t) { return '<th class="center">' + typeBadge(t.code) + '</th>'; }).join('') +
+      '<th class="num">Tổng</th><th class="num" title="Số ngày chờ lâu nhất ở TP.MH">Lâu nhất</th></tr></thead><tbody>' +
       owners.map(function (o) {
-        var mine = scope.filter(function (s) { return s.owner === o; });
+        var mine = tp.filter(function (s) { return s.owner === o; });
+        var longest = mine.reduce(function (m, s) { return Math.max(m, s._days); }, 0);
         return '<tr><td class="nowrap"><b>' + esc(userName(o)) + '</b></td>' + types.map(function (t) {
-          var list = by(mine, t.code);
-          return link(list.length, ' data-type="' + t.code + '" data-owner="' + esc(o) + '"', true) +
-            '<td class="center muted">' + (pending(list) || '–') + '</td>';
-        }).join('') + link(mine.length, ' data-type="" data-owner="' + esc(o) + '"', true) + '</tr>';
-      }).join('') + '</tbody></table></div>';
+          return link(by(mine, t.code).length, ' data-type="' + t.code + '" data-owner="' + esc(o) + '"', true);
+        }).join('') + link(mine.length, ' data-type="" data-status="' + TPMH_STATUS + '" data-owner="' + esc(o) + '"', true) +
+          '<td class="num"><span class="wait' + (longest >= 14 ? ' bad' : longest >= 7 ? ' warn' : '') + '">' + longest + '</span></td></tr>';
+      }).join('') + '</tbody><tfoot><tr><td>Tổng cộng</td>' +
+      types.map(function (t) { return link(by(tp, t.code).length, ' data-type="' + t.code + '"', true); }).join('') +
+      link(tp.length, ' data-type="" data-status="' + TPMH_STATUS + '"', true) + '<td></td></tr></tfoot></table></div>'
+      : '<div class="empty">Không có hồ sơ nào đang trình TP.MH' + (f.owners.length ? ' của chuyên viên đã chọn' : '') + '.</div>';
 
     var body = '<div class="tiles type-tiles">' + tiles + '</div>' +
-      '<div class="type-grid"><div><p class="sub-title">Theo tình trạng</p>' + byStatus + '</div>' +
-      '<div><p class="sub-title">Theo chuyên viên</p>' + byOwner + '</div></div>' +
-      '<p class="muted" style="margin:10px 0 0">Hồ sơ có cụm <b>"xin ý kiến"</b> trong tên (ví dụ "(Trình xin ý kiến)") là <b>Báo cáo</b>, còn lại là <b>Trình duyệt</b>. ' +
-      '"Đang trình" = đang ở TP.MH, GĐTM hoặc TP.C&amp;C. Bấm vào số để lọc bảng tổng hợp bên dưới.</p>';
-    return card('manager-types', 'Trình duyệt &amp; Báo cáo', body, { collapsible: true });
+      '<p class="sub-title">Theo chuyên viên</p>' + byOwner +
+      '<p class="muted" style="margin:10px 0 0">Chỉ thống kê hồ sơ <b>đang trình TP.MH</b>: tên có cụm <b>"xin ý kiến"</b> (ví dụ "(Trình xin ý kiến)") là ' +
+      '<b>Báo cáo</b> (đợi báo cáo TP.MH), còn lại là <b>Trình duyệt</b>. Hồ sơ đã chuyển sang tình trạng khác không gắn loại. Bấm vào số để lọc bảng tổng hợp bên dưới.</p>';
+    return card('manager-types', 'Trình duyệt &amp; Báo cáo (đang trình TP.MH)', body, { collapsible: true });
   }
 
   /* ---------- Hồ sơ đệ trình theo chuyên viên × khoảng thời gian ---------- */
@@ -1680,8 +1677,7 @@
     var body;
     if (!keys.length) body = '<div class="empty">Không có hồ sơ nào phù hợp bộ lọc.</div>';
     else {
-      body = '<div class="table-wrap table-scroll"><table class="grid matrix"><thead><tr><th>Dự án</th>' +
-        types.map(function (t) { return '<th class="center">' + typeBadge(t.code) + '</th>'; }).join('') +
+      body = '<div class="table-wrap table-scroll"><table class="grid matrix"><thead><tr><th>Dự án</th>' + typeHead() +
         '<th class="center">Đang trình</th><th class="center">Trả lại</th><th class="center">Đã duyệt</th><th class="num">Tổng</th></tr></thead><tbody>' +
         keys.map(function (k) {
           var list = groups[k];
@@ -1843,7 +1839,13 @@
   function statusHead(sts) {
     return sts.map(function (st) { return '<th class="center"><span class="dot" style="background:' + st.color + ';margin-right:6px"></span>' + esc(st.short) + '</th>'; }).join('');
   }
-  function typeHead() { return (S.cfg.docTypes || []).map(function (t) { return '<th class="center">' + typeBadge(t.code) + '</th>'; }).join(''); }
+  /** Cột loại hồ sơ: chỉ đếm hồ sơ đang ở TP.MH (loại chỉ áp dụng cho TP.MH). */
+  function typeHead() {
+    return (S.cfg.docTypes || []).map(function (t) {
+      return '<th class="center" title="' + esc(TPMH_TYPE_LABELS[t.code] || t.label) + ': chỉ tính hồ sơ đang ở TP.MH">' + typeBadge(t.code) +
+        '<small class="th-sub">ở TP.MH</small></th>';
+    }).join('');
+  }
   /** Bấm vào biểu đồ → chọn theo vị trí cột/miếng. */
   function chartClick(D, cfg, pick) {
     cfg.options.onClick = function (evt, els) { if (els && els.length) { var sel = pick(els[0].index); if (sel) selectRep(D.view, sel); } };
@@ -1907,10 +1909,24 @@
     var keys = Object.keys(groups).sort(function (a, b) { return (a === '-') - (b === '-') || groups[b].length - groups[a].length || projectSort(a, b); });
     return { groups: groups, keys: keys };
   }
-  function typeDatasets(lists) {
-    return (S.cfg.docTypes || []).map(function (t) {
-      return { label: t.label, backgroundColor: t.color, stack: 's', data: lists.map(function (l) { return l.filter(function (s) { return s._type === t.code; }).length; }) };
+  /** Cột chồng theo tình trạng hiện tại (bỏ tình trạng không có hồ sơ). */
+  function statusDatasets(lists) {
+    return S.cfg.statuses.map(function (st) {
+      return { label: st.short, backgroundColor: st.color, stack: 's', data: lists.map(function (l) { return l.filter(function (s) { return s.status === st.code; }).length; }) };
+    }).filter(function (d) { return d.data.some(function (v) { return v > 0; }); });
+  }
+  /** Đang chờ: TP.MH tách theo loại (Trình duyệt / Báo cáo), các tình trạng khác một khối màu riêng. */
+  function pendingDatasets(codes, lists) {
+    var ds = (S.cfg.docTypes || []).map(function (t) {
+      return { label: TPMH_TYPE_LABELS[t.code] || t.label, backgroundColor: t.color, stack: 's',
+               data: lists.map(function (l, i) { return codes[i] === TPMH_STATUS ? l.filter(function (s) { return s._type === t.code; }).length : 0; }) };
     });
+    codes.forEach(function (c, i) {
+      if (c === TPMH_STATUS) return;
+      ds.push({ label: statusOf(c).short, backgroundColor: statusOf(c).color, stack: 's',
+                data: lists.map(function (l, j) { return j === i ? l.length : 0; }) });
+    });
+    return ds.filter(function (d) { return d.data.some(function (v) { return v > 0; }); });
   }
   function ownerChartSpec(D) {
     var by = {};
@@ -1926,7 +1942,7 @@
   }
   function trendChartSpec(D) {
     var T = repTrendData(D);
-    return { h: 230, cfg: barConfig(T.periods.map(function (p) { return periodShort(p, D.g); }), typeDatasets(T.lists), { stacked: true, legend: true }),
+    return { h: 230, cfg: barConfig(T.periods.map(function (p) { return periodShort(p, D.g); }), statusDatasets(T.lists), { stacked: true, legend: true }),
              pick: function (i) { return { card: 'trend', kind: 'period', key: T.periods[i], sub: '' }; } };
   }
   function resultChartSpec(D) {
@@ -1961,7 +1977,7 @@
     var codes = S.cfg.submittingStatuses;
     var lists = codes.map(function (c) { return D.pending.filter(function (s) { return s.status === c; }); });
     var labels = codes.map(function (c) { var n = approverNames(c); return n ? [statusOf(c).short, n] : statusOf(c).short; });
-    return { h: Math.max(200, codes.length * 48 + 70), cfg: barConfig(labels, typeDatasets(lists), { horizontal: true, stacked: true, legend: true }),
+    return { h: Math.max(200, codes.length * 48 + 70), cfg: barConfig(labels, pendingDatasets(codes, lists), { horizontal: true, stacked: true, legend: true }),
              pick: function (i) { return { card: 'pending', kind: 'pending', key: codes[i], sub: '' }; } };
   }
   function projectChartSpec(D, exp) {
@@ -1970,7 +1986,7 @@
     var max = exp ? 15 : 8, cut = exp ? 40 : 20;
     var top = keys.slice(0, max);
     var labels = top.map(function (k) { var l = projectLabel(k); return l.length > cut ? l.slice(0, cut - 1) + '…' : l; });
-    return { h: Math.max(200, top.length * 28 + 80), cfg: barConfig(labels, typeDatasets(top.map(function (k) { return P.groups[k]; })), { horizontal: true, stacked: true, legend: true }),
+    return { h: Math.max(200, top.length * 28 + 80), cfg: barConfig(labels, statusDatasets(top.map(function (k) { return P.groups[k]; })), { horizontal: true, stacked: true, legend: true }),
              pick: function (i) { return { card: 'projects', kind: 'project', key: top[i], sub: '' }; },
              after: keys.length > max ? '<p class="rep-note" style="margin:6px 0 0">' + max + ' dự án nhiều hồ sơ nhất / ' + keys.length + ' — chọn "Bảng" để xem tất cả.</p>' : '' };
   }
@@ -2001,7 +2017,7 @@
         row('*', D.sub, 'Tổng cộng') + '</tfoot></table></div>';
     };
     return repCard(D, 'owners', 'Hồ sơ đệ trình theo chuyên viên',
-      'Đệ trình trong kỳ theo loại và tình trạng hiện tại · bấm số/thanh để xem hồ sơ', chart, table, 'table');
+      'Đệ trình trong kỳ theo tình trạng hiện tại (loại: hồ sơ đang ở TP.MH) · bấm số/thanh để xem hồ sơ', chart, table, 'table');
   }
 
   /* ---------- 2. Đệ trình các kỳ gần nhất ---------- */
@@ -2023,7 +2039,7 @@
     };
     var unit = ({ week: 'tuần', month: 'tháng', quarter: 'quý', year: 'năm' })[D.g];
     return repCard(D, 'trend', 'Đệ trình ' + n + ' ' + unit + ' gần nhất',
-      'Theo loại hồ sơ · bấm cột để xem hồ sơ' + (D.f.period ? ', bấm tên kỳ (Bảng) để chuyển kỳ' : ''), chart, table);
+      'Theo tình trạng hiện tại · bấm cột để xem hồ sơ' + (D.f.period ? ', bấm tên kỳ (Bảng) để chuyển kỳ' : ''), chart, table);
   }
 
   /* ---------- 3. Kết quả hồ sơ đệ trình trong kỳ ---------- */
@@ -2031,17 +2047,14 @@
     var R = repResultData(D), sts = R.sts, counts = R.counts, total = D.sub.length;
     var chart = function () { return repChartHtml(D, 'result', resultChartSpec(D)); };
     var table = function () {
-      var types = S.cfg.docTypes || [];
-      return '<div class="table-wrap"><table class="grid matrix"><thead><tr><th>Tình trạng</th>' + typeHead() +
+      return '<div class="table-wrap"><table class="grid matrix"><thead><tr><th>Tình trạng</th>' +
         '<th class="num">Số hồ sơ</th><th class="num">Tỉ lệ</th></tr></thead><tbody>' +
         sts.map(function (st, i) {
           var l = D.sub.filter(function (s) { return s.status === st.code; });
           return '<tr><td class="nowrap">' + statusBadge(st.code) + '</td>' +
-            types.map(function (t) { return '<td class="center">' + (l.filter(function (s) { return s._type === t.code; }).length || '<span class="muted">0</span>') + '</td>'; }).join('') +
             repNum(D, l, 'result', 'kpi', 'sub', st.code, { strong: true, cls: 'num' }) +
             '<td class="num">' + (total ? Math.round(counts[i] * 100 / total) + '%' : '—') + '</td></tr>';
         }).join('') + '</tbody><tfoot><tr><td>Tổng cộng</td>' +
-        types.map(function (t) { return '<td class="center">' + D.sub.filter(function (s) { return s._type === t.code; }).length + '</td>'; }).join('') +
         '<td class="num">' + total + '</td><td class="num">' + (total ? '100%' : '—') + '</td></tr></tfoot></table></div>';
     };
     return repCard(D, 'result', 'Kết quả đệ trình trong kỳ', 'Tình trạng hiện tại · bấm vào phần để xem hồ sơ', chart, table);
@@ -2057,8 +2070,11 @@
     var table = function () {
       var row = function (key, l, label) {
         var longest = l.reduce(function (m, s) { return Math.max(m, s._days); }, 0);
+        var typed = key === TPMH_STATUS || key === '*';
         return '<tr><td>' + label + '</td>' +
-          types.map(function (t) { return repNum(D, l.filter(function (s) { return s._type === t.code; }), 'pending', 'pending', key, t.code); }).join('') +
+          types.map(function (t) {
+            return typed ? repNum(D, l.filter(function (s) { return s._type === t.code; }), 'pending', 'pending', key, t.code) : '<td class="center muted">–</td>';
+          }).join('') +
           repNum(D, l, 'pending', 'pending', key, '', { strong: true, cls: 'num' }) +
           '<td class="num">' + (l.length ? '<span class="wait' + (longest >= 14 ? ' bad' : longest >= 7 ? ' warn' : '') + '">' + longest + '</span>' : '—') + '</td></tr>';
       };
@@ -2429,7 +2445,7 @@
     };
     var cnt = function (list, fn) { return list.filter(fn).length; };
     var byType = function (list) { return types.map(function (t) { return cnt(list, function (s) { return s._type === t.code; }); }); };
-    var typeCols = types.map(function (t) { return { h: t.label, color: t.color }; });
+    var typeCols = types.map(function (t) { return { h: (TPMH_TYPE_LABELS[t.code] || t.label), color: t.color }; });
     var stCols = sts.map(function (st) { return { h: st.short, color: st.color }; });
 
     // 1. Theo chuyên viên
@@ -2437,13 +2453,13 @@
     var oRow = function (label, l) {
       return [label, l.length].concat(byType(l), sts.map(function (st) { return cnt(l, function (s) { return s.status === st.code; }); }));
     };
-    section('Hồ sơ đệ trình theo chuyên viên', 'Số hồ sơ đệ trình trong kỳ theo loại và tình trạng hiện tại', ownerChartSpec(D), 900, Math.max(240, owners.length * 40 + 90));
+    section('Hồ sơ đệ trình theo chuyên viên', 'Số hồ sơ đệ trình trong kỳ theo tình trạng hiện tại; cột loại chỉ tính hồ sơ đang ở TP.MH', ownerChartSpec(D), 900, Math.max(240, owners.length * 40 + 90));
     R = table(R, [{ h: 'Chuyên viên' }, { h: 'Đệ trình', bold: true }].concat(typeCols, stCols),
       owners.map(function (o) { return oRow(userName(o), D.sub.filter(function (s) { return s.owner === o; })); }), oRow('Tổng cộng', D.sub)) + 2;
 
     // 2. Các kỳ gần nhất
     var T = repTrendData(D);
-    section('Hồ sơ đệ trình ' + T.n + ' kỳ gần nhất', 'Số hồ sơ đệ trình mỗi kỳ theo loại hồ sơ', trendChartSpec(D), 900, 300);
+    section('Hồ sơ đệ trình ' + T.n + ' kỳ gần nhất', 'Số hồ sơ đệ trình mỗi kỳ theo tình trạng hiện tại; cột loại chỉ tính hồ sơ đang ở TP.MH', trendChartSpec(D), 900, 300);
     R = table(R, [{ h: 'Kỳ' }, { h: 'Từ ngày' }, { h: 'Đến ngày' }].concat(typeCols, [{ h: 'Đang trình' }, { h: 'Đã duyệt' }, { h: 'Tổng', bold: true }]),
       T.periods.map(function (p, i) {
         var l = T.lists[i], r = periodRange(p, D.g);
@@ -2454,22 +2470,22 @@
     // 3. Kết quả trong kỳ
     var RD = repResultData(D);
     section('Kết quả hồ sơ đệ trình trong kỳ', 'Tình trạng hiện tại của các hồ sơ đệ trình trong kỳ', resultChartSpec(D), 640, 300);
-    R = table(R, [{ h: 'Tình trạng hiện tại', span: 2 }].concat(typeCols, [{ h: 'Số hồ sơ', bold: true }, { h: 'Tỉ lệ', pct: true }]),
+    R = table(R, [{ h: 'Tình trạng hiện tại', span: 2 }, { h: 'Số hồ sơ', bold: true }, { h: 'Tỉ lệ', pct: true }],
       RD.sts.map(function (st, i) {
-        var l = D.sub.filter(function (s) { return s.status === st.code; });
-        return [st.label].concat(byType(l), [RD.counts[i], D.sub.length ? RD.counts[i] / D.sub.length : 0]);
-      }), ['Tổng cộng'].concat(byType(D.sub), [D.sub.length, D.sub.length ? 1 : 0])) + 2;
+        return [st.label, RD.counts[i], D.sub.length ? RD.counts[i] / D.sub.length : 0];
+      }), ['Tổng cộng', D.sub.length, D.sub.length ? 1 : 0]) + 2;
 
     // 4. Đang chờ duyệt
     var codes = S.cfg.submittingStatuses;
-    var pRow = function (label, who, l) {
+    var pRow = function (label, who, l, typed) {
       var avg = l.length ? Math.round(l.reduce(function (a, s) { return a + s._days; }, 0) / l.length * 10) / 10 : 0;
-      return [label, who].concat(byType(l), [l.length, avg, l.reduce(function (m, s) { return Math.max(m, s._days); }, 0)]);
+      // Loại chỉ áp dụng cho TP.MH: các hàng khác để trống cột loại.
+      return [label, who].concat(typed ? byType(l) : types.map(function () { return ''; }), [l.length, avg, l.reduce(function (m, s) { return Math.max(m, s._days); }, 0)]);
     };
     section('Đang chờ ai duyệt', 'Toàn bộ hồ sơ đang trình hiện nay (không phụ thuộc kỳ); số ngày tính từ lúc chuyển đến', pendingChartSpec(D), 900, 260);
     R = table(R, [{ h: 'Đang chờ' }, { h: 'Người duyệt', span: 3 }].concat(typeCols, [{ h: 'Tổng', bold: true }, { h: 'TB ngày chờ', fmt: '0.0' }, { h: 'Chờ lâu nhất (ngày)' }]),
-      codes.map(function (c) { return pRow(statusOf(c).label, approverNames(c) || '—', D.pending.filter(function (s) { return s.status === c; })); }),
-      pRow('Tổng cộng', '', D.pending)) + 2;
+      codes.map(function (c) { return pRow(statusOf(c).label, approverNames(c) || '—', D.pending.filter(function (s) { return s.status === c; }), c === TPMH_STATUS); }),
+      pRow('Tổng cộng', '', D.pending, true)) + 2;
 
     // 5. Theo dự án
     var P = repProjectData(D);
@@ -2825,7 +2841,7 @@
       'TP.MH / TP.C&amp;C / GĐTM được báo khi có hồ sơ mới đệ trình đến mình. Bấm chuông mở <b>cửa sổ Thông báo cập nhật</b>: bảng hồ sơ thay đổi (tình trạng trước → hiện tại, ngày, ai thay đổi), bấm <b>Lịch sử</b> để xem chi tiết rồi "‹ Thông báo" để quay lại. Số trên chuông giữ nguyên cho tới khi bạn mở xem (kể cả khi đăng nhập máy khác); web tự cập nhật mỗi 3 phút.</li>' +
       EXT.help.join('') +
       '<li>Ô "Số ngày ở TT hiện tại" chuyển màu cam khi ≥ 7 ngày, đỏ khi ≥ 14 ngày.</li>' +
-      '<li>Hồ sơ có cụm <b>"xin ý kiến"</b> trong tên (ví dụ "(Trình xin ý kiến)") được tính là <b>Báo cáo</b>, còn lại là <b>Trình duyệt</b>; lọc theo ô "Loại hồ sơ".</li>' +
+      '<li>Hồ sơ có cụm <b>"xin ý kiến"</b> trong tên (ví dụ "(Trình xin ý kiến)") được tính là <b>Báo cáo</b>, còn lại là <b>Trình duyệt</b> — <b>chỉ áp dụng cho hồ sơ đang trình TP.MH</b> (hồ sơ ở tình trạng khác không gắn loại); lọc theo ô "Loại hồ sơ (ở TP.MH)".</li>' +
       '<li>Bấm <b>Đồng bộ thư mục</b> (ở thẻ THAM SỐ) để cập nhật tình trạng theo thư mục hồ sơ trên ổ chia sẻ — chuyên viên chỉ cập nhật hồ sơ của mình: ' +
       'tên hồ sơ trên web phải trùng tên file (không cần đuôi file, không phân biệt chữ hoa/thường); file không có trên web được bỏ qua. ' +
       'File chưa có trên web mà tên kết thúc bằng ký hiệu chuyên viên (' + esc((S.cfg.folderSync.createInitials || []).join(', ')) + ', vd "..._CQH") được tạo mới cho chuyên viên đó; ' +

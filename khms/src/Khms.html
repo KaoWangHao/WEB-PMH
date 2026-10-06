@@ -112,7 +112,7 @@
   function khmsSuggestions() {
     var byProject = {};
     S.subs.forEach(function (s) {
-      if (S.pkgBySub[s.id] || s._type === 'BC' || S.khSkip[s.id]) return;
+      if (S.pkgBySub[s.id] || s._kind === 'BC' || S.khSkip[s.id]) return;
       s._projects.forEach(function (c) { (byProject[c] = byProject[c] || []).push(s); });
     });
     var cands = [];
@@ -244,7 +244,7 @@
     });
     var first = khFirstUpload();
     S.subs.forEach(function (s) {
-      if (!khApproved(s) || s._type === 'BC' || S.pkgBySub[s.id] || seen[s.id]) return;
+      if (!khApproved(s) || s._kind === 'BC' || S.pkgBySub[s.id] || seen[s.id]) return;
       var proj = s._projects.filter(function (c) { return first[c] && s.approvedAt >= first[c]; })[0];
       if (proj) push(s, null, 'none', proj);
     });
