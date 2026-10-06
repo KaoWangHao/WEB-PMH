@@ -41,6 +41,9 @@ có vấn đề". Chú thích nút đồng bộ hiện lần **thành công** g�
 **Lịch chạy trên Windows** (`tools/cai-dat.ps1`; sửa 06/10/2026 vì bản đầu — trigger Daily 7:30 + lặp 10 giờ — không chạy lần nào sau
 khi cài): trigger *Once 7:30, lặp mỗi giờ không giới hạn* (script tự bỏ qua ngoài 07:25–17:40) + trigger *khi đăng nhập* (trễ 3 phút; máy không cho
 tạo thì chỉ dùng trigger mỗi giờ); `StartWhenAvailable` chạy bù khi máy bật lại. `auto-sync.ps1` ghi log "Bat dau dong bo" mỗi lần chạy.
+Máy đầu tiên (HCM-TC17) báo **0x8007010B "The directory name is invalid"** lúc 7:30: task chạy script ngay tại thư mục tải về (thư mục "Start in"
+không hợp lệ với Task Scheduler — ổ mạng UNC / ổ map / di chuyển) → `cai-dat.ps1` nay **chép `auto-sync.ps1` + cấu hình vào
+`%LOCALAPPDATA%\CENTRAL-PMH\auto-sync`** và lịch chạy từ đó (log cũng ở đó).
 
 ## Gỡ bỏ tính năng
 1. Xóa thư mục `autosync/`, commit, merge lên `main` → workflow deploy đẩy code không còn chức năng này (`clasp push --force` xóa file cũ trên Apps Script).
