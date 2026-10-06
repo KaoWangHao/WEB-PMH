@@ -27,7 +27,7 @@ chuyên viên / Trưởng phòng nhận thông báo ở chuông như đồng b�
 **dùng chung một khóa**. Server xử lý tuần tự (`withLock_` trong `applyFolderSync_`, kiểm tra lại tình trạng `from` / trùng tên) nên máy chạy sau
 không ghi trùng. Script Properties `AUTO_SYNC_MACHINES` = `{ tênMáy: lần chạy gần nhất + lastOkAt/lastOkTs }` (`recordAutoSyncRun_`; máy quá 30 ngày
 không gửi tự bị xóa, tối đa 20 máy; admin xóa tay bằng action `autoSyncForget`). Thẻ Quản trị: bảng từng máy (Tốt / Lỗi / **Không gửi dữ liệu** =
-T2–T6 8:45–18:00 mà quá 2 giờ không gửi) và trạng thái chung — chỉ báo đỏ khi **mọi** máy có vấn đề, còn ≥1 máy tốt thì "Hoạt động · n/m máy
+T2–T6 đã quá 20 phút sau lần chạy theo lịch gần nhất 7:30…17:30 mà máy chưa gửi kể từ đó — `expectedSlot` trong `AutoSyncUi.html`) và trạng thái chung — chỉ báo đỏ khi **mọi** máy có vấn đề, còn ≥1 máy tốt thì "Hoạt động · n/m máy
 có vấn đề". Chú thích nút đồng bộ hiện lần **thành công** gần nhất (máy nào cũng được).
 
 ## Điểm gắn trong phần lõi (dùng chung, không phụ thuộc thư mục này)
@@ -37,6 +37,10 @@ có vấn đề". Chú thích nút đồng bộ hiện lần **thành công** g�
 - `src/App.html`: `EXT.names`, `EXT.syncNotes`, `EXT.adminCards` (cùng `EXT.data`, `ACTIONS` qua `window.APP`).
 - `.github/workflows/deploy.yml`: chép `autosync/src/*` vào `src/` nếu thư mục có.
 - `dev/serve.js`: nạp `autosync/src` khi chạy thử (`AUTOSYNC=0 node dev/serve.js` để tắt); `dev/mock.js` có `ContentService`.
+
+**Lịch chạy trên Windows** (`tools/cai-dat.ps1`; sửa 06/10/2026 vì bản đầu — trigger Daily 7:30 + lặp 10 giờ — không chạy lần nào sau
+khi cài): trigger *Once 7:30, lặp mỗi giờ không giới hạn* (script tự bỏ qua ngoài 07:25–17:40) + trigger *khi đăng nhập* (trễ 3 phút; máy không cho
+tạo thì chỉ dùng trigger mỗi giờ); `StartWhenAvailable` chạy bù khi máy bật lại. `auto-sync.ps1` ghi log "Bat dau dong bo" mỗi lần chạy.
 
 ## Gỡ bỏ tính năng
 1. Xóa thư mục `autosync/`, commit, merge lên `main` → workflow deploy đẩy code không còn chức năng này (`clasp push --force` xóa file cũ trên Apps Script).

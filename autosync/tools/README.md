@@ -22,7 +22,9 @@ Nút đồng bộ thủ công trên web vẫn dùng bình thường.
 4. Chép `auto-sync.config.example.json` thành **`auto-sync.config.json`**, mở bằng Notepad, dán khóa vào ô `"key"`.
    Kiểm tra `"root"` đúng đường dẫn thư mục `12_HoSo_TrinhKy` (dấu `\` viết thành `\\`).
 5. Chuột phải **`cai-dat.ps1` → Run with PowerShell**. Script tạo lịch chạy *"CENTRAL PMH - Dong bo thu muc"* trong Task Scheduler
-   (mỗi ngày 7:30, lặp mỗi giờ đến 17:30) và chạy thử 1 lần ngay.
+   (lặp **mỗi giờ** vào phút :30 — ngoài khung 7:30–17:30 script tự bỏ qua — và thêm 1 lần **3 phút sau khi đăng nhập Windows**),
+   in "Lần chạy kế tiếp", chạy thử 1 lần ngay rồi **giữ cửa sổ** để bạn đọc kết quả (nhấn Enter để đóng).
+   Cập nhật script / lịch chạy: tải lại 2 file `.ps1` rồi chạy lại `cai-dat.ps1` (ghi đè lịch cũ, giữ nguyên file cấu hình).
 6. Trên web, thẻ "Đồng bộ thư mục tự động" hiện **Hoạt động** cùng thời gian và kết quả lần chạy gần nhất.
 
 ## Cài trên nhiều máy (dự phòng)
@@ -35,7 +37,10 @@ Máy thôi dùng: gỡ lịch chạy trên máy đó rồi bấm **Xóa** ở d�
 - Nhật ký trên máy: `auto-sync.log` cùng thư mục. Trên web: thẻ "Đồng bộ thư mục tự động" (Quản trị) và chú thích của nút "Đồng bộ thư mục".
 - "Không truy cập được thư mục…": máy chưa kết nối VPN / mạng công ty lúc chạy.
 - "Khóa đồng bộ tự động không đúng": tạo khóa mới trên web rồi dán lại vào `auto-sync.config.json` (trên **mọi** máy).
-- "Không gửi dữ liệu": trong giờ làm việc quá 2 giờ máy không gửi — máy tắt / ngủ, hoặc lịch chạy bị gỡ.
+- "Không gửi dữ liệu": T2–T6 máy bỏ lỡ lần chạy theo lịch gần nhất (7:30, 8:30, …) — máy tắt / ngủ, **chưa đăng nhập Windows**
+  (lịch chỉ chạy khi tài khoản đã cài đang đăng nhập; khóa màn hình vẫn chạy), hoặc lịch chạy bị gỡ.
+  Kiểm tra: mở **Task Scheduler** → task *"CENTRAL PMH - Dong bo thu muc"* → xem *Last Run Time*, *Last Run Result* (0x0 = tốt), *Next Run Time*;
+  và file `auto-sync.log` (mỗi lần chạy ghi "Bat dau dong bo…"; không có dòng nào lúc 7:30, 8:30… nghĩa là lịch không chạy).
 - Chạy tay bất kỳ lúc nào: `powershell -ExecutionPolicy Bypass -File auto-sync.ps1 -Force`.
 - Gỡ lịch chạy: `powershell -ExecutionPolicy Bypass -File cai-dat.ps1 -GoBo`.
 
