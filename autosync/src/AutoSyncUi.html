@@ -15,7 +15,9 @@
   EXT.names['auto-sync'] = 'Đồng bộ tự động';
   EXT.data.push(function (d) { S.autoSync = d.autoSync || null; });
 
-  var LATE_MS = 2 * 3600000;   // trong giờ làm việc mà quá 2 giờ không gửi dữ liệu → "không gửi dữ liệu"
+  // Lịch chạy: 7:30, 8:30, …, 17:30 (giờ VN). Máy "Không gửi dữ liệu" = T2–T6 đã quá 20 phút sau một lần chạy theo lịch
+  // mà máy chưa gửi gì kể từ lần đó (gửi sớm tối đa 10 phút vẫn tính).
+  var FIRST_SLOT = 7 * 60 + 30, LAST_SLOT = 17 * 60 + 30, SLOT_GRACE = 20, SLOT_EARLY = 10;
 
   // Các máy chạy script (nhiều máy = dự phòng). Bản cũ chỉ có `last` → coi như 1 máy.
   function machinesOf(a) {
@@ -24,17 +26,19 @@
     return a.last ? [Object.assign({ name: a.last.machine || '(không rõ tên máy)', lastOkAt: a.last.ok ? a.last.at : '',
                                      lastOkTs: a.last.ok ? a.last.ts : 0 }, a.last)] : [];
   }
-  // Đang trong giờ làm việc (T2–T6, 8:45–18:00 giờ VN): máy phải gửi dữ liệu ít nhất mỗi 2 giờ.
-  function inWorkHours(now) {
+  // Thời điểm (ms) của lần chạy theo lịch gần nhất đã qua ít nhất SLOT_GRACE phút; null nếu hôm nay chưa tới / cuối tuần.
+  function expectedSlot(now) {
     var vn = new Date(now + 7 * 3600000);
     var day = vn.getUTCDay(), m = vn.getUTCHours() * 60 + vn.getUTCMinutes();
-    return day >= 1 && day <= 5 && m >= 8 * 60 + 45 && m <= 18 * 60;
+    if (day < 1 || day > 5 || m < FIRST_SLOT + SLOT_GRACE) return null;
+    var slot = Math.min(LAST_SLOT, FIRST_SLOT + 60 * Math.floor((m - FIRST_SLOT - SLOT_GRACE) / 60));
+    return Date.UTC(vn.getUTCFullYear(), vn.getUTCMonth(), vn.getUTCDate()) - 7 * 3600000 + slot * 60000;
   }
-  // Trạng thái 1 máy: ok | err (lần gần nhất lỗi) | late (trong giờ làm việc mà lâu không gửi dữ liệu).
+  // Trạng thái 1 máy: ok | err (lần gần nhất lỗi) | late (bỏ lỡ lần chạy theo lịch gần nhất).
   function machineState(m, now) {
-    if (!m.ok) return 'err';
-    if (m.ts && inWorkHours(now) && now - m.ts > LATE_MS) return 'late';
-    return 'ok';
+    var slot = expectedSlot(now);
+    if (slot && (m.ts || 0) < slot - SLOT_EARLY * 60000) return 'late';
+    return m.ok ? 'ok' : 'err';
   }
   // Tổng hợp: chỉ báo lỗi khi MỌI máy đều có vấn đề; còn ít nhất 1 máy tốt → vẫn "Hoạt động".
   function health(a) {
@@ -86,7 +90,7 @@
       table +
       '<p class="muted" style="margin:12px 0 0">Máy chủ Google không vào được ổ chia sẻ nội bộ, nên đồng bộ tự động chạy bằng script trên máy tính luôn mở trong giờ làm việc ' +
         '(có VPN / mạng công ty). Có thể cài trên <b>nhiều máy</b> để dự phòng — dùng chung một khóa; chỉ báo lỗi khi mọi máy đều có vấn đề, ' +
-        '"Không gửi dữ liệu" = trong giờ làm việc quá 2 giờ máy không gửi. Cài đặt: xem <b>autosync/tools/README.md</b> trên GitHub, bấm <b>Tạo khóa</b> ' +
+        '"Không gửi dữ liệu" = T2–T6 máy bỏ lỡ lần chạy theo lịch gần nhất (máy tắt / chưa đăng nhập Windows / lịch chạy bị gỡ). Cài đặt: xem <b>autosync/tools/README.md</b> trên GitHub, bấm <b>Tạo khóa</b> ' +
         'và dán khóa vào file cấu hình của script. Đồng bộ thủ công (nút "Đồng bộ thư mục") vẫn dùng bình thường; tự động chỉ áp dụng lựa chọn mặc định ' +
         '(đổi tình trạng, tạo hồ sơ có ký hiệu), không đổi chuyên viên phụ trách.</p>';
     var tools = '<button class="secondary-btn" data-act="auto-sync-key">' + ic('key') + '<span>' + (a.configured ? 'Tạo khóa mới' : 'Tạo khóa') + '</span></button>';

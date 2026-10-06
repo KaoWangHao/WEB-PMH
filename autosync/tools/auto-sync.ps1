@@ -36,7 +36,13 @@ if (-not $Force) {
   if ($now -lt [TimeSpan]'07:25' -or $now -gt [TimeSpan]'17:40') { Write-Log 'Ngoai khung gio 7:30 - 17:30, bo qua.'; exit 0 }
 }
 
-$cfg = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+Write-Log ('Bat dau dong bo (may ' + $env:COMPUTERNAME + ').')
+try {
+  $cfg = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+} catch {
+  Write-Log ('Khong doc duoc file cau hinh ' + $ConfigPath + ': ' + $_.Exception.Message)
+  exit 1
+}
 if (-not $cfg.webAppUrl -or -not $cfg.key -or -not $cfg.root) { Write-Log 'Thieu webAppUrl / key / root trong file cau hinh.'; exit 1 }
 
 try {
