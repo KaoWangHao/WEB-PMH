@@ -15,9 +15,10 @@
   EXT.names['auto-sync'] = 'Đồng bộ tự động';
   EXT.data.push(function (d) { S.autoSync = d.autoSync || null; });
 
-  // Lịch chạy: 7:30, 8:30, …, 17:30 (giờ VN). Máy "Không gửi dữ liệu" = T2–T6 đã quá 20 phút sau một lần chạy theo lịch
-  // mà máy chưa gửi gì kể từ lần đó (gửi sớm tối đa 10 phút vẫn tính).
-  var FIRST_SLOT = 7 * 60 + 30, LAST_SLOT = 17 * 60 + 30, SLOT_GRACE = 20, SLOT_EARLY = 10;
+  // Lịch chạy (theo người dùng: "30 phút 1 lần trong khoảng 7h30-17h30"): 7:30, 8:00, …, 17:30 (giờ VN). Máy "Không gửi dữ liệu"
+  // = T2–T6 đã quá 15 phút sau một lần chạy theo lịch mà máy chưa gửi gì kể từ lần đó (gửi sớm tối đa 5 phút vẫn tính).
+  var FIRST_SLOT = 7 * 60 + 30, LAST_SLOT = 17 * 60 + 30, SLOT_STEP = 30, SLOT_GRACE = 15, SLOT_EARLY = 5;
+  var SCHEDULE_TEXT = 'Mỗi 30 phút 7:30 – 17:30';
 
   // Các máy chạy script (nhiều máy = dự phòng). Bản cũ chỉ có `last` → coi như 1 máy.
   function machinesOf(a) {
@@ -31,7 +32,7 @@
     var vn = new Date(now + 7 * 3600000);
     var day = vn.getUTCDay(), m = vn.getUTCHours() * 60 + vn.getUTCMinutes();
     if (day < 1 || day > 5 || m < FIRST_SLOT + SLOT_GRACE) return null;
-    var slot = Math.min(LAST_SLOT, FIRST_SLOT + 60 * Math.floor((m - FIRST_SLOT - SLOT_GRACE) / 60));
+    var slot = Math.min(LAST_SLOT, FIRST_SLOT + SLOT_STEP * Math.floor((m - FIRST_SLOT - SLOT_GRACE) / SLOT_STEP));
     return Date.UTC(vn.getUTCFullYear(), vn.getUTCMonth(), vn.getUTCDate()) - 7 * 3600000 + slot * 60000;
   }
   // Trạng thái 1 máy: ok | err (lần gần nhất lỗi) | late (bỏ lỡ lần chạy theo lịch gần nhất).
@@ -60,7 +61,7 @@
     var l = a.last;
     var tail = best ? ' (thành công gần nhất ' + best.lastOkAt + (ms.length > 1 ? ', máy ' + best.name : '') + ')'
       : l && !l.ok ? ' (lần chạy gần nhất ' + l.at + ': lỗi — ' + l.error + ')' : '';
-    return ' Đồng bộ tự động: mỗi giờ 7:30–17:30' + tail + '.';
+    return ' Đồng bộ tự động: ' + SCHEDULE_TEXT.toLowerCase() + tail + '.';
   });
 
   // Thẻ ở trang Quản trị: trạng thái chung + bảng từng máy + tạo khóa cho máy chạy script autosync/tools.
@@ -85,7 +86,7 @@
       '<th>Lần gửi gần nhất</th><th>Kết quả</th><th>Thành công gần nhất</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>' : '';
     var body = '<div class="meta-grid">' +
       '<div><small>Trạng thái chung</small>' + state + '</div>' +
-      '<div><small>Lịch chạy</small>Mỗi giờ 7:30 – 17:30 (Task Scheduler trên máy trong mạng công ty)</div>' +
+      '<div><small>Lịch chạy</small>' + SCHEDULE_TEXT + ' (Task Scheduler trên máy trong mạng công ty)</div>' +
       '<div><small>Lần chạy gần nhất (mọi máy)</small>' + (a.last ? esc(a.last.at) + (a.last.machine ? ' · máy ' + esc(a.last.machine) : '') : '—') + '</div></div>' +
       table +
       '<p class="muted" style="margin:12px 0 0">Máy chủ Google không vào được ổ chia sẻ nội bộ, nên đồng bộ tự động chạy bằng script trên máy tính luôn mở trong giờ làm việc ' +

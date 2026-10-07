@@ -1,6 +1,6 @@
 # Đồng bộ thư mục tự động
 
-Mỗi giờ từ **7:30 đến 17:30**, một máy tính trong mạng công ty tự đọc danh sách file trong thư mục `12_HoSo_TrinhKy`
+Cứ **30 phút một lần** từ **7:30 đến 17:30** (7:30, 8:00, 8:30, …, 17:30), một máy tính trong mạng công ty tự đọc danh sách file trong thư mục `12_HoSo_TrinhKy`
 (ổ `\\HCM-FS01`) và gửi lên web. Web tự đổi tình trạng hồ sơ theo thư mục, giống bấm **"Đồng bộ thư mục"** với lựa chọn mặc định.
 Nút đồng bộ thủ công trên web vẫn dùng bình thường.
 
@@ -22,7 +22,7 @@ Nút đồng bộ thủ công trên web vẫn dùng bình thường.
 4. Chép `auto-sync.config.example.json` thành **`auto-sync.config.json`**, mở bằng Notepad, dán khóa vào ô `"key"`.
    Kiểm tra `"root"` đúng đường dẫn thư mục `12_HoSo_TrinhKy` (dấu `\` viết thành `\\`).
 5. Chuột phải **`cai-dat.ps1` → Run with PowerShell**. Script tạo lịch chạy *"CENTRAL PMH - Dong bo thu muc"* trong Task Scheduler
-   (lặp **mỗi giờ** vào phút :30 — ngoài khung 7:30–17:30 script tự bỏ qua — và thêm 1 lần **3 phút sau khi đăng nhập Windows**),
+   (lặp **mỗi 30 phút** — ngoài khung 7:30–17:30 script tự bỏ qua — và thêm 1 lần **3 phút sau khi đăng nhập Windows**),
    in "Lần chạy kế tiếp", chạy thử 1 lần ngay rồi **giữ cửa sổ** để bạn đọc kết quả (nhấn Enter để đóng).
    Script và file cấu hình được **chép vào `%LOCALAPPDATA%\CENTRAL-PMH\auto-sync`** trên máy và lịch chạy từ đó (nhật ký `auto-sync.log` cũng ở đây),
    nên thư mục tải về để ở đâu cũng được (kể cả ổ mạng / OneDrive) và có thể xóa sau khi cài.
@@ -42,10 +42,10 @@ Máy thôi dùng: gỡ lịch chạy trên máy đó rồi bấm **Xóa** ở d�
   thư mục đã di chuyển) → tải bản mới của `cai-dat.ps1`, `auto-sync.ps1` và chạy lại `cai-dat.ps1`. Trên web: thẻ "Đồng bộ thư mục tự động" (Quản trị) và chú thích của nút "Đồng bộ thư mục".
 - "Không truy cập được thư mục…": máy chưa kết nối VPN / mạng công ty lúc chạy.
 - "Khóa đồng bộ tự động không đúng": tạo khóa mới trên web rồi dán lại vào `auto-sync.config.json` (trên **mọi** máy).
-- "Không gửi dữ liệu": T2–T6 máy bỏ lỡ lần chạy theo lịch gần nhất (7:30, 8:30, …) — máy tắt / ngủ, **chưa đăng nhập Windows**
+- "Không gửi dữ liệu": T2–T6 máy bỏ lỡ lần chạy theo lịch gần nhất (7:30, 8:00, 8:30, …) — máy tắt / ngủ, **chưa đăng nhập Windows**
   (lịch chỉ chạy khi tài khoản đã cài đang đăng nhập; khóa màn hình vẫn chạy), hoặc lịch chạy bị gỡ.
   Kiểm tra: mở **Task Scheduler** → task *"CENTRAL PMH - Dong bo thu muc"* → xem *Last Run Time*, *Last Run Result* (0x0 = tốt), *Next Run Time*;
-  và file `auto-sync.log` (mỗi lần chạy ghi "Bat dau dong bo…"; không có dòng nào lúc 7:30, 8:30… nghĩa là lịch không chạy).
+  và file `auto-sync.log` (mỗi lần chạy ghi "Bat dau dong bo…"; không có dòng nào lúc 7:30, 8:00, 8:30… nghĩa là lịch không chạy).
 - Chạy tay bất kỳ lúc nào: `powershell -ExecutionPolicy Bypass -File "%LOCALAPPDATA%\CENTRAL-PMH\auto-sync\auto-sync.ps1" -Force`.
 - Gỡ lịch chạy: `powershell -ExecutionPolicy Bypass -File cai-dat.ps1 -GoBo`.
 

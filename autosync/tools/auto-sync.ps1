@@ -1,7 +1,7 @@
 # Dong bo thu muc TU DONG cho web "CENTRAL PROCUREMENT DEPARTMENT".
 # Doc danh sach file trong thu muc 12_HoSo_TrinhKy (o \\HCM-FS01, can VPN / mang cong ty) roi gui len web app.
 # Web tu doi tinh trang ho so theo thu muc (giong dong bo thu cong, lua chon mac dinh). Xem README.md cung thu muc.
-# Chay boi Task Scheduler moi gio 7:30 - 17:30 (cai bang cai-dat.ps1). Chay tay: powershell -ExecutionPolicy Bypass -File auto-sync.ps1 -Force
+# Chay boi Task Scheduler moi 30 phut 7:30 - 17:30 (cai bang cai-dat.ps1). Chay tay: powershell -ExecutionPolicy Bypass -File auto-sync.ps1 -Force
 
 param(
   [string]$ConfigPath = (Join-Path $PSScriptRoot 'auto-sync.config.json'),

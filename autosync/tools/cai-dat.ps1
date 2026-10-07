@@ -1,4 +1,4 @@
-# Cai lich chay dong bo tu dong: moi 1 gio (7:30, 8:30, ...; auto-sync.ps1 chi gui trong khung 7:30 - 17:30) + khi dang nhap Windows
+# Cai lich chay dong bo tu dong: moi 30 phut (7:30, 8:00, 8:30, ...; auto-sync.ps1 chi gui trong khung 7:30 - 17:30) + khi dang nhap Windows
 # (Task Scheduler, tai khoan Windows dang dang nhap). Chay lai file nay de cap nhat lich chay (ghi de lich cu).
 # Chay 1 lan: chuot phai -> Run with PowerShell, hoac: powershell -ExecutionPolicy Bypass -File cai-dat.ps1
 # Go bo: powershell -ExecutionPolicy Bypass -File cai-dat.ps1 -GoBo
@@ -41,24 +41,24 @@ $script = Join-Path $dest 'auto-sync.ps1'
 Write-Output ('Da chep script + cau hinh vao ' + $dest)
 
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $script + '"') -WorkingDirectory $dest
-# Lich chay ben vung: lap moi 1 gio (7:30, 8:30, ... ca ngay, khong gioi han) - auto-sync.ps1 tu bo qua ngoai 7:30 - 17:30.
+# Lich chay ben vung: lap moi 30 phut (7:30, 8:00, ... ca ngay, khong gioi han) - auto-sync.ps1 tu bo qua ngoai 7:30 - 17:30.
 # Them 1 lan chay khi dang nhap Windows (tre 3 phut cho VPN ket noi) de bu lan bi lo khi may tat / chua dang nhap.
-$hourly = New-ScheduledTaskTrigger -Once -At '07:30' -RepetitionInterval (New-TimeSpan -Hours 1)
+$hourly = New-ScheduledTaskTrigger -Once -At '07:30' -RepetitionInterval (New-TimeSpan -Minutes 30)
 $logon = New-ScheduledTaskTrigger -AtLogOn -User ($env:USERDOMAIN + '\' + $env:USERNAME)
 $logon.Delay = 'PT3M'
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 30) -MultipleInstances IgnoreNew
 
 function Register-Task($triggers) {
   Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $triggers -Settings $settings -Force `
-    -Description 'Dong bo thu muc 12_HoSo_TrinhKy len web CENTRAL PROCUREMENT DEPARTMENT moi gio 7:30 - 17:30.' -ErrorAction Stop | Out-Null
+    -Description 'Dong bo thu muc 12_HoSo_TrinhKy len web CENTRAL PROCUREMENT DEPARTMENT moi 30 phut 7:30 - 17:30.' -ErrorAction Stop | Out-Null
 }
 try {
   Register-Task @($hourly, $logon)
 } catch {
-  # Mot so may khong cho tai khoan thuong tao lich "khi dang nhap" -> chi dung lich moi gio.
+  # Mot so may khong cho tai khoan thuong tao lich "khi dang nhap" -> chi dung lich moi 30 phut.
   try {
     Register-Task @($hourly)
-    Write-Output 'Luu y: khong tao duoc lich "khi dang nhap Windows", chi dung lich moi gio.'
+    Write-Output 'Luu y: khong tao duoc lich "khi dang nhap Windows", chi dung lich moi 30 phut.'
   } catch {
     Write-Output ('KHONG CAI DUOC lich chay: ' + $_.Exception.Message)
     Write-Output 'Thu chuot phai PowerShell -> Run as administrator roi chay lai cai-dat.ps1, hoac nho IT cho phep tao Scheduled Task.'
@@ -68,7 +68,7 @@ try {
 }
 
 $info = Get-ScheduledTaskInfo -TaskName $TaskName
-Write-Output "Da cai lich chay '$TaskName': moi gio 7:30 - 17:30 (va khi dang nhap Windows)."
+Write-Output "Da cai lich chay '$TaskName': moi 30 phut 7:30 - 17:30 (va khi dang nhap Windows)."
 Write-Output ('Lan chay ke tiep: ' + $info.NextRunTime)
 Write-Output ('Nhat ky: ' + (Join-Path $dest 'auto-sync.log'))
 Write-Output 'Chay thu ngay bay gio...'
