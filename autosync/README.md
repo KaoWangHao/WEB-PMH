@@ -1,6 +1,7 @@
 # Đồng bộ thư mục tự động — chức năng mở rộng
 
 Theo người dùng: *"đồng bộ tự động 1 tiếng 1 lần trong khung giờ từ 7h30 sáng đến 17h30 chiều, ngoài ra vẫn giữ tính năng đồng bộ thủ công"*
+— sau đổi thành *"30 phút 1 lần trong khoảng thời gian 7h30-17h30 hằng ngày"* (07/10/2026)
 và *"gom phần tính năng lại 1 chỗ, để khi merge lên web chính mà muốn gỡ bỏ tính năng thì cũng đơn giản hơn"*.
 
 Toàn bộ chức năng nằm trong thư mục này. Phần lõi (`src/`) chỉ có **điểm gắn chung**, không chứa code đồng bộ tự động.
@@ -10,10 +11,10 @@ Toàn bộ chức năng nằm trong thư mục này. Phần lõi (`src/`) chỉ 
 |---|---|
 | `src/AutoSync.gs` | Server: `autoSyncPost_` (nhận POST), `buildAutoSyncPlan_` (lập kế hoạch như đồng bộ thủ công, lựa chọn mặc định), `rotateAutoSyncKey_` (admin tạo khóa), `autoSyncStatus_`, `AUTO_SYNC_ACTIONS_`, `autoSyncBootstrap_` |
 | `src/AutoSyncUi.html` | Giao diện: tên "Đồng bộ tự động" cho tài khoản hệ thống `auto-sync`, câu chú thích nút "Đồng bộ thư mục", thẻ "Đồng bộ thư mục tự động" ở trang Quản trị, nút Tạo khóa |
-| `tools/` | Script cho máy Windows trong mạng công ty: `auto-sync.ps1`, `cai-dat.ps1` (Task Scheduler mỗi giờ 7:30–17:30), cấu hình mẫu, **`tools/README.md` = hướng dẫn cài đặt** |
+| `tools/` | Script cho máy Windows trong mạng công ty: `auto-sync.ps1`, `cai-dat.ps1` (Task Scheduler mỗi 30 phút 7:30–17:30), cấu hình mẫu, **`tools/README.md` = hướng dẫn cài đặt** |
 
 ## Cách hoạt động
-Máy chủ Google không vào được ổ `\\HCM-FS01` → máy Windows trong mạng công ty chạy `tools/auto-sync.ps1` mỗi giờ 7:30–17:30, đọc danh sách file
+Máy chủ Google không vào được ổ `\\HCM-FS01` → máy Windows trong mạng công ty chạy `tools/auto-sync.ps1` mỗi 30 phút 7:30–17:30, đọc danh sách file
 trong `12_HoSo_TrinhKy` (đường dẫn + ngày sửa đổi) và POST lên web app kèm khóa. Server kiểm tra khóa (Script Properties chỉ lưu mã băm
 `AUTO_SYNC_KEY_HASH`), lập kế hoạch y như bảng xem trước của đồng bộ thủ công với lựa chọn mặc định — đổi tình trạng theo thư mục, tạo mới file có
 ký hiệu chuyên viên, **không** đổi chuyên viên phụ trách, bỏ qua file ở nhiều thư mục / hồ sơ trùng tên, hồ sơ Đã duyệt giữ nguyên, ngày = ngày sửa đổi
@@ -27,7 +28,7 @@ chuyên viên / Trưởng phòng nhận thông báo ở chuông như đồng b�
 **dùng chung một khóa**. Server xử lý tuần tự (`withLock_` trong `applyFolderSync_`, kiểm tra lại tình trạng `from` / trùng tên) nên máy chạy sau
 không ghi trùng. Script Properties `AUTO_SYNC_MACHINES` = `{ tênMáy: lần chạy gần nhất + lastOkAt/lastOkTs }` (`recordAutoSyncRun_`; máy quá 30 ngày
 không gửi tự bị xóa, tối đa 20 máy; admin xóa tay bằng action `autoSyncForget`). Thẻ Quản trị: bảng từng máy (Tốt / Lỗi / **Không gửi dữ liệu** =
-T2–T6 đã quá 20 phút sau lần chạy theo lịch gần nhất 7:30…17:30 mà máy chưa gửi kể từ đó — `expectedSlot` trong `AutoSyncUi.html`) và trạng thái chung — chỉ báo đỏ khi **mọi** máy có vấn đề, còn ≥1 máy tốt thì "Hoạt động · n/m máy
+T2–T6 đã quá 15 phút sau lần chạy theo lịch gần nhất 7:30, 8:00, …, 17:30 mà máy chưa gửi kể từ đó — `expectedSlot` trong `AutoSyncUi.html`) và trạng thái chung — chỉ báo đỏ khi **mọi** máy có vấn đề, còn ≥1 máy tốt thì "Hoạt động · n/m máy
 có vấn đề". Chú thích nút đồng bộ hiện lần **thành công** gần nhất (máy nào cũng được).
 
 ## Điểm gắn trong phần lõi (dùng chung, không phụ thuộc thư mục này)
@@ -39,8 +40,8 @@ có vấn đề". Chú thích nút đồng bộ hiện lần **thành công** g�
 - `dev/serve.js`: nạp `autosync/src` khi chạy thử (`AUTOSYNC=0 node dev/serve.js` để tắt); `dev/mock.js` có `ContentService`.
 
 **Lịch chạy trên Windows** (`tools/cai-dat.ps1`; sửa 06/10/2026 vì bản đầu — trigger Daily 7:30 + lặp 10 giờ — không chạy lần nào sau
-khi cài): trigger *Once 7:30, lặp mỗi giờ không giới hạn* (script tự bỏ qua ngoài 07:25–17:40) + trigger *khi đăng nhập* (trễ 3 phút; máy không cho
-tạo thì chỉ dùng trigger mỗi giờ); `StartWhenAvailable` chạy bù khi máy bật lại. `auto-sync.ps1` ghi log "Bat dau dong bo" mỗi lần chạy.
+khi cài): trigger *Once 7:30, lặp mỗi 30 phút không giới hạn* (trước 07/10/2026: mỗi giờ) (script tự bỏ qua ngoài 07:25–17:40) + trigger *khi đăng nhập* (trễ 3 phút; máy không cho
+tạo thì chỉ dùng trigger lặp); `StartWhenAvailable` chạy bù khi máy bật lại. `auto-sync.ps1` ghi log "Bat dau dong bo" mỗi lần chạy.
 Máy đầu tiên (HCM-TC17) báo **0x8007010B "The directory name is invalid"** lúc 7:30: task chạy script ngay tại thư mục tải về (thư mục "Start in"
 không hợp lệ với Task Scheduler — ổ mạng UNC / ổ map / di chuyển) → `cai-dat.ps1` nay **chép `auto-sync.ps1` + cấu hình vào
 `%LOCALAPPDATA%\CENTRAL-PMH\auto-sync`** và lịch chạy từ đó (log cũng ở đó).

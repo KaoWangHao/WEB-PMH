@@ -4,7 +4,7 @@
  * CHỨC NĂNG MỞ RỘNG ở thư mục autosync/ (workflow deploy chép autosync/src/* vào src/): xóa thư mục autosync/ là gỡ hẳn tính năng,
  * phần lõi chỉ có điểm gắn (doPost, AUTO_SYNC_ACTIONS_, autoSyncBootstrap_, includeIf('AutoSync'), EXT.* trong App.html).
  * Máy chủ Google không vào được ổ \\HCM-FS01 (mạng nội bộ / VPN), nên một máy tính trong mạng công ty chạy script
- * autosync/tools/auto-sync.ps1 (Task Scheduler, mỗi giờ 7:30–17:30): đọc danh sách file trong thư mục 12_HoSo_TrinhKy
+ * autosync/tools/auto-sync.ps1 (Task Scheduler, mỗi 30 phút 7:30–17:30; theo người dùng đổi từ mỗi giờ sang "30 phút 1 lần"): đọc danh sách file trong thư mục 12_HoSo_TrinhKy
  * rồi POST lên web app (doPost) kèm khóa bí mật. Server lập kế hoạch y như bảng xem trước của đồng bộ thủ công với lựa chọn mặc định:
  * đổi tình trạng theo thư mục, tạo mới file có ký hiệu chuyên viên, KHÔNG đổi chuyên viên phụ trách, bỏ qua file ở nhiều thư mục /
  * hồ sơ trùng tên trên web; hồ sơ Đã duyệt giữ nguyên; ngày ghi nhận = ngày sửa đổi của file. Ghi bằng applyFolderSync_ (tài khoản hệ thống
