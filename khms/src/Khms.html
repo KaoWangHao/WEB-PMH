@@ -442,7 +442,7 @@
       return '<button class="kh-tile" data-act="' + act + '"' + (extra || '') + '>' + ic(icon) + '<span><b>' + esc(title) + '</b><small>' + esc(sub) + '</small></span></button>';
     };
     var exp = tile('kh-export', 'download', 'Xuất Excel', 'Danh sách gói đang xem') +
-      (S.khExportAll ? tile('kh-export-all', 'download', 'Xuất nhiều dự án', 'Chọn dự án · mỗi dự án 1 sheet hoặc gộp 1 sheet') : '');
+      (S.khExportAll ? tile('kh-export-all', 'download', 'Xuất nhiều dự án', 'Chọn dự án · tổng hợp, gộp 1 sheet + mỗi dự án 1 sheet') : '');
     var mng = tile('kh-asg-open', 'user', 'Phân công chuyên viên', 'Gán người phụ trách dự án') +
       tile('kh-pi-page', 'edit', 'Thông tin dự án', 'Mã số, tên, CV, GĐDA, BOM');
     return '<div class="kh-actions"><div class="kh-act-g"><span class="kh-act-h">Xuất báo cáo</span><div class="kh-act-row">' + exp + '</div></div>' +
@@ -1679,9 +1679,10 @@
   /* ---------- Xuất KHMS nhiều dự án ----------
    * Theo người dùng (tài khoản haocq, thuync, thoaiht — KHMS_EXPORT_ALL_USERS_ ở Procurement.gs): "thêm option chọn những dự án để xuất
    * báo cáo, và thêm chế độ tải báo cáo về các dự án nằm trong cùng 1 sheet, có cột tên dự án ở đầu".
-   * Cửa sổ chọn dự án (mặc định tất cả, nhớ lựa chọn ở localStorage hs_kh_exp) + kiểu file:
-   *   'sheets' = sheet "Tổng hợp" + mỗi dự án 1 sheet (như trước); 'one' = gộp mọi gói thầu vào 1 sheet, cột "Dự án" đầu tiên.
-   * Gói còn trong KHMS (active), không theo bộ lọc đang xem.
+   * Sau đó (theo người dùng: "chỗ xuất các dự án chung 1 sheet thì để sheet đó vô chung với file mà gồm nhiều sheet, mỗi dự án 1 sheet luôn"):
+   * không còn chọn kiểu file — 1 file gồm sheet "Tổng hợp" + sheet "Tất cả gói thầu" (gộp, cột "Dự án" đầu tiên; khi chọn ≥ 2 dự án)
+   * + mỗi dự án 1 sheet. Cửa sổ chọn dự án (mặc định tất cả, nhớ lựa chọn ở localStorage hs_kh_exp). Gói còn trong KHMS (active),
+   * không theo bộ lọc đang xem.
    */
   function khExpProjects() {
     var by = {};
@@ -1696,20 +1697,15 @@
     var sel = {};
     var prev = saved.codes instanceof Array ? saved.codes.filter(function (c) { return P.by[c]; }) : [];
     (prev.length ? prev : P.codes).forEach(function (c) { sel[c] = true; });
-    S.khExp = { mode: saved.mode === 'one' ? 'one' : 'sheets', sel: sel };
+    S.khExp = { sel: sel };
     var opts = P.codes.map(function (c) {
       var on = !!sel[c];
       return '<label class="khd-opt' + (on ? ' on' : '') + '" data-name="' + esc(norm(projectLabel(c))) + '"><input type="checkbox" data-change="kh-exp-sel" data-code="' + esc(c) + '"' +
         (on ? ' checked' : '') + '><span>' + esc(projectLabel(c)) + '</span><small>' + P.by[c].length + ' gói</small></label>';
     }).join('');
-    var mode = function (v, title, sub) {
-      return '<label class="kh-exp-mode' + (S.khExp.mode === v ? ' on' : '') + '"><input type="radio" name="kh-exp-mode" value="' + v + '" data-change="kh-exp-mode"' +
-        (S.khExp.mode === v ? ' checked' : '') + '><span><b>' + title + '</b><small>' + sub + '</small></span></label>';
-    };
     openModal(modalHead('Xuất KHMS nhiều dự án') + '<div class="modal-body"><div id="m-err"></div>' +
-      '<p class="sub-title" style="margin-top:0">Kiểu file</p><div class="kh-exp-modes">' +
-        mode('sheets', 'Mỗi dự án 1 sheet', 'Sheet "Tổng hợp" (số gói, chọn thầu, ký HĐ… từng dự án) + mỗi dự án 1 sheet') +
-        mode('one', 'Gộp tất cả vào 1 sheet', 'Mọi gói thầu của các dự án đã chọn trong 1 bảng, cột "Dự án" ở đầu — lọc / sắp xếp ngay trong Excel') + '</div>' +
+      '<p class="muted kh-note" style="margin-top:0">File Excel gồm: sheet <b>Tổng hợp</b> (số gói, chọn thầu, ký HĐ… từng dự án), sheet <b>Tất cả gói thầu</b> ' +
+        '(gộp mọi gói của các dự án đã chọn, cột "Dự án" ở đầu — lọc / sắp xếp ngay trong Excel) và <b>mỗi dự án 1 sheet</b>.</p>' +
       '<p class="sub-title">Dự án</p><div class="khd-picker" style="margin-top:0"><div class="khd-picker-bar">' +
         '<input type="search" id="m-exp-q" data-input="kh-exp-q" placeholder="Tìm dự án…">' +
         '<button class="secondary-btn" data-act="kh-exp-all">Chọn tất cả</button><button class="secondary-btn" data-act="kh-exp-none">Bỏ chọn</button></div>' +
@@ -1726,15 +1722,12 @@
     var n = codes.reduce(function (t, c) { return t + P.by[c].length; }, 0);
     var sum = document.getElementById('m-exp-sum'), btn = document.getElementById('m-exp-btn');
     if (sum) sum.innerHTML = !codes.length ? 'Chưa chọn dự án nào.' : 'Đã chọn <b>' + codes.length + '</b> / ' + P.codes.length + ' dự án · <b>' + fmtNum(n) + '</b> gói thầu' +
-      (st.mode === 'one' ? ' · 1 sheet' : ' · ' + (codes.length + 1) + ' sheet (Tổng hợp + ' + codes.length + ' dự án)') + '.';
+      ' · ' + (codes.length + (codes.length > 1 ? 2 : 1)) + ' sheet (Tổng hợp' + (codes.length > 1 ? ', Tất cả gói thầu' : '') + ' + ' + codes.length + ' dự án).';
     if (btn) btn.disabled = !codes.length;
     Array.prototype.forEach.call(document.querySelectorAll('#m-exp-opts .khd-opt'), function (l) {
       var cb = l.querySelector('input');
       cb.checked = !!st.sel[cb.dataset.code];
       l.classList.toggle('on', cb.checked);
-    });
-    Array.prototype.forEach.call(document.querySelectorAll('.kh-exp-mode'), function (l) {
-      l.classList.toggle('on', l.querySelector('input').value === st.mode);
     });
   }
   function khExpVisible() {
@@ -1745,7 +1738,7 @@
     var P = khExpProjects(), st = S.khExp, by = P.by;
     var codes = P.codes.filter(function (c) { return st.sel[c]; });
     if (!codes.length) { modalError('Chọn ít nhất 1 dự án.'); return; }
-    A.store.set('hs_kh_exp', JSON.stringify({ mode: st.mode, codes: codes.length === P.codes.length ? [] : codes }));
+    A.store.set('hs_kh_exp', JSON.stringify({ codes: codes.length === P.codes.length ? [] : codes }));
     var all = codes.length === P.codes.length;
     var total = codes.reduce(function (n, c) { return n + by[c].length; }, 0);
     var scopeText = all ? 'TẤT CẢ DỰ ÁN' : codes.length === 1 ? 'DỰ ÁN ' + projectLabel(codes[0]).toUpperCase() : codes.length + ' DỰ ÁN';
@@ -1754,13 +1747,14 @@
     busy(btn, true); setLoading(1);
     loadExcelJs().then(function (ExcelJS) {
       var wb = new ExcelJS.Workbook(), used = {};
-      if (st.mode === 'one') {
-        var rows = [];
-        codes.forEach(function (c) { rows = rows.concat(sorted(c)); });
-        khExportSheet(wb, 'KHMS', 'KẾ HOẠCH MUA SẮM – ' + scopeText, rows, 'first');
-        return khDownload(wb, 'KHMS-gop-' + fileTag + '-' + S.today + '.xlsx', 'Đã xuất KHMS ' + codes.length + ' dự án (' + fmtNum(total) + ' gói thầu, 1 sheet).');
-      }
       var sum = wb.addWorksheet(khSheetName('Tổng hợp', used), { views: [{ state: 'frozen', ySplit: 3 }] });
+      // Sheet gộp: mọi gói của các dự án đã chọn, cột "Dự án" đầu tiên (chỉ khi ≥ 2 dự án; 1 dự án thì trùng sheet dự án).
+      var allName = codes.length > 1 ? khSheetName('Tất cả gói thầu', used) : '';
+      if (allName) {
+        var allRows = [];
+        codes.forEach(function (c) { allRows = allRows.concat(sorted(c)); });
+        khExportSheet(wb, allName, 'KẾ HOẠCH MUA SẮM – ' + scopeText + ' (GỘP)', allRows, 'first');
+      }
       sum.addRow(['KẾ HOẠCH MUA SẮM – ' + scopeText]);
       sum.addRow(['Xuất ngày ' + fmtDate(S.today) + ' bởi ' + S.me.displayName + ' · ' + codes.length + ' dự án · ' + total + ' gói thầu']);
       var head = ['Dự án', 'Chuyên viên phụ trách', 'Giám đốc dự án', 'BOM phụ trách', 'Sheet', 'KHMS cập nhật', 'Rev', 'Gói thầu', 'Giá trị gói thầu', 'Đã chọn thầu', 'Trễ chọn thầu', 'Sắp đến hạn chọn thầu',
@@ -1786,7 +1780,12 @@
       sum.getRow(1).font = { bold: true, size: 14, color: { argb: 'FF1E2B59' } };
       [40, 26, 24, 24, 30, 14, 9, 10, 20, 13, 13, 13, 11, 16, 13].forEach(function (w, i) { sum.getColumn(i + 1).width = w; });
       sum.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3 + codes.length, column: head.length } };
-      return khDownload(wb, 'KHMS-' + fileTag + '-' + S.today + '.xlsx', 'Đã xuất KHMS ' + codes.length + ' dự án (mỗi dự án 1 sheet).');
+      if (allName) {
+        var link = sum.addRow([]); link = sum.addRow(['Xem gộp mọi gói thầu (' + fmtNum(total) + ' gói, cột Dự án ở đầu): sheet "' + allName + '"']);
+        link.getCell(1).value = { text: link.getCell(1).value, hyperlink: "#'" + allName.replace(/'/g, "''") + "'!A1" };
+        link.getCell(1).font = { color: { argb: 'FF2563EB' }, underline: true };
+      }
+      return khDownload(wb, 'KHMS-' + fileTag + '-' + S.today + '.xlsx', 'Đã xuất KHMS ' + codes.length + ' dự án (' + fmtNum(total) + ' gói thầu).');
     }).then(function () { closeModal(); }).catch(function (err) {
       busy(btn, false);
       modalError((err && err.message) || 'Không tạo được file Excel.');
@@ -2673,7 +2672,6 @@
       S.khImport.units[+el.dataset.u].overwrite = el.checked; keepModalScroll(openKhmsImport);
     },
     'kh-exp-sel': function (el) { if (el.checked) S.khExp.sel[el.dataset.code] = true; else delete S.khExp.sel[el.dataset.code]; khExpSummary(); },
-    'kh-exp-mode': function (el) { S.khExp.mode = el.value === 'one' ? 'one' : 'sheets'; khExpSummary(); },
     'kh-bimp-project': function (el) {
       var u = S.khImport.units[+el.dataset.u];
       u.project = el.value; u.on = !!el.value; keepModalScroll(openKhmsImport);

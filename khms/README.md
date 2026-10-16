@@ -206,9 +206,10 @@ Phần lõi không chứa code KHMS, chỉ có các "điểm gắn" — không c
     — điểm = 0,7 × tỉ lệ từ của gói có trong tên hồ sơ + 0,3 × tỉ lệ ngược lại, gói đang gắn hồ sơ khác × 0,8. Dòng "chưa tìm thấy gói": điểm ≥ 0,34 (`KH_GUESS_MIN`)
     → điền sẵn gói (mỗi gói 1 dòng), tích sẵn, ghi "Gợi ý gần đúng theo tên hồ sơ (N%) — kiểm tra lại"; ô chọn có nhóm "Gợi ý theo tên hồ sơ" (3 gói điểm cao nhất, kèm %).
 
-25. **Xuất nhiều dự án: chọn dự án + gộp 1 sheet** (theo người dùng: "khi tải file báo cáo về, cho tôi thêm option chọn những dự án để xuất báo cáo, và thêm
-    chế độ tải báo cáo về các dự án nằm trong cùng 1 sheet, có cột tên dự án ở đầu"): ô "Xuất tất cả dự án" → **"Xuất nhiều dự án"** (vẫn chỉ
-    `KHMS_EXPORT_ALL_USERS_`), mở cửa sổ `openKhExport`: **kiểu file** — "Mỗi dự án 1 sheet" (Tổng hợp + mỗi dự án 1 sheet, như mục 10) hoặc
-    "Gộp tất cả vào 1 sheet" (`khExportSheet(..., 'first')`: cột **Dự án** đầu tiên, rồi STT, Hạng mục, Giá trị…, cố định 3 cột đầu, có bộ lọc) —
-    và **danh sách dự án có KHMS** (mặc định tất cả; tìm kiếm, Chọn tất cả / Bỏ chọn theo kết quả đang lọc). Lựa chọn + kiểu nhớ ở localStorage
-    `hs_kh_exp` (chọn hết → lưu rỗng = tất cả, dự án mới tự có). Tên file: `KHMS-<tat-ca-du-an | mã | N-du-an>-<ngày>.xlsx`, gộp thêm tiền tố `gop-`.
+25. **Xuất nhiều dự án: chọn dự án + sheet gộp** (theo người dùng: "khi tải file báo cáo về, cho tôi thêm option chọn những dự án để xuất báo cáo, và thêm
+    chế độ tải báo cáo về các dự án nằm trong cùng 1 sheet, có cột tên dự án ở đầu"; sau đó: "chỗ xuất các dự án chung 1 sheet thì để sheet đó vô chung với
+    file mà gồm nhiều sheet, mỗi dự án 1 sheet luôn"): ô "Xuất tất cả dự án" → **"Xuất nhiều dự án"** (vẫn chỉ `KHMS_EXPORT_ALL_USERS_`), mở cửa sổ
+    `openKhExport` chọn **dự án có KHMS** (mặc định tất cả; tìm kiếm, Chọn tất cả / Bỏ chọn theo kết quả đang lọc; nhớ ở localStorage `hs_kh_exp`,
+    chọn hết → lưu rỗng = tất cả, dự án mới tự có). **Không còn chọn kiểu file**: 1 file gồm sheet **"Tổng hợp"** (như mục 10, cuối có link tới sheet gộp)
+    + sheet **"Tất cả gói thầu"** (`khExportSheet(..., 'first')`: cột **Dự án** đầu tiên, rồi STT, Hạng mục, Giá trị…, cố định 3 cột đầu, có bộ lọc;
+    chỉ khi chọn ≥ 2 dự án) + **mỗi dự án 1 sheet**. Tên file `KHMS-<tat-ca-du-an | mã | N-du-an>-<ngày>.xlsx`.

@@ -100,20 +100,12 @@ table.grid.kh-table { font-size: 13.5px; }
 .khd-opt span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .khd-opt small { color: var(--muted); white-space: nowrap; }
 .khd-opt.on { border-color: var(--navy-600); background: #F1F5FF; }
-/* Xuất KHMS nhiều dự án: chọn kiểu file */
-.kh-exp-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
-.kh-exp-mode { display: flex; align-items: flex-start; gap: 10px; border: 1px solid var(--line-soft); border-radius: 12px; padding: 10px 12px; background: #fff; cursor: pointer; }
-.kh-exp-mode input { margin-top: 3px; }
-.kh-exp-mode b { display: block; font-size: 14.5px; }
-.kh-exp-mode small { display: block; color: var(--muted); font-size: 12.5px; line-height: 1.4; margin-top: 2px; }
-.kh-exp-mode.on { border-color: var(--navy-600); background: #F1F5FF; }
 .charts .khd-wide { grid-column: 1 / -1; }
 .khd-bar { display: inline-block; vertical-align: middle; width: 90px; height: 8px; border-radius: 6px; background: #E6EBF3; overflow: hidden; margin-right: 6px; }
 .khd-bar span { display: block; height: 100%; background: linear-gradient(90deg, #7CB342, #2E8B3E); border-radius: 6px; }
 .khd-sum tfoot td { font-weight: 700; background: #F4F7FC; border-top: 2px solid #D5DEEF; }
 .khd-list-bar { display: flex; justify-content: flex-start; margin-bottom: 10px; overflow-x: auto; }
 @media (max-width: 700px) {
-  .kh-exp-modes { grid-template-columns: 1fr; }
   .field.khd-projects { flex-wrap: wrap; padding-bottom: 8px; }
   .khd-opts { grid-template-columns: 1fr; }
 }
