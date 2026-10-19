@@ -20,6 +20,16 @@ trong `12_HoSo_TrinhKy` (đường dẫn + ngày sửa đổi) và POST lên web
 ký hiệu chuyên viên, **không** đổi chuyên viên phụ trách, bỏ qua file ở nhiều thư mục / hồ sơ trùng tên, hồ sơ Đã duyệt giữ nguyên, ngày = ngày sửa đổi
 của file — rồi ghi bằng `applyFolderSync_` (lõi) với tài khoản hệ thống `auto-sync`. Kết quả lần chạy gần nhất: Script Properties `LAST_AUTO_SYNC`.
 
+**Ngày Đã duyệt = ngày file vào thư mục Đã duyệt** (theo người dùng: *"khi hồ sơ chuyển sang đã duyệt, ngày trạng thái của file trên web sẽ ghi nhận
+ngày file được ghi nhận trên folder đã duyệt"*, 19/10/2026). Di chuyển file trên Windows không đổi "Date modified", nên script đọc thêm **NTFS ChangeTime**
+(đổi khi file / thư mục được tạo, chép, đổi tên, di chuyển; `Add-Type` C# `CreateFileW` + `GetFileInformationByHandleEx`) và gửi `a` cho mỗi file
+cùng `dirs: [{ p, a }]` cho mỗi thư mục. Ngày được **lưu đệm** ở `auto-sync.arrival.json` (cạnh script, theo đường dẫn + ngày tạo) — lần đầu thấy ở chỗ
+đó mới đọc, sau giữ nguyên (không mở lại ~1.700 file qua VPN mỗi 30 phút; sửa nội dung file sau đó không làm đổi ngày vào thư mục).
+`buildAutoSyncPlan_`: hồ sơ chuyển sang `DA_DUYET` lấy ngày mới nhất của chính file và các thư mục con **bên trong** thư mục tình trạng (hồ sơ dạng
+thư mục: thư mục hồ sơ được di chuyển, file bên trong không đổi ChangeTime; không tính chính thư mục `03_HS_DaDuyet` vì nó đổi mỗi khi thêm file);
+không có `a` (script cũ / không đọc được) → hôm nay. Vẫn qua `syncDate_` (không sau hôm nay, không trước lần thay đổi gần nhất). Đồng bộ thủ công
+(trình duyệt không đọc được ChangeTime) ghi **ngày đồng bộ** cho hồ sơ chuyển sang Đã duyệt.
+
 **Không cần người dùng xác nhận**: đồng bộ tự động ghi thẳng (chỉ những thay đổi "chắc chắn" — các trường hợp cần chọn như file ở nhiều thư mục,
 hồ sơ trùng tên, đổi chuyên viên phụ trách thì bỏ qua để đồng bộ thủ công xử lý). Mỗi thay đổi ghi 1 dòng History bởi "Đồng bộ tự động" và
 chuyên viên / Trưởng phòng nhận thông báo ở chuông như đồng bộ thủ công; sửa sai bằng nút Cập nhật.

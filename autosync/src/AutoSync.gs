@@ -112,7 +112,11 @@ function autoSyncJson_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
-/** doPost: body JSON { key, machine, files: [{ p: "12_HoSo_TrinhKy/…/ten file.pdf", d: "yyyy-MM-dd" }], error? }. */
+/**
+ * doPost: body JSON { key, machine, files: [{ p: "12_HoSo_TrinhKy/…/ten file.pdf", d: "yyyy-MM-dd", a?: "yyyy-MM-dd" }],
+ *                     dirs?: [{ p: "12_HoSo_TrinhKy/…/thu muc", a: "yyyy-MM-dd" }], error? }
+ * d = ngày sửa đổi của file; a = ngày file / thư mục được đặt vào chỗ hiện tại (tạo, chép, di chuyển — NTFS ChangeTime).
+ */
 function autoSyncPost_(e) {
   var props = PropertiesService.getScriptProperties();
   var body;
@@ -126,7 +130,7 @@ function autoSyncPost_(e) {
     if (body.error) throw appError_(String(body.error).slice(0, 300));
     var files = body.files;
     if (!(files instanceof Array)) throw appError_('Thiếu danh sách file.');
-    var plan = buildAutoSyncPlan_(files);
+    var plan = buildAutoSyncPlan_(files, body.dirs instanceof Array ? body.dirs : []);
     var res = plan.changes.length || plan.creates.length
       ? applyFolderSync_(autoSyncUser_(), { changes: plan.changes, owners: [], creates: plan.creates })
       : { skipped: [] };
@@ -154,8 +158,10 @@ function isJunkFile_(name) {
 /**
  * Lập kế hoạch như buildSyncPlan ở client (App.html) với lựa chọn mặc định của bảng xem trước:
  * { changes: [{ id, from, status, date }], creates: [{ title, owner, status, date }], total, conflicts, dupWeb }.
+ * Ngày ghi nhận = ngày sửa đổi của file (d); riêng chuyển sang Đã duyệt = ngày file vào thư mục Đã duyệt (a của file và
+ * các thư mục con bên trong thư mục tình trạng; không có thì '' → hôm nay), vì di chuyển file không đổi ngày sửa đổi.
  */
-function buildAutoSyncPlan_(files) {
+function buildAutoSyncPlan_(files, dirs) {
   var rules = FOLDER_SYNC.RULES.map(function (r) {
     return { segs: r.path.split('/').map(syncTitleKey_), status: r.status };
   }).sort(function (a, b) { return b.segs.length - a.segs.length; });
@@ -191,16 +197,33 @@ function buildAutoSyncPlan_(files) {
   }
   var keep = function (map, key, iso) { if (iso && (!map[key] || iso > map[key])) map[key] = iso; };
   var isoDay = function (d) { d = String(d || ''); return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : ''; };
+  var segsOf = function (p) { return String(p || '').split('/').filter(function (x) { return x !== ''; }); };
+  var dirArrival = {};
+  (dirs || []).forEach(function (x) {
+    var a = isoDay(x && x.a), pk = segsOf(x && x.p).map(syncTitleKey_);
+    if (a && pk.length) dirArrival[pk.join('/')] = a;
+  });
+  // Ngày ứng viên ở độ sâu d vào thư mục tình trạng: mới nhất trong các thư mục con (từ sau thư mục tình trạng tới ứng viên) và chính file.
+  function arrivalAt(pk, end, d, fileA) {
+    var best = d === pk.length ? fileA : '';
+    for (var k = end; k < pk.length && k <= d; k++) {
+      var a = dirArrival[pk.slice(0, k + 1).join('/')];
+      if (a && a > best) best = a;
+    }
+    return best;
+  }
 
   var items = {}, fresh = {}, total = 0;
   files.forEach(function (f) {
-    var parts = String((f && f.p) || '').split('/').filter(function (x) { return x !== ''; });
+    var parts = segsOf(f && f.p);
     var name = parts.pop();
     if (!name || isJunkFile_(name)) return;
     total++;
-    var day = isoDay(f.d);
-    var rule = ruleFor(parts.map(syncTitleKey_));
+    var pk = parts.map(syncTitleKey_);
+    var rule = ruleFor(pk);
     if (!rule) return;
+    var approved = rule.status === APPROVED_STATUS, fileA = isoDay(f.a);
+    var dayAt = function (d) { return approved ? arrivalAt(pk, rule.end, d, fileA) : isoDay(f.d); };
     var found = false;
     for (var d = rule.end; d <= parts.length; d++) {
       var isFile = d === parts.length;
@@ -212,7 +235,7 @@ function buildAutoSyncPlan_(files) {
       found = true;
       var it = items[key] || (items[key] = { statuses: [], dates: {} });
       if (it.statuses.indexOf(rule.status) < 0) it.statuses.push(rule.status);
-      keep(it.dates, rule.status, day);
+      keep(it.dates, rule.status, dayAt(d));
     }
     if (!found) {
       var base = stripFileExt_(name).replace(/\s+/g, ' ').trim();
@@ -221,7 +244,7 @@ function buildAutoSyncPlan_(files) {
         var fk = syncTitleKey_(base);
         var fi = fresh[fk] || (fresh[fk] = { title: base, owner: fini.owner, statuses: [], dates: {} });
         if (fi.statuses.indexOf(rule.status) < 0) fi.statuses.push(rule.status);
-        keep(fi.dates, rule.status, day);
+        keep(fi.dates, rule.status, dayAt(parts.length));
       }
     }
   });
