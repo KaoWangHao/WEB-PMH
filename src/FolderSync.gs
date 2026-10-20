@@ -63,8 +63,8 @@ function applyFolderSync_(user, payload) {
     var todayIso = dmyToIso_(date);
     var subs = readTable_('Submissions');
     // Ngày thay đổi gần nhất của từng hồ sơ (ISO) — ngày theo file không được sớm hơn.
-    var lastIso = {};
-    subs.forEach(function (s) { lastIso[String(s.id)] = dmyToIso_(s.createdAt); });
+    var lastIso = {}, createdIso = {};
+    subs.forEach(function (s) { lastIso[String(s.id)] = createdIso[String(s.id)] = dmyToIso_(s.createdAt); });
     readTable_('History').forEach(function (h) {
       var d = dmyToIso_(h.date), id = String(h.submissionId);
       if (d && (!lastIso[id] || d > lastIso[id])) lastIso[id] = d;
@@ -102,7 +102,8 @@ function applyFolderSync_(user, payload) {
         return;
       }
       planFor(id).status = status;
-      plan[id].date = syncDate_(c.date, lastIso[id], todayIso);
+      // Chuyển sang Đã duyệt: đúng ngày sửa đổi của file trong thư mục Đã duyệt (theo người dùng), chỉ không sớm hơn ngày tạo hồ sơ.
+      plan[id].date = syncDate_(c.date, status === APPROVED_STATUS ? createdIso[id] : lastIso[id], todayIso);
     });
 
     var seenOwner = {};

@@ -1159,12 +1159,13 @@
     return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
   }
   /** Ngày sẽ ghi nhận cho hồ sơ: ngày của file, không sau hôm nay, không trước lần thay đổi gần nhất (server kiểm tra lại y hệt). */
-  function syncEffDate(sub, iso) {
+  function syncEffDate(sub, iso, status) {
     if (!iso) return S.today;
     if (iso > S.today) iso = S.today;
     if (sub) {
       var last = sub.createdAt || '';
-      (S.histBySub[sub.id] || []).forEach(function (h) { if (h.date > last) last = h.date; });
+      // Chuyển sang Đã duyệt: giữ đúng ngày sửa đổi của file, chỉ không sớm hơn ngày tạo hồ sơ.
+      if (status !== S.cfg.approvedStatus) (S.histBySub[sub.id] || []).forEach(function (h) { if (h.date > last) last = h.date; });
       if (iso < last) iso = last;
     }
     return iso;
@@ -1309,7 +1310,7 @@
       plan.changes.map(function (c, i) {
         return '<tr><td class="center"><input type="checkbox" checked data-sync-change="' + i + '"></td>' +
           '<td class="title-cell">' + esc(c.sub.title) + '<div class="code">' + esc(c.sub.id) + ' · ' + esc(userName(c.sub.owner)) + '</div></td>' +
-          '<td>' + statusBadge(c.sub.status) + '</td><td>→</td><td>' + statusBadge(c.status) + '</td>' + syncDateCell(c.sub, c.date) + '</tr>';
+          '<td>' + statusBadge(c.sub.status) + '</td><td>→</td><td>' + statusBadge(c.status) + '</td>' + syncDateCell(c.sub, c.date, c.status) + '</tr>';
       }).join('') + '</tbody></table></div>' : '<div class="empty">Không có hồ sơ nào cần đổi tình trạng.</div>';
 
     var freshTbl = plan.fresh.length ? '<div class="table-wrap"><table class="grid"><thead><tr>' +
@@ -1376,9 +1377,9 @@
   }
 
   /** Ô "Ngày ghi nhận" trong bảng xem trước: ngày sẽ ghi (theo file), ghi chú nếu khác ngày file. */
-  function syncDateCell(sub, iso) {
+  function syncDateCell(sub, iso, status) {
     if (!iso) return '<td class="nowrap muted" title="Không đọc được ngày của file — ghi nhận ngày hôm nay">' + fmtDate(S.today) + '</td>';
-    var eff = syncEffDate(sub, iso);
+    var eff = syncEffDate(sub, iso, status);
     return '<td class="nowrap"' + (eff !== iso ? ' title="Ngày của file: ' + fmtDate(iso) + ' — điều chỉnh để không sớm hơn lần thay đổi gần nhất / không sau hôm nay"' : '') + '>' +
       fmtDate(eff) + (eff !== iso ? ' <span class="muted">*</span>' : '') + '</td>';
   }
