@@ -1221,12 +1221,10 @@
       var parts = String(files[i].webkitRelativePath || files[i].name).split('/');
       var name = parts.pop();
       if (isJunkFile(name)) continue;
+      var day = fileDay(files[i].lastModified);
       total++;
       var rule = ruleFor(parts.map(dirKey));
       if (!rule) { ignored++; continue; }
-      // Chuyển sang Đã duyệt: ghi ngày đồng bộ — di chuyển file vào thư mục Đã duyệt không đổi ngày sửa đổi,
-      // trình duyệt không đọc được ngày file vào thư mục (đồng bộ tự động thì đọc được).
-      var day = rule.status === S.cfg.approvedStatus ? '' : fileDay(files[i].lastModified);
       // Ứng viên: các thư mục con bên trong thư mục tình trạng (hồ sơ dạng thư mục) và chính file đó.
       var found = false;
       for (var d = rule.end; d <= parts.length; d++) {
@@ -1311,7 +1309,7 @@
       plan.changes.map(function (c, i) {
         return '<tr><td class="center"><input type="checkbox" checked data-sync-change="' + i + '"></td>' +
           '<td class="title-cell">' + esc(c.sub.title) + '<div class="code">' + esc(c.sub.id) + ' · ' + esc(userName(c.sub.owner)) + '</div></td>' +
-          '<td>' + statusBadge(c.sub.status) + '</td><td>→</td><td>' + statusBadge(c.status) + '</td>' + syncDateCell(c.sub, c.date, c.status) + '</tr>';
+          '<td>' + statusBadge(c.sub.status) + '</td><td>→</td><td>' + statusBadge(c.status) + '</td>' + syncDateCell(c.sub, c.date) + '</tr>';
       }).join('') + '</tbody></table></div>' : '<div class="empty">Không có hồ sơ nào cần đổi tình trạng.</div>';
 
     var freshTbl = plan.fresh.length ? '<div class="table-wrap"><table class="grid"><thead><tr>' +
@@ -1322,7 +1320,7 @@
           '<td class="title-cell">' + esc(it.title) + '</td>' +
           '<td>' + (it.statuses.length > 1 ? syncStatusSelect('data-sync-nstatus', i, it.statuses, true) : statusBadge(it.statuses[0])) + '</td>' +
           '<td class="nowrap"><b>' + esc(userName(it.owner)) + '</b> <span class="proj-code">' + esc(it.code) + '</span></td>' +
-          syncDateCell(null, it.statuses.length > 1 ? '' : it.dates[it.statuses[0]], it.statuses.length > 1 ? '' : it.statuses[0]) + '</tr>';
+          syncDateCell(null, it.statuses.length > 1 ? '' : it.dates[it.statuses[0]]) + '</tr>';
       }).join('') + '</tbody></table></div>' : '';
 
     var ownersTbl = plan.owners.length ? '<div class="table-wrap"><table class="grid"><thead><tr><th class="center">Đổi</th>' +
@@ -1372,17 +1370,14 @@
       '<div class="info-box" style="margin-top:14px">' + fmtNum(plan.notInFolder) + ' hồ sơ trên web không thấy trong thư mục: giữ nguyên. ' +
       'Hồ sơ đã duyệt luôn giữ "Đã duyệt" khi đồng bộ' + (plan.keptApproved ? ' (' + plan.keptApproved + ' hồ sơ có file ở thư mục khác)' : '') + '.</div>' +
       '<label class="check sync-date-opt"><input type="checkbox" id="m-sync-filedate" checked><span>Ghi nhận theo <b>ngày sửa đổi của file trên server</b> ' +
-      '(cột "Ngày ghi nhận"; không sau hôm nay, không trước lần thay đổi gần nhất của hồ sơ, dấu * = đã điều chỉnh). Bỏ tích → ghi nhận ngày hôm nay (' + fmtDate(S.today) + '). ' +
-      'Hồ sơ chuyển sang <b>Đã duyệt</b> luôn ghi nhận ngày đồng bộ (ngày file vào thư mục Đã duyệt; đồng bộ tự động đọc được ngày này chính xác hơn).</span></label></div>' +
+      '(cột "Ngày ghi nhận"; không sau hôm nay, không trước lần thay đổi gần nhất của hồ sơ, dấu * = đã điều chỉnh). Bỏ tích → ghi nhận ngày hôm nay (' + fmtDate(S.today) + ').</span></label></div>' +
       '<div class="modal-foot"><button class="secondary-btn" data-act="close-modal">Hủy</button>' +
       '<button class="primary-btn" style="min-height:42px;font-size:16px" data-act="submit-sync">' + ic('check') + 'Xác nhận cập nhật</button></div>', true);
   }
 
   /** Ô "Ngày ghi nhận" trong bảng xem trước: ngày sẽ ghi (theo file), ghi chú nếu khác ngày file. */
-  function syncDateCell(sub, iso, status) {
-    if (!iso) return '<td class="nowrap muted" title="' + (status === S.cfg.approvedStatus
-      ? 'Chuyển sang Đã duyệt — ghi nhận ngày đồng bộ (ngày file vào thư mục Đã duyệt)'
-      : 'Không đọc được ngày của file — ghi nhận ngày hôm nay') + '">' + fmtDate(S.today) + '</td>';
+  function syncDateCell(sub, iso) {
+    if (!iso) return '<td class="nowrap muted" title="Không đọc được ngày của file — ghi nhận ngày hôm nay">' + fmtDate(S.today) + '</td>';
     var eff = syncEffDate(sub, iso);
     return '<td class="nowrap"' + (eff !== iso ? ' title="Ngày của file: ' + fmtDate(iso) + ' — điều chỉnh để không sớm hơn lần thay đổi gần nhất / không sau hôm nay"' : '') + '>' +
       fmtDate(eff) + (eff !== iso ? ' <span class="muted">*</span>' : '') + '</td>';
@@ -2852,8 +2847,7 @@
       'File chưa có trên web mà tên kết thúc bằng ký hiệu chuyên viên (' + esc((S.cfg.folderSync.createInitials || []).join(', ')) + ', vd "..._CQH") được tạo mới cho chuyên viên đó; ' +
       'file không có ký hiệu thì không được tạo. Nếu ký hiệu khác người đang phụ trách, Trưởng phòng được chọn đổi chuyên viên. ' +
       'Hồ sơ đã duyệt luôn được giữ "Đã duyệt" khi đồng bộ, kể cả khi file không còn trong thư mục Đã duyệt. ' +
-      'Ngày ghi nhận = <b>ngày sửa đổi của file trên server</b> (không sau hôm nay, không trước lần thay đổi gần nhất của hồ sơ); bỏ tích ở bảng xem trước để ghi ngày hôm nay. ' +
-      'Riêng chuyển sang <b>Đã duyệt</b>: ghi nhận <b>ngày file vào thư mục Đã duyệt</b> (đồng bộ thủ công: ngày đồng bộ).</li>' +
+      'Ngày ghi nhận = <b>ngày sửa đổi của file trên server</b> (không sau hôm nay, không trước lần thay đổi gần nhất của hồ sơ); bỏ tích ở bảng xem trước để ghi ngày hôm nay.</li>' +
       (S.cfg.installUrl ? '<li>Cài icon <b>CENTRAL PMH</b> lên màn hình điện thoại: mở <a href="' + esc(S.cfg.installUrl) + '" target="_blank" rel="noopener">' +
         esc(S.cfg.installUrl) + '</a> trên điện thoại và làm theo hướng dẫn.</li>' : '') + '</ul></div>' +
       '<div class="modal-foot"><button class="secondary-btn" data-act="close-modal">Đóng</button></div>');

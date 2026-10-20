@@ -10,7 +10,6 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $LogPath = Join-Path $PSScriptRoot 'auto-sync.log'
-$ArrivalCachePath = Join-Path $PSScriptRoot 'auto-sync.arrival.json'
 
 function Write-Log([string]$msg) {
   $line = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + '  ' + $msg
@@ -55,84 +54,19 @@ try {
   exit 1
 }
 
-# Ngay file / thu muc duoc dat vao cho hien tai (tao, chep, di chuyen): NTFS ChangeTime. Di chuyen file vao thu muc
-# Da duyet KHONG doi ngay sua doi (LastWriteTime) nen web dung ngay nay cho ho so chuyen sang Da duyet.
-# Luu dem theo duong dan + ngay tao: lan dau thay o cho nay thi doc 1 lan, sau do giu nguyen (khong mo lai file moi 30 phut).
-$arrivalOk = $false
-try {
-  Add-Type -ErrorAction Stop -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-using Microsoft.Win32.SafeHandles;
-public static class PmhArrival {
-  [StructLayout(LayoutKind.Sequential)]
-  struct FILE_BASIC_INFO { public long CreationTime; public long LastAccessTime; public long LastWriteTime; public long ChangeTime; public uint FileAttributes; }
-  [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-  static extern SafeFileHandle CreateFileW(string name, uint access, uint share, IntPtr sec, uint disposition, uint flags, IntPtr template);
-  [DllImport("kernel32.dll", SetLastError = true)]
-  static extern bool GetFileInformationByHandleEx(SafeFileHandle h, int infoClass, out FILE_BASIC_INFO info, uint size);
-  // ChangeTime (FILETIME UTC) cua file / thu muc; 0 = khong doc duoc.
-  public static long ChangeTime(string path) {
-    string p = path.StartsWith(@"\\?\") ? path : path.StartsWith(@"\\") ? @"\\?\UNC\" + path.Substring(2) : @"\\?\" + path;
-    // FILE_READ_ATTRIBUTES, chia se doc/ghi/xoa, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS (mo duoc thu muc)
-    using (SafeFileHandle h = CreateFileW(p, 0x80, 7, IntPtr.Zero, 3, 0x02000000, IntPtr.Zero)) {
-      if (h.IsInvalid) return 0;
-      FILE_BASIC_INFO info;
-      if (!GetFileInformationByHandleEx(h, 0, out info, (uint)Marshal.SizeOf(typeof(FILE_BASIC_INFO)))) return 0;
-      return info.ChangeTime;
-    }
-  }
-}
-'@
-  $arrivalOk = $true
-} catch {
-  Write-Log ('Khong doc duoc ngay file vao thu muc (web se ghi ngay dong bo): ' + $_.Exception.Message)
-}
-$arrivalOld = @{}
-if ($arrivalOk -and (Test-Path -LiteralPath $ArrivalCachePath)) {
-  try {
-    (Get-Content -LiteralPath $ArrivalCachePath -Raw -Encoding UTF8 | ConvertFrom-Json).PSObject.Properties | ForEach-Object { $arrivalOld[$_.Name] = $_.Value }
-  } catch { }
-}
-$arrivalNew = @{}
-function Get-Arrival($item) {
-  if (-not $arrivalOk) { return $null }
-  $k = $item.FullName.ToLowerInvariant() + '|' + $item.CreationTimeUtc.Ticks
-  $v = $arrivalOld[$k]
-  if (-not $v) {
-    try { $t = [PmhArrival]::ChangeTime($item.FullName) } catch { $t = 0 }
-    if ($t -le 0) { return $null }
-    $v = [DateTime]::FromFileTimeUtc($t).ToLocalTime().ToString('yyyy-MM-dd')
-  }
-  $arrivalNew[$k] = $v
-  return $v
-}
-
 $base = $rootItem.FullName.TrimEnd('\')
 $skip = @('thumbs.db', 'desktop.ini')
-$items = Get-ChildItem -LiteralPath $base -Recurse -Force -ErrorAction SilentlyContinue
+$files = Get-ChildItem -LiteralPath $base -Recurse -File -Force -ErrorAction SilentlyContinue |
+  Where-Object { -not $_.Name.StartsWith('~$') -and -not $_.Name.StartsWith('.') -and ($skip -notcontains $_.Name.ToLower()) }
 
 $list = New-Object System.Collections.Generic.List[object]
-$dirs = New-Object System.Collections.Generic.List[object]
-foreach ($f in $items) {
-  $p = $rootItem.Name + '/' + $f.FullName.Substring($base.Length + 1).Replace('\', '/')
-  if ($f.PSIsContainer) {
-    $a = Get-Arrival $f
-    if ($a) { $dirs.Add([pscustomobject]@{ p = $p; a = $a }) }
-    continue
-  }
-  if ($f.Name.StartsWith('~$') -or $f.Name.StartsWith('.') -or ($skip -contains $f.Name.ToLower())) { continue }
-  $o = [ordered]@{ p = $p; d = $f.LastWriteTime.ToString('yyyy-MM-dd') }
-  $a = Get-Arrival $f
-  if ($a) { $o.a = $a }
-  $list.Add([pscustomobject]$o)
-}
-if ($arrivalOk) {
-  try { $arrivalNew | ConvertTo-Json -Compress | Set-Content -LiteralPath $ArrivalCachePath -Encoding UTF8 } catch { }
+foreach ($f in $files) {
+  $rel = $f.FullName.Substring($base.Length + 1).Replace('\', '/')
+  $list.Add([pscustomobject]@{ p = $rootItem.Name + '/' + $rel; d = $f.LastWriteTime.ToString('yyyy-MM-dd') })
 }
 
 try {
-  $res = Send-Body $cfg @{ key = $cfg.key; machine = $env:COMPUTERNAME; files = $list.ToArray(); dirs = $dirs.ToArray() }
+  $res = Send-Body $cfg @{ key = $cfg.key; machine = $env:COMPUTERNAME; files = $list.ToArray() }
   if ($res.ok) {
     Write-Log ('OK: ' + $res.info.files + ' file, ' + $res.info.changed + ' ho so doi tinh trang, ' + $res.info.created + ' tao moi, ' + $res.info.skipped + ' bo qua.')
   } else {

@@ -9,4 +9,3 @@ Thumbs.db
 # Đồng bộ tự động: file cấu hình chứa khóa + nhật ký trên máy chạy script
 autosync/tools/auto-sync.config.json
 autosync/tools/*.log
-autosync/tools/auto-sync.arrival.json

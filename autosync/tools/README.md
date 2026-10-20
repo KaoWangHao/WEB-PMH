@@ -7,9 +7,7 @@ Nút đồng bộ thủ công trên web vẫn dùng bình thường.
 > Vì sao cần máy tính trong công ty? Máy chủ Google (nơi chạy web) không vào được ổ chia sẻ nội bộ — chỉ máy có VPN / mạng công ty mới đọc được.
 
 ## Đồng bộ tự động làm gì
-- Đổi tình trạng hồ sơ theo thư mục chứa file (quy tắc như đồng bộ thủ công); ngày ghi nhận = ngày sửa đổi của file,
-  riêng hồ sơ chuyển sang **Đã duyệt** = **ngày file (hoặc thư mục hồ sơ) được đưa vào thư mục Đã duyệt** (script đọc ngày này từ ổ chia sẻ và
-  lưu đệm ở `auto-sync.arrival.json`; lần chạy đầu sau khi cài có thể lâu hơn bình thường).
+- Đổi tình trạng hồ sơ theo thư mục chứa file (quy tắc như đồng bộ thủ công); ngày ghi nhận = ngày sửa đổi của file.
 - Tạo hồ sơ mới cho file chưa có trên web mà tên kết thúc bằng ký hiệu chuyên viên (CQH, LDS, HTT, NSK, DNQ).
 - **Không** đổi chuyên viên phụ trách; **bỏ qua** file nằm ở nhiều thư mục và hồ sơ trùng tên trên web (để đồng bộ thủ công xử lý).
 - Hồ sơ **Đã duyệt** luôn giữ nguyên.
