@@ -269,6 +269,8 @@
       // hoặc tạo từ đồng bộ ở thư mục Đã duyệt) lấy ngày đầu tiên rời ổ Chuyên viên.
       var out = changes.filter(function (h) { return h.toStatus !== S.cfg.defaultStatus; })[0];
       s._subAt = s.submittedAt || (out ? out.date : '');
+      // Ngày xếp kỳ cho báo cáo: hồ sơ Đã duyệt tính theo ngày duyệt (theo người dùng), hồ sơ khác theo ngày trình.
+      s._repAt = s.status === S.cfg.approvedStatus && s.approvedAt ? s.approvedAt : s._subAt;
       s._days = Math.max(0, diffDays(s._since, S.today));
     });
     EXT.derive.forEach(function (fn) { fn(); });
@@ -297,8 +299,10 @@
     return rows.filter(function (s) {
       if (!ignoreType && types.length && types.indexOf(s._type) < 0) return false;
       if (!ignoreProject && !matchProjects(s, f.projects)) return false;
-      if (f.from && s.createdAt < f.from) return false;
-      if (f.to && s.createdAt > f.to) return false;
+      // Lọc theo ngày: hồ sơ Đã duyệt theo ngày duyệt, hồ sơ khác theo ngày tạo.
+      var day = s.status === S.cfg.approvedStatus && s.approvedAt ? s.approvedAt : s.createdAt;
+      if (f.from && day < f.from) return false;
+      if (f.to && day > f.to) return false;
       if (f.owners.length && f.owners.indexOf(s.owner) < 0) return false;
       if (!ignoreStatus && f.statuses.length && f.statuses.indexOf(s.status) < 0) return false;
       if (q && norm(s.id + ' ' + s.title + ' ' + userName(s.owner) + ' ' + s.owner).indexOf(q) < 0) return false;
@@ -1788,6 +1792,8 @@
       view: view, f: f, base: base, range: range, g: g, k: k,
       label: f.period ? periodName(k, g) : (f.from ? fmtDate(f.from) : 'Từ đầu') + ' – ' + (f.to ? fmtDate(f.to) : fmtDate(S.today)),
       sub: base.filter(function (s) { return inRange(s._subAt, range); }),
+      // Hồ sơ của kỳ cho các ô báo cáo: đệ trình trong kỳ (chưa duyệt) + duyệt trong kỳ (theo ngày duyệt).
+      rep: base.filter(function (s) { return inRange(s._repAt, range); }),
       approved: base.filter(function (s) { return s.status === S.cfg.approvedStatus && inRange(s.approvedAt, range); }),
       returned: base.filter(function (s) { return returned[s.id]; }),
       pending: base.filter(isSubmitting)
@@ -1805,16 +1811,16 @@
     switch (sel.kind) {
       case 'kpi':
         base = sel.key === 'approved' ? D.approved : sel.key === 'returned' ? D.returned : sel.key === 'pending' ? D.pending :
-          sel.key === 'tpmh' ? D.pending.filter(function (s) { return s.status === TPMH_STATUS; }) : D.sub;
+          sel.key === 'tpmh' ? D.pending.filter(function (s) { return s.status === TPMH_STATUS; }) : sel.key === 'rep' ? D.rep : D.sub;
         break;
-      case 'owner': base = D.sub.filter(function (s) { return sel.key === '*' || s.owner === sel.key; }); break;
+      case 'owner': base = D.rep.filter(function (s) { return sel.key === '*' || s.owner === sel.key; }); break;
       case 'period':
         var r = periodRange(sel.key, D.g);
-        base = D.base.filter(function (s) { return inRange(s._subAt, r); }); break;
+        base = D.base.filter(function (s) { return inRange(s._repAt, r); }); break;
       case 'pending': base = D.pending.filter(function (s) { return sel.key === '*' || s.status === sel.key; }); break;
       case 'project':
-        base = D.sub.filter(function (s) { return sel.key === '*' || (s._projects.length ? s._projects.indexOf(sel.key) >= 0 : sel.key === '-'); }); break;
-      default: base = D.sub;
+        base = D.rep.filter(function (s) { return sel.key === '*' || (s._projects.length ? s._projects.indexOf(sel.key) >= 0 : sel.key === '-'); }); break;
+      default: base = D.rep;
     }
     return base.filter(function (s) { return matchSub(s, sel.sub); });
   }
@@ -1897,16 +1903,16 @@
     var n = D.g === 'year' ? 5 : 8;
     var periods = [D.k];
     for (var i = 1; i < n; i++) periods.unshift(prevPeriod(periods[0], D.g));
-    var lists = periods.map(function (p) { var r = periodRange(p, D.g); return D.base.filter(function (s) { return inRange(s._subAt, r); }); });
+    var lists = periods.map(function (p) { var r = periodRange(p, D.g); return D.base.filter(function (s) { return inRange(s._repAt, r); }); });
     return { n: n, periods: periods, lists: lists };
   }
   function repResultData(D) {
-    var sts = S.cfg.statuses.filter(function (st) { return st.code !== S.cfg.defaultStatus || D.sub.some(function (s) { return s.status === st.code; }); });
-    return { sts: sts, counts: sts.map(function (st) { return D.sub.filter(function (s) { return s.status === st.code; }).length; }) };
+    var sts = S.cfg.statuses.filter(function (st) { return st.code !== S.cfg.defaultStatus || D.rep.some(function (s) { return s.status === st.code; }); });
+    return { sts: sts, counts: sts.map(function (st) { return D.rep.filter(function (s) { return s.status === st.code; }).length; }) };
   }
   function repProjectData(D) {
     var groups = {};
-    D.sub.forEach(function (s) { (s._projects.length ? s._projects : ['-']).forEach(function (k) { (groups[k] = groups[k] || []).push(s); }); });
+    D.rep.forEach(function (s) { (s._projects.length ? s._projects : ['-']).forEach(function (k) { (groups[k] = groups[k] || []).push(s); }); });
     var keys = Object.keys(groups).sort(function (a, b) { return (a === '-') - (b === '-') || groups[b].length - groups[a].length || projectSort(a, b); });
     return { groups: groups, keys: keys };
   }
@@ -1931,7 +1937,7 @@
   }
   function ownerChartSpec(D) {
     var by = {};
-    D.sub.forEach(function (s) { (by[s.owner] = by[s.owner] || []).push(s); });
+    D.rep.forEach(function (s) { (by[s.owner] = by[s.owner] || []).push(s); });
     var list = repOwners(D).filter(function (o) { return by[o]; });
     if (!list.length) return { empty: 'Không có hồ sơ đệ trình trong kỳ này.' };
     var ds = S.cfg.statuses.map(function (st) {
@@ -1947,7 +1953,7 @@
              pick: function (i) { return { card: 'trend', kind: 'period', key: T.periods[i], sub: '' }; } };
   }
   function resultChartSpec(D) {
-    var R = repResultData(D), sts = R.sts, counts = R.counts, total = D.sub.length;
+    var R = repResultData(D), sts = R.sts, counts = R.counts, total = D.rep.length;
     if (!total) return { empty: 'Không có hồ sơ đệ trình trong kỳ này.' };
     var cfg = {
       type: 'doughnut',
@@ -1971,7 +1977,7 @@
         c.restore();
       } }]
     };
-    return { h: 230, cfg: cfg, pick: function (i) { return counts[i] ? { card: 'result', kind: 'kpi', key: 'sub', sub: sts[i].code } : null; } };
+    return { h: 230, cfg: cfg, pick: function (i) { return counts[i] ? { card: 'result', kind: 'kpi', key: 'rep', sub: sts[i].code } : null; } };
   }
   function pendingChartSpec(D) {
     if (!D.pending.length) return { empty: 'Không có hồ sơ nào đang chờ duyệt.' };
@@ -1996,7 +2002,7 @@
   function repOwnerCard(D) {
     var owners = repOwners(D);
     var by = {};
-    D.sub.forEach(function (s) { (by[s.owner] = by[s.owner] || []).push(s); });
+    D.rep.forEach(function (s) { (by[s.owner] = by[s.owner] || []).push(s); });
     var types = S.cfg.docTypes || [];
     var sts = S.cfg.statuses;
     var chart = function () { return repChartHtml(D, 'owners', ownerChartSpec(D)); };
@@ -2011,14 +2017,14 @@
           types.map(function (t) { return repNum(D, list.filter(function (s) { return s._type === t.code; }), 'owners', 'owner', key, t.code); }).join('') +
           groups.map(function (g) { return repNum(D, list.filter(function (s) { return matchSub(s, g[0]); }), 'owners', 'owner', key, g[0]); }).join('') + '</tr>';
       };
-      return '<div class="table-wrap"><table class="grid matrix subrep"><thead><tr><th class="sticky-col">Chuyên viên</th><th class="center">Đệ trình</th>' +
+      return '<div class="table-wrap"><table class="grid matrix subrep"><thead><tr><th class="sticky-col">Chuyên viên</th><th class="center" title="Đệ trình trong kỳ (chưa duyệt) + duyệt trong kỳ">Tổng</th>' +
         typeHead() + groups.map(function (g) { return '<th class="center"><span class="dot" style="background:' + g[2] + ';margin-right:6px"></span>' + esc(g[1]) + '</th>'; }).join('') +
         '</tr></thead><tbody>' +
         owners.map(function (o) { return row(o, by[o] || [], esc(userName(o))); }).join('') + '</tbody><tfoot>' +
-        row('*', D.sub, 'Tổng cộng') + '</tfoot></table></div>';
+        row('*', D.rep, 'Tổng cộng') + '</tfoot></table></div>';
     };
     return repCard(D, 'owners', 'Hồ sơ đệ trình theo chuyên viên',
-      'Đệ trình trong kỳ theo tình trạng hiện tại (loại: hồ sơ đang ở TP.MH) · bấm số/thanh để xem hồ sơ', chart, table, 'table');
+      'Đệ trình trong kỳ theo tình trạng hiện tại; <b>Đã duyệt theo ngày duyệt</b> (loại: hồ sơ đang ở TP.MH) · bấm số/thanh để xem hồ sơ', chart, table, 'table');
   }
 
   /* ---------- 2. Đệ trình các kỳ gần nhất ---------- */
@@ -2040,25 +2046,25 @@
     };
     var unit = ({ week: 'tuần', month: 'tháng', quarter: 'quý', year: 'năm' })[D.g];
     return repCard(D, 'trend', 'Đệ trình ' + n + ' ' + unit + ' gần nhất',
-      'Theo tình trạng hiện tại · bấm cột để xem hồ sơ' + (D.f.period ? ', bấm tên kỳ (Bảng) để chuyển kỳ' : ''), chart, table);
+      'Theo tình trạng hiện tại; Đã duyệt theo ngày duyệt · bấm cột để xem hồ sơ' + (D.f.period ? ', bấm tên kỳ (Bảng) để chuyển kỳ' : ''), chart, table);
   }
 
   /* ---------- 3. Kết quả hồ sơ đệ trình trong kỳ ---------- */
   function repResultCard(D) {
-    var R = repResultData(D), sts = R.sts, counts = R.counts, total = D.sub.length;
+    var R = repResultData(D), sts = R.sts, counts = R.counts, total = D.rep.length;
     var chart = function () { return repChartHtml(D, 'result', resultChartSpec(D)); };
     var table = function () {
       return '<div class="table-wrap"><table class="grid matrix"><thead><tr><th>Tình trạng</th>' +
         '<th class="num">Số hồ sơ</th><th class="num">Tỉ lệ</th></tr></thead><tbody>' +
         sts.map(function (st, i) {
-          var l = D.sub.filter(function (s) { return s.status === st.code; });
+          var l = D.rep.filter(function (s) { return s.status === st.code; });
           return '<tr><td class="nowrap">' + statusBadge(st.code) + '</td>' +
-            repNum(D, l, 'result', 'kpi', 'sub', st.code, { strong: true, cls: 'num' }) +
+            repNum(D, l, 'result', 'kpi', 'rep', st.code, { strong: true, cls: 'num' }) +
             '<td class="num">' + (total ? Math.round(counts[i] * 100 / total) + '%' : '—') + '</td></tr>';
         }).join('') + '</tbody><tfoot><tr><td>Tổng cộng</td>' +
         '<td class="num">' + total + '</td><td class="num">' + (total ? '100%' : '—') + '</td></tr></tfoot></table></div>';
     };
-    return repCard(D, 'result', 'Kết quả đệ trình trong kỳ', 'Tình trạng hiện tại · bấm vào phần để xem hồ sơ', chart, table);
+    return repCard(D, 'result', 'Kết quả đệ trình trong kỳ', 'Tình trạng hiện tại; Đã duyệt theo ngày duyệt · bấm vào phần để xem hồ sơ', chart, table);
   }
 
   /* ---------- 4. Đang chờ ai duyệt (không phụ thuộc kỳ) ---------- */
@@ -2106,7 +2112,7 @@
             repNum(D, l, 'projects', 'project', k, '', { strong: true, cls: 'num' }) + '</tr>';
         }).join('') + '</tbody></table></div>';
     };
-    return repCard(D, 'projects', 'Đệ trình theo dự án', 'Theo số/mã đầu tên hồ sơ · bấm để xem hồ sơ', chart, table);
+    return repCard(D, 'projects', 'Đệ trình theo dự án', 'Theo số/mã đầu tên hồ sơ; Đã duyệt theo ngày duyệt · bấm để xem hồ sơ', chart, table);
   }
 
   /** Bảng danh sách hồ sơ nhóm theo tình trạng (chi tiết báo cáo). */
@@ -2137,14 +2143,14 @@
 
   function repSelTitle(sel, D) {
     var subName = !sel.sub ? '' : S.typeMap[sel.sub] ? S.typeMap[sel.sub].label : sel.sub === 'PENDING' ? 'Đang trình' : statusOf(sel.sub).short;
-    var kpiNames = { sub: 'Đệ trình trong kỳ', approved: 'Duyệt hoàn tất trong kỳ', returned: 'Trả lại trong kỳ', pending: 'Đang chờ duyệt', tpmh: 'Đang ở TP.MH' };
+    var kpiNames = { sub: 'Đệ trình trong kỳ', rep: 'Hồ sơ trong kỳ', approved: 'Duyệt hoàn tất trong kỳ', returned: 'Trả lại trong kỳ', pending: 'Đang chờ duyệt', tpmh: 'Đang ở TP.MH' };
     if (sel.key === 'tpmh' && TPMH_TYPE_LABELS[sel.sub]) return TPMH_TYPE_LABELS[sel.sub] + ' (đang ở TP.MH, hiện nay)';
     var main;
     switch (sel.kind) {
-      case 'owner': main = (sel.key === '*' ? 'Tất cả chuyên viên' : userName(sel.key)) + ' · đệ trình trong kỳ'; break;
-      case 'period': main = 'Đệ trình ' + periodName(sel.key, D.g); break;
+      case 'owner': main = (sel.key === '*' ? 'Tất cả chuyên viên' : userName(sel.key)) + ' · trong kỳ'; break;
+      case 'period': main = periodName(sel.key, D.g); break;
       case 'pending': main = sel.key === '*' ? 'Đang chờ duyệt' : statusOf(sel.key).label; break;
-      case 'project': main = (sel.key === '-' ? 'Chưa gắn dự án' : projectLabel(sel.key)) + ' · đệ trình trong kỳ'; break;
+      case 'project': main = (sel.key === '-' ? 'Chưa gắn dự án' : projectLabel(sel.key)) + ' · trong kỳ'; break;
       default: main = kpiNames[sel.key] || 'Hồ sơ';
     }
     return main + (subName ? ' · ' + subName : '') + (sel.kind === 'period' || sel.kind === 'pending' || sel.key === 'pending' ? '' : ' (' + D.label + ')');
@@ -2454,13 +2460,13 @@
     var oRow = function (label, l) {
       return [label, l.length].concat(byType(l), sts.map(function (st) { return cnt(l, function (s) { return s.status === st.code; }); }));
     };
-    section('Hồ sơ đệ trình theo chuyên viên', 'Số hồ sơ đệ trình trong kỳ theo tình trạng hiện tại; cột loại chỉ tính hồ sơ đang ở TP.MH', ownerChartSpec(D), 900, Math.max(240, owners.length * 40 + 90));
-    R = table(R, [{ h: 'Chuyên viên' }, { h: 'Đệ trình', bold: true }].concat(typeCols, stCols),
-      owners.map(function (o) { return oRow(userName(o), D.sub.filter(function (s) { return s.owner === o; })); }), oRow('Tổng cộng', D.sub)) + 2;
+    section('Hồ sơ đệ trình theo chuyên viên', 'Số hồ sơ đệ trình trong kỳ theo tình trạng hiện tại, hồ sơ Đã duyệt tính theo ngày duyệt; cột loại chỉ tính hồ sơ đang ở TP.MH', ownerChartSpec(D), 900, Math.max(240, owners.length * 40 + 90));
+    R = table(R, [{ h: 'Chuyên viên' }, { h: 'Tổng', bold: true }].concat(typeCols, stCols),
+      owners.map(function (o) { return oRow(userName(o), D.rep.filter(function (s) { return s.owner === o; })); }), oRow('Tổng cộng', D.rep)) + 2;
 
     // 2. Các kỳ gần nhất
     var T = repTrendData(D);
-    section('Hồ sơ đệ trình ' + T.n + ' kỳ gần nhất', 'Số hồ sơ đệ trình mỗi kỳ theo tình trạng hiện tại; cột loại chỉ tính hồ sơ đang ở TP.MH', trendChartSpec(D), 900, 300);
+    section('Hồ sơ đệ trình ' + T.n + ' kỳ gần nhất', 'Số hồ sơ đệ trình mỗi kỳ theo tình trạng hiện tại, hồ sơ Đã duyệt tính theo ngày duyệt; cột loại chỉ tính hồ sơ đang ở TP.MH', trendChartSpec(D), 900, 300);
     R = table(R, [{ h: 'Kỳ' }, { h: 'Từ ngày' }, { h: 'Đến ngày' }].concat(typeCols, [{ h: 'Đang trình' }, { h: 'Đã duyệt' }, { h: 'Tổng', bold: true }]),
       T.periods.map(function (p, i) {
         var l = T.lists[i], r = periodRange(p, D.g);
@@ -2470,11 +2476,11 @@
 
     // 3. Kết quả trong kỳ
     var RD = repResultData(D);
-    section('Kết quả hồ sơ đệ trình trong kỳ', 'Tình trạng hiện tại của các hồ sơ đệ trình trong kỳ', resultChartSpec(D), 640, 300);
+    section('Kết quả hồ sơ đệ trình trong kỳ', 'Tình trạng hiện tại của các hồ sơ đệ trình trong kỳ; hồ sơ Đã duyệt tính theo ngày duyệt', resultChartSpec(D), 640, 300);
     R = table(R, [{ h: 'Tình trạng hiện tại', span: 2 }, { h: 'Số hồ sơ', bold: true }, { h: 'Tỉ lệ', pct: true }],
       RD.sts.map(function (st, i) {
-        return [st.label, RD.counts[i], D.sub.length ? RD.counts[i] / D.sub.length : 0];
-      }), ['Tổng cộng', D.sub.length, D.sub.length ? 1 : 0]) + 2;
+        return [st.label, RD.counts[i], D.rep.length ? RD.counts[i] / D.rep.length : 0];
+      }), ['Tổng cộng', D.rep.length, D.rep.length ? 1 : 0]) + 2;
 
     // 4. Đang chờ duyệt
     var codes = S.cfg.submittingStatuses;
@@ -2566,13 +2572,13 @@
     KS.items.forEach(function (x) { lines.push(['    ' + x.label, x.n]); });
     lines.push([]);
     lines.push(['HỒ SƠ ĐỆ TRÌNH THEO CHUYÊN VIÊN']);
-    lines.push(['Chuyên viên', 'Đệ trình'].concat(types.map(function (t) { return t.label; }), sts.map(function (st) { return st.short; })));
+    lines.push(['Chuyên viên', 'Tổng (Đã duyệt theo ngày duyệt)'].concat(types.map(function (t) { return t.label; }), sts.map(function (st) { return st.short; })));
     var ownerRow = function (label, l) {
       return [label, l.length].concat(types.map(function (t) { return l.filter(function (s) { return s._type === t.code; }).length; }),
         sts.map(function (st) { return l.filter(function (s) { return s.status === st.code; }).length; }));
     };
-    repOwners(D).forEach(function (o) { lines.push(ownerRow(userName(o), D.sub.filter(function (s) { return s.owner === o; }))); });
-    lines.push(ownerRow('Tổng cộng', D.sub), []);
+    repOwners(D).forEach(function (o) { lines.push(ownerRow(userName(o), D.rep.filter(function (s) { return s.owner === o; }))); });
+    lines.push(ownerRow('Tổng cộng', D.rep), []);
     lines.push(['DANH SÁCH HỒ SƠ ĐỆ TRÌNH TRONG KỲ']);
     lines.push(['Mã HS', 'Tên hồ sơ', 'Loại', 'Dự án', 'Chuyên viên', 'Tình trạng hiện tại', 'Ngày trình', 'Ngày duyệt', 'Số ngày ở tình trạng hiện tại']);
     D.sub.slice().sort(function (a, b) { return a._subAt < b._subAt ? -1 : a._subAt > b._subAt ? 1 : 0; }).forEach(function (s) {
