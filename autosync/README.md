@@ -17,7 +17,7 @@ Toàn bộ chức năng nằm trong thư mục này. Phần lõi (`src/`) chỉ 
 Máy chủ Google không vào được ổ `\\HCM-FS01` → máy Windows trong mạng công ty chạy `tools/auto-sync.ps1` mỗi 30 phút 7:30–17:30, đọc danh sách file
 trong `12_HoSo_TrinhKy` (đường dẫn + ngày sửa đổi) và POST lên web app kèm khóa. Server kiểm tra khóa (Script Properties chỉ lưu mã băm
 `AUTO_SYNC_KEY_HASH`), lập kế hoạch y như bảng xem trước của đồng bộ thủ công với lựa chọn mặc định — đổi tình trạng theo thư mục, tạo mới file có
-ký hiệu chuyên viên, **không** đổi chuyên viên phụ trách, bỏ qua file ở nhiều thư mục / hồ sơ trùng tên, hồ sơ Đã duyệt giữ nguyên, ngày = ngày sửa đổi
+ký hiệu chuyên viên, **không** đổi chuyên viên phụ trách, bỏ qua file ở nhiều thư mục (trừ khi có thư mục Đã duyệt → lấy Đã duyệt) / hồ sơ trùng tên, hồ sơ Đã duyệt giữ nguyên, ngày = ngày sửa đổi
 của file — rồi ghi bằng `applyFolderSync_` (lõi) với tài khoản hệ thống `auto-sync`. Kết quả lần chạy gần nhất: Script Properties `LAST_AUTO_SYNC`.
 
 **Không cần người dùng xác nhận**: đồng bộ tự động ghi thẳng (chỉ những thay đổi "chắc chắn" — các trường hợp cần chọn như file ở nhiều thư mục,

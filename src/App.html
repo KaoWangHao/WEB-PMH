@@ -1268,6 +1268,13 @@
       throw new Error('Không thấy file nào trong các thư mục tình trạng. Hãy chọn đúng thư mục ' + S.cfg.folderSync.rootName + '.');
     }
 
+    // File có trong thư mục Đã duyệt thì lấy Đã duyệt, kể cả còn bản ở thư mục khác (theo người dùng: file hay được chép sang).
+    [items, fresh].forEach(function (map) {
+      Object.keys(map).forEach(function (k) {
+        var it = map[k];
+        if (it.statuses.length > 1 && it.statuses.indexOf(S.cfg.approvedStatus) >= 0) it.statuses = [S.cfg.approvedStatus];
+      });
+    });
     var plan = { changes: [], conflicts: [], dupWeb: [], owners: [], ownerAmbiguous: 0, notMine: 0, keptApproved: 0, same: 0, total: total, ignored: ignored, notOnWeb: notOnWeb, notInFolder: 0,
                  fresh: Object.keys(fresh).map(function (k) { return fresh[k]; }), freshOthers: freshOthers, noAccount: noAccount };
     Object.keys(items).forEach(function (k) {
@@ -1373,7 +1380,8 @@
       (plan.dupWeb.length ? syncSection('Trùng tên trên web (bỏ qua)', plan.dupWeb.length, dup, false,
         'Có nhiều hồ sơ trên web cùng tên nên không biết cập nhật hồ sơ nào. Hãy đổi tên cho khác nhau.') : '') +
       '<div class="info-box" style="margin-top:14px">' + fmtNum(plan.notInFolder) + ' hồ sơ trên web không thấy trong thư mục: giữ nguyên. ' +
-      'Hồ sơ đã duyệt luôn giữ "Đã duyệt" khi đồng bộ' + (plan.keptApproved ? ' (' + plan.keptApproved + ' hồ sơ có file ở thư mục khác)' : '') + '.</div>' +
+      'Hồ sơ đã duyệt luôn giữ "Đã duyệt" khi đồng bộ' + (plan.keptApproved ? ' (' + plan.keptApproved + ' hồ sơ có file ở thư mục khác)' : '') + '. ' +
+      'File có trong thư mục Đã duyệt thì lấy "Đã duyệt", kể cả khi còn bản ở thư mục khác.</div>' +
       '<label class="check sync-date-opt"><input type="checkbox" id="m-sync-filedate" checked><span>Ghi nhận theo <b>ngày sửa đổi của file trên server</b> ' +
       '(cột "Ngày ghi nhận"; không sau hôm nay, không trước lần thay đổi gần nhất của hồ sơ, dấu * = đã điều chỉnh). Bỏ tích → ghi nhận ngày hôm nay (' + fmtDate(S.today) + ').</span></label></div>' +
       '<div class="modal-foot"><button class="secondary-btn" data-act="close-modal">Hủy</button>' +
