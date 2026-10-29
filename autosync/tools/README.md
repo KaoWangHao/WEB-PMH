@@ -11,6 +11,7 @@ Nút đồng bộ thủ công trên web vẫn dùng bình thường.
   (hồ sơ chuyển sang **Đã duyệt**: ngày duyệt = đúng cột "Date modified" của file trong thư mục Đã duyệt).
 - Tạo hồ sơ mới cho file chưa có trên web mà tên kết thúc bằng ký hiệu chuyên viên (CQH, LDS, HTT, NSK, DNQ).
 - **Không** đổi chuyên viên phụ trách; **bỏ qua** file nằm ở nhiều thư mục và hồ sơ trùng tên trên web (để đồng bộ thủ công xử lý).
+  Riêng file có trong thư mục **Đã duyệt** thì luôn chuyển sang Đã duyệt, kể cả khi còn bản ở thư mục khác.
 - Hồ sơ **Đã duyệt** luôn giữ nguyên.
 - Lịch sử hồ sơ ghi "Đồng bộ từ thư mục chia sẻ" bởi **Đồng bộ tự động**; chuyên viên vẫn nhận thông báo ở chuông.
 - **Không cần ai bấm xác nhận**: thay đổi được ghi ngay. Trường hợp cần người chọn (file ở nhiều thư mục, trùng tên, đổi chuyên viên phụ trách)

@@ -226,13 +226,20 @@ function buildAutoSyncPlan_(files) {
     }
   });
 
+  // File có trong thư mục Đã duyệt thì lấy Đã duyệt, kể cả còn bản ở thư mục khác (như đồng bộ thủ công).
+  [items, fresh].forEach(function (map) {
+    Object.keys(map).forEach(function (k) {
+      var it = map[k];
+      if (it.statuses.length > 1 && it.statuses.indexOf(APPROVED_STATUS) >= 0) it.statuses = [APPROVED_STATUS];
+    });
+  });
   var plan = { changes: [], creates: [], total: total, conflicts: 0, dupWeb: 0 };
   Object.keys(items).forEach(function (k) {
     var it = items[k], web = webByKey[k];
     if (web.length > 1) { plan.dupWeb++; return; }
     var sub = web[0];
     if (String(sub.status) === APPROVED_STATUS) return;      // Đã duyệt luôn giữ nguyên
-    if (it.statuses.length > 1) { plan.conflicts++; return; } // file ở nhiều thư mục: để đồng bộ thủ công chọn
+    if (it.statuses.length > 1) { plan.conflicts++; return; } // file ở nhiều thư mục (không có Đã duyệt): để đồng bộ thủ công chọn
     if (it.statuses[0] === String(sub.status)) return;
     plan.changes.push({ id: String(sub.id), from: String(sub.status), status: it.statuses[0], date: it.dates[it.statuses[0]] || '' });
   });
